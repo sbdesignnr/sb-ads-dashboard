@@ -11,12 +11,16 @@ import {
   Lightbulb,
   TrendingDown,
   CalendarRange,
+  Sparkles,
+  Wand2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScoreGauge } from "@/components/ai/ScoreGauge";
 import { InsightCard } from "@/components/ai/InsightCard";
 import { AIChat, type AIChatHandle } from "@/components/ai/AIChat";
+import { CampaignBuilder } from "@/components/ai/CampaignBuilder";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PlatformBadge } from "@/components/shared/PlatformBadge";
 import { allCampaigns, getQuickWins, getSortedInsights } from "@/lib/mock-data";
 import { computeAccountScore } from "@/lib/utils/metrics";
@@ -60,39 +64,58 @@ export default function AIInsightsPage() {
 
       {/* Chat (hero) + score */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-2">
-          <AIChat ref={chatRef} className="h-[620px]" />
+        <div className="lg:col-span-2">
+          <Tabs defaultValue="chat">
+            <TabsList className="mb-4">
+              <TabsTrigger value="chat" className="gap-1.5">
+                <Sparkles className="h-4 w-4" />
+                AI Asistent
+              </TabsTrigger>
+              <TabsTrigger value="builder" className="gap-1.5">
+                <Wand2 className="h-4 w-4" />
+                Campaign Builder
+              </TabsTrigger>
+            </TabsList>
 
-          {/* Quick analyses */}
-          <Card>
-            <CardHeader className="flex-row items-center gap-2 space-y-0">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-warning/10 text-warning">
-                <Zap className="h-4 w-4" />
-              </div>
-              <div>
-                <CardTitle>Rýchle analýzy</CardTitle>
-                <p className="text-sm text-muted">Klikni a AI okamžite vygeneruje analýzu</p>
-              </div>
-            </CardHeader>
-            <CardContent className="grid gap-3 sm:grid-cols-2">
-              {QUICK_ANALYSES.map((q) => {
-                const Icon = q.icon;
-                return (
-                  <button
-                    key={q.label}
-                    onClick={() => chatRef.current?.ask(q.label)}
-                    className="flex items-center gap-3 rounded-lg border border-border bg-surface-2/40 p-3 text-left transition-all hover:border-primary/40 hover:bg-surface-2/70 cursor-pointer"
-                  >
-                    <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", q.accent)}>
-                      <Icon className="h-5 w-5" />
-                    </span>
-                    <span className="text-sm font-medium text-foreground">{q.label}</span>
-                    <ArrowRight className="ml-auto h-4 w-4 shrink-0 text-muted" />
-                  </button>
-                );
-              })}
-            </CardContent>
-          </Card>
+            <TabsContent value="chat" forceMount className="mt-0 space-y-4 data-[state=inactive]:hidden">
+              <AIChat ref={chatRef} className="h-[620px]" />
+
+              {/* Quick analyses */}
+              <Card>
+                <CardHeader className="flex-row items-center gap-2 space-y-0">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-warning/10 text-warning">
+                    <Zap className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <CardTitle>Rýchle analýzy</CardTitle>
+                    <p className="text-sm text-muted">Klikni a AI okamžite vygeneruje analýzu</p>
+                  </div>
+                </CardHeader>
+                <CardContent className="grid gap-3 sm:grid-cols-2">
+                  {QUICK_ANALYSES.map((q) => {
+                    const Icon = q.icon;
+                    return (
+                      <button
+                        key={q.label}
+                        onClick={() => chatRef.current?.ask(q.label)}
+                        className="flex items-center gap-3 rounded-lg border border-border bg-surface-2/40 p-3 text-left transition-all hover:border-primary/40 hover:bg-surface-2/70 cursor-pointer"
+                      >
+                        <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", q.accent)}>
+                          <Icon className="h-5 w-5" />
+                        </span>
+                        <span className="text-sm font-medium text-foreground">{q.label}</span>
+                        <ArrowRight className="ml-auto h-4 w-4 shrink-0 text-muted" />
+                      </button>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="builder" forceMount className="mt-0 data-[state=inactive]:hidden">
+              <CampaignBuilder />
+            </TabsContent>
+          </Tabs>
         </div>
 
         <div className="space-y-6">

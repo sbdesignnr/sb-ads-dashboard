@@ -106,30 +106,44 @@ export async function POST(req: NextRequest) {
 
   const client = new Anthropic();
   const encoder = new TextEncoder();
+  let messageStream: ReturnType<typeof client.messages.stream> | null = null;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      try {
-        const messageStream = client.messages.stream({
-          model: "claude-sonnet-4-6",
-          max_tokens: 2000,
-          system,
-          messages,
-        });
-
-        messageStream.on("text", (text) => {
+      const safeEnqueue = (text: string) => {
+        try {
           controller.enqueue(encoder.encode(text));
-        });
-
+        } catch {
+          /* client disconnected — controller already closed */
+        }
+      };
+      try {
+        messageStream = client.messages.stream(
+          {
+            model: "claude-sonnet-4-6",
+            max_tokens: 2000,
+            system,
+            messages,
+          },
+          { signal: req.signal },
+        );
+        messageStream.on("text", (text: string) => safeEnqueue(text));
         await messageStream.finalMessage();
       } catch (err) {
-        console.error("[ai-chat] stream error:", (err as Error).message);
-        controller.enqueue(
-          encoder.encode("\n\n⚠️ Pri generovaní odpovede nastala chyba. Skús to prosím znova."),
-        );
+        if ((err as Error)?.name !== "AbortError") {
+          console.error("[ai-chat] stream error:", (err as Error).message);
+          safeEnqueue("\n\n⚠️ Pri generovaní odpovede nastala chyba. Skús to prosím znova.");
+        }
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          /* already closed */
+        }
       }
+    },
+    cancel() {
+      messageStream?.abort();
     },
   });
 
