@@ -1,0 +1,82 @@
+// SB Design — Ads Analytics Dashboard
+// Local development uses SQLite. To migrate to PostgreSQL later, change the
+// datasource provider to "postgresql" and update DATABASE_URL.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  role         String   @default("admin")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// --- Competitor Intelligence ---
+
+model Competitor {
+  id          String           @id @default(cuid())
+  name        String
+  url         String
+  lastScanned DateTime?
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  scans       CompetitorScan[]
+}
+
+model CompetitorScan {
+  id           String     @id @default(cuid())
+  competitorId String
+  competitor   Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  scannedAt    DateTime   @default(now())
+  services     Json?
+  pricing      Json?
+  blogPosts    Json?
+  techStack    Json?
+  aiAnalysis   String?
+  changes      Json?
+  rawContent   String?
+
+  @@index([competitorId, scannedAt])
+}
+
+model KeywordCache {
+  id          String   @id @default(cuid())
+  keyword     String   @unique
+  volume      Int
+  competition String
+  cpc         Float
+  updatedAt   DateTime @default(now())
+}
+
+model RegionalData {
+  id                 String   @id @default(cuid())
+  region             String   @unique
+  avgSalary          Float
+  gdpPerCapita       Float
+  businessDensity    Float
+  recommendedPricing Json
+  updatedAt          DateTime @default(now())
+}
+
+// Stores the OAuth2 tokens for the connected Google Ads account.
+// A single row is used (id = "primary").
+model GoogleAdsToken {
+  id           String    @id @default("primary")
+  accessToken  String?
+  refreshToken String
+  expiresAt    DateTime?
+  customerId   String?
+  scope        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
