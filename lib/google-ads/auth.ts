@@ -145,7 +145,7 @@ export async function getConnectionStatus(): Promise<GoogleAdsConnectionStatus> 
   return {
     connected: Boolean(token?.refreshToken),
     configured: isGoogleAdsConfigured(),
-    customerId: token?.customerId ?? getConfiguredCustomerId(),
+    customerId: getConfiguredCustomerId() ?? token?.customerId ?? null,
     loginCustomerId: getLoginCustomerId(),
     expiresAt: token?.expiresAt?.toISOString() ?? null,
     lastUpdated: token?.updatedAt?.toISOString() ?? null,

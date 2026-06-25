@@ -1,4 +1,4 @@
-import { getCustomerClient } from "./client";
+import { getConfiguredCustomerId, getCustomerClient } from "./client";
 import { ensureFreshAccessToken, getStoredToken } from "./auth";
 
 /**
@@ -63,7 +63,12 @@ export async function executeGaql<T = Record<string, unknown>>(
   // Keep the stored access token fresh (the library also refreshes internally).
   await ensureFreshAccessToken();
 
-  const customer = getCustomerClient(token.refreshToken, customerId ?? token.customerId ?? undefined);
+  // Prefer the env-configured ad account over any (possibly stale) id stored
+  // on the token row, so queries hit the right customer.
+  const customer = getCustomerClient(
+    token.refreshToken,
+    customerId ?? getConfiguredCustomerId() ?? token.customerId ?? undefined,
+  );
   const started = Date.now();
   try {
     const rows = (await customer.query(gaql)) as unknown as T[];

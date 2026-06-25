@@ -14,6 +14,16 @@ import type { DataSource, GoogleKeywordMetric } from "./types";
 const MICROS = 1_000_000;
 const num = (v: unknown) => Number(v ?? 0);
 
+// Google Ads has no LAST_90_DAYS / LAST_60_DAYS literal — use an explicit
+// BETWEEN range computed from `days`.
+function lastNDaysRange(days: number): { since: string; until: string } {
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const until = new Date();
+  const since = new Date();
+  since.setUTCDate(since.getUTCDate() - (days - 1));
+  return { since: fmt(since), until: fmt(until) };
+}
+
 function mapChannelType(type: string): CampaignType {
   switch (type) {
     case "SEARCH":
@@ -72,6 +82,7 @@ function rowToDaily(r: CampaignGaqlRow): DailyMetric {
 
 /** All campaigns with a daily metric series, mapped to the app's Campaign type. */
 export async function getCampaigns(customerId?: string, days = 90): Promise<Campaign[]> {
+  const { since, until } = lastNDaysRange(days);
   const gaql = `
     SELECT
       campaign.id,
@@ -86,7 +97,7 @@ export async function getCampaigns(customerId?: string, days = 90): Promise<Camp
       metrics.conversions,
       metrics.conversions_value
     FROM campaign
-    WHERE segments.date DURING LAST_${days === 7 ? "7" : days === 30 ? "30" : "90"}_DAYS
+    WHERE segments.date BETWEEN '${since}' AND '${until}'
     ORDER BY campaign.id
   `;
 
@@ -153,6 +164,7 @@ export async function getAccountMetrics(
   customerId?: string,
   days = 30,
 ): Promise<MetricTotals> {
+  const { since, until } = lastNDaysRange(days);
   const gaql = `
     SELECT
       segments.date,
@@ -162,7 +174,7 @@ export async function getAccountMetrics(
       metrics.conversions,
       metrics.conversions_value
     FROM customer
-    WHERE segments.date DURING LAST_${days === 7 ? "7" : days === 90 ? "90" : "30"}_DAYS
+    WHERE segments.date BETWEEN '${since}' AND '${until}'
   `;
   const rows = await executeGaql<CampaignGaqlRow>(gaql, customerId);
   return computeTotals(rows.map(rowToDaily));
