@@ -24,8 +24,18 @@ function lastNDaysRange(days: number): { since: string; until: string } {
   return { since: fmt(since), until: fmt(until) };
 }
 
-function mapChannelType(type: string): CampaignType {
-  switch (type) {
+// The Google Ads API returns enum fields as their numeric value (occasionally
+// as the string name) — normalise both forms.
+
+// AdvertisingChannelType: SEARCH=2, DISPLAY=3, SHOPPING=4, VIDEO=6, PERFORMANCE_MAX=10.
+function mapChannelType(type: string | number | undefined): CampaignType {
+  const t =
+    typeof type === "number"
+      ? ({ 2: "SEARCH", 3: "DISPLAY", 4: "SHOPPING", 6: "VIDEO", 10: "PERFORMANCE_MAX" } as Record<number, string>)[
+          type
+        ]
+      : String(type ?? "").toUpperCase();
+  switch (t) {
     case "SEARCH":
       return "search";
     case "DISPLAY":
@@ -41,9 +51,33 @@ function mapChannelType(type: string): CampaignType {
   }
 }
 
-function mapStatus(status: string): CampaignStatus {
-  if (status === "ENABLED") return "active";
-  return "paused";
+function channelLabel(type: string | number | undefined): string {
+  switch (mapChannelType(type)) {
+    case "display":
+      return "Obsahová sieť";
+    case "shopping":
+      return "Shopping";
+    default:
+      return "Vyhľadávacia sieť";
+  }
+}
+
+// CampaignStatus: ENABLED=2, PAUSED=3, REMOVED=4.
+function mapStatus(status: string | number | undefined): CampaignStatus {
+  const s =
+    typeof status === "number"
+      ? ({ 2: "ENABLED", 3: "PAUSED", 4: "REMOVED" } as Record<number, string>)[status]
+      : String(status ?? "").toUpperCase();
+  switch (s) {
+    case "ENABLED":
+      return "active";
+    case "PAUSED":
+      return "paused";
+    case "REMOVED":
+      return "removed";
+    default:
+      return "paused";
+  }
 }
 
 function deriveTrend(daily: DailyMetric[]): TrendDirection {
@@ -57,7 +91,12 @@ function deriveTrend(daily: DailyMetric[]): TrendDirection {
 }
 
 interface CampaignGaqlRow {
-  campaign: { id: string | number; name: string; status: string; advertising_channel_type: string };
+  campaign: {
+    id: string | number;
+    name: string;
+    status: string | number;
+    advertising_channel_type: string | number;
+  };
   campaign_budget?: { amount_micros?: string | number };
   segments: { date: string };
   metrics: {
@@ -119,7 +158,7 @@ export async function getCampaigns(customerId?: string, days = 90): Promise<Camp
       name: meta.campaign.name,
       platform: "google",
       type: mapChannelType(meta.campaign.advertising_channel_type),
-      objective: meta.campaign.advertising_channel_type,
+      objective: channelLabel(meta.campaign.advertising_channel_type),
       status: mapStatus(meta.campaign.status),
       dailyBudget: num(meta.campaign_budget?.amount_micros) / MICROS,
       startDate: daily[0]?.date ?? new Date().toISOString().slice(0, 10),

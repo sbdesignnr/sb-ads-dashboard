@@ -5,9 +5,10 @@ import type { CampaignStatus } from "@/lib/types";
 
 const MAP: Record<CampaignStatus, { variant: BadgeProps["variant"]; dot: string; pulse?: boolean }> = {
   active: { variant: "success", dot: "bg-success", pulse: true },
-  paused: { variant: "default", dot: "bg-muted" },
+  paused: { variant: "warning", dot: "bg-warning" },
   learning: { variant: "info", dot: "bg-primary", pulse: true },
   limited: { variant: "warning", dot: "bg-warning" },
+  removed: { variant: "danger", dot: "bg-danger" },
 };
 
 export function StatusBadge({ status, className }: { status: CampaignStatus; className?: string }) {

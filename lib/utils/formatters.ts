@@ -87,6 +87,7 @@ const STATUS_LABELS: Record<CampaignStatus, string> = {
   paused: "Pozastavená",
   learning: "Učí sa",
   limited: "Obmedzená",
+  removed: "Odstránená",
 };
 
 export function statusLabel(status: CampaignStatus): string {

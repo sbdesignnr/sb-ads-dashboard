@@ -2,7 +2,7 @@
 
 export type Platform = "google" | "meta";
 
-export type CampaignStatus = "active" | "paused" | "learning" | "limited";
+export type CampaignStatus = "active" | "paused" | "learning" | "limited" | "removed";
 
 export type GoogleCampaignType = "search" | "display" | "shopping";
 export type MetaCampaignType = "awareness" | "traffic" | "conversion";
