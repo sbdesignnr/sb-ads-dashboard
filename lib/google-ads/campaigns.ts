@@ -7,7 +7,7 @@ import type {
   TrendDirection,
 } from "@/lib/types";
 import { computeTotals } from "@/lib/utils/metrics";
-import { googleCampaigns } from "@/lib/mock-data";
+import { googleCampaigns, getCampaignById } from "@/lib/mock-data";
 import { executeGaql, GoogleAdsNotConnectedError } from "./middleware";
 import type { DataSource, GoogleKeywordMetric } from "./types";
 
@@ -294,4 +294,16 @@ export async function getCampaignsWithFallback(customerId?: string): Promise<Cam
 
   if (!customerId) memo = { ts: Date.now(), result };
   return result;
+}
+
+/**
+ * Find a single campaign by id for the detail page. Checks mock data first
+ * (Meta demo + Google demo ids like "g-brand"), then real Google Ads campaigns
+ * (numeric ids, e.g. "21539876543"). Returns undefined if not found.
+ */
+export async function findCampaignById(id: string): Promise<Campaign | undefined> {
+  const fromMock = getCampaignById(id);
+  if (fromMock) return fromMock;
+  const { campaigns } = await getCampaignsWithFallback();
+  return campaigns.find((c) => String(c.id) === String(id));
 }
