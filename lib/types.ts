@@ -72,6 +72,8 @@ export interface AIInsight {
   solution: string;
   expectedImpact: string;
   impactScore: number; // 0-100, used for ranking
+  implementByDays?: number; // suggested days to implement
+  checkResultsByDays?: number; // suggested days until results should be reviewed
 }
 
 export interface AccountScore {
