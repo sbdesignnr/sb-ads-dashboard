@@ -2,6 +2,7 @@
 
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
+import { BottomNav } from "./BottomNav";
 import { useUIStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -23,8 +24,9 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
         )}
       >
         <Header user={user} />
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main className="flex-1 px-4 pb-24 pt-6 sm:px-6 lg:px-8 lg:pb-8">{children}</main>
       </div>
+      <BottomNav />
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { Menu, CalendarDays, LogOut, ChevronDown } from "lucide-react";
+import { CalendarDays, LogOut, ChevronDown } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -34,7 +34,6 @@ interface HeaderProps {
 
 export function Header({ user }: HeaderProps) {
   const pathname = usePathname();
-  const setMobileSidebarOpen = useUIStore((s) => s.setMobileSidebarOpen);
   const rangeDays = useUIStore((s) => s.rangeDays);
   const setRangeDays = useUIStore((s) => s.setRangeDays);
 
@@ -48,27 +47,22 @@ export function Header({ user }: HeaderProps) {
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-md sm:px-6 lg:px-8">
-      <button
-        onClick={() => setMobileSidebarOpen(true)}
-        className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-foreground lg:hidden cursor-pointer"
-        aria-label="Otvoriť menu"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
-
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <h1 className="truncate text-lg font-semibold text-foreground">{title}</h1>
       </div>
 
-      <div className="ml-auto flex items-center gap-2 sm:gap-3">
-        <div className="hidden sm:block">
+      <div className="flex items-center gap-2 sm:gap-3">
+        <div className="block">
           <Select
             value={String(rangeDays)}
             onValueChange={(v) => setRangeDays(Number(v) as DateRangeDays)}
           >
-            <SelectTrigger className="h-9 w-[180px] gap-2">
-              <CalendarDays className="h-4 w-4 text-muted" />
-              <SelectValue />
+            <SelectTrigger className="h-9 w-[104px] gap-1.5 sm:w-[180px] sm:gap-2">
+              <CalendarDays className="h-4 w-4 shrink-0 text-muted" />
+              <span className="sm:hidden">{rangeDays} dní</span>
+              <span className="hidden truncate sm:block">
+                <SelectValue />
+              </span>
             </SelectTrigger>
             <SelectContent>
               {RANGE_OPTIONS.map((o) => (
