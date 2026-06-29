@@ -50,6 +50,16 @@ model CompetitorScan {
   @@index([competitorId, scannedAt])
 }
 
+model AiChatHistory {
+  id        String   @id @default(cuid())
+  title     String
+  messages  Json // [{ role: "user"|"assistant", content: string, imageCount?: number }]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("ai_chat_history")
+}
+
 model KeywordCache {
   id          String   @id @default(cuid())
   keyword     String   @unique
