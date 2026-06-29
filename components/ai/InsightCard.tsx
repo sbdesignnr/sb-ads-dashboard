@@ -10,6 +10,7 @@ import {
   TrendingUp,
   TriangleAlert,
   ArrowRight,
+  Wand2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PlatformBadge } from "@/components/shared/PlatformBadge";
@@ -48,6 +49,7 @@ interface InsightCardProps {
   index?: number;
   defaultExpanded?: boolean;
   showCampaignLink?: boolean;
+  onImplement?: (insight: AIInsight) => void;
 }
 
 export function InsightCard({
@@ -55,6 +57,7 @@ export function InsightCard({
   index = 0,
   defaultExpanded = false,
   showCampaignLink = true,
+  onImplement,
 }: InsightCardProps) {
   const [open, setOpen] = useState(defaultExpanded);
   const p = PRIORITY[insight.priority];
@@ -117,15 +120,26 @@ export function InsightCard({
             <p className="text-xs font-medium uppercase tracking-wide text-success/80">Riešenie</p>
             <p className="mt-1 text-sm text-foreground">{insight.solution}</p>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-2/50 p-3">
-            <div>
-              <p className="text-xs text-muted">Očakávaný dopad</p>
-              <p className="text-sm font-medium text-foreground">{insight.expectedImpact}</p>
-            </div>
+          <div className="rounded-lg border border-border bg-surface-2/50 p-3">
+            <p className="text-xs text-muted">Očakávaný dopad</p>
+            <p className="text-sm font-medium text-foreground">{insight.expectedImpact}</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {onImplement && (
+              <button
+                onClick={() => onImplement(insight)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90 cursor-pointer"
+              >
+                <Wand2 className="h-4 w-4" />
+                Ako implementovať
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            )}
             {showCampaignLink && insight.campaignId && (
               <Link
                 href={`/campaigns/${insight.campaignId}`}
-                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-sm font-medium text-primary hover:bg-surface-2"
               >
                 Otvoriť kampaň
                 <ArrowRight className="h-3.5 w-3.5" />

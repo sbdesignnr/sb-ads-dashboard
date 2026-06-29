@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -28,6 +28,19 @@ import { PlatformBadge } from "@/components/shared/PlatformBadge";
 import { useCachedResource } from "@/lib/client-cache";
 import { cn } from "@/lib/utils";
 import type { AccountInsights } from "@/lib/ai/insights";
+import type { AIInsight } from "@/lib/types";
+
+function buildImplementPrompt(insight: AIInsight): string {
+  const target = insight.campaignName ? `pre kampaň „${insight.campaignName}"` : "pre celý účet";
+  return `Chcem IMPLEMENTOVAŤ toto odporúčanie ${target}:
+
+📌 ${insight.title}
+• Problém: ${insight.problem}
+• Riešenie: ${insight.solution}
+• Očakávaný dopad: ${insight.expectedImpact}
+
+Daj mi presný KROK-ZA-KROKOM postup ako to nastaviť v Google Ads konkrétne pre túto kampaň. Pri každom kroku uveď presné miesto v Google Ads (napr. „V kampani → Kľúčové slová → Pridať kľúčové slová"), konkrétne hodnoty (max CPC v €, denný rozpočet, kľúčové slová, bid stratégia) a vychádzaj z REÁLNYCH dát kampane (kľúčové slová, CTR, CPC, rozpočet, zobrazenia). Na záver uveď, za koľko dní mám skontrolovať výsledky.`;
+}
 
 const PRIORITY_BADGE = {
   high: { label: "Vysoká", variant: "danger" as const },
@@ -82,11 +95,18 @@ function ConnectPrompt() {
 
 export default function AIInsightsPage() {
   const chatRef = useRef<AIChatHandle>(null);
+  const [activeTab, setActiveTab] = useState("chat");
   const { data, loading, refresh } = useCachedResource<AccountInsights>(
     "ai-account-insights",
     () => fetch("/api/ai/insights").then((r) => r.json()),
     { ttl: 5 * 60 * 1000 },
   );
+
+  const handleImplement = (insight: AIInsight) => {
+    setActiveTab("chat");
+    chatRef.current?.ask(buildImplementPrompt(insight));
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const isLoading = loading || !data;
   const connected = data?.connected ?? false;
@@ -106,7 +126,7 @@ export default function AIInsightsPage() {
       {/* Chat (hero) + score */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <Tabs defaultValue="chat">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="mb-4">
               <TabsTrigger value="chat" className="gap-1.5">
                 <Sparkles className="h-4 w-4" />
@@ -229,6 +249,14 @@ export default function AIInsightsPage() {
                       </div>
                       <p className="mt-2 text-sm font-medium text-foreground">{win.title}</p>
                       <p className="mt-1 text-xs text-success">{win.expectedImpact}</p>
+                      <button
+                        onClick={() => handleImplement(win)}
+                        className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline cursor-pointer"
+                      >
+                        <Wand2 className="h-3 w-3" />
+                        Ako implementovať
+                        <ArrowRight className="h-3 w-3" />
+                      </button>
                     </div>
                   );
                 })
@@ -281,7 +309,7 @@ export default function AIInsightsPage() {
         ) : (
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {insights.map((insight, i) => (
-              <InsightCard key={insight.id} insight={insight} index={i} />
+              <InsightCard key={insight.id} insight={insight} index={i} onImplement={handleImplement} />
             ))}
           </div>
         )}
