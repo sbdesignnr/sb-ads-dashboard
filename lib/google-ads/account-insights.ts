@@ -116,3 +116,105 @@ export async function getConversionActions(customerId?: string): Promise<Convers
     status: statusName(r.conversion_action.status),
   }));
 }
+
+const DAY_NAMES: Record<number, string> = {
+  2: "Po",
+  3: "Ut",
+  4: "St",
+  5: "Št",
+  6: "Pi",
+  7: "So",
+  8: "Ne",
+};
+
+export interface AdScheduleEntry {
+  campaign: string;
+  day: string;
+  startHour: number;
+  endHour: number;
+}
+
+interface ScheduleRow {
+  campaign: { name: string };
+  campaign_criterion?: {
+    ad_schedule?: { day_of_week?: string | number; start_hour?: number; end_hour?: number };
+  };
+}
+
+export async function getAdSchedules(customerId?: string): Promise<AdScheduleEntry[]> {
+  const gaql = `
+    SELECT
+      campaign.name,
+      campaign_criterion.ad_schedule.day_of_week,
+      campaign_criterion.ad_schedule.start_hour,
+      campaign_criterion.ad_schedule.end_hour
+    FROM campaign_criterion
+    WHERE campaign_criterion.type = 'AD_SCHEDULE'
+    LIMIT 50
+  `;
+  const rows = await executeGaql<ScheduleRow>(gaql, customerId);
+  return rows.map((r) => {
+    const dow = r.campaign_criterion?.ad_schedule?.day_of_week;
+    const day = typeof dow === "number" ? (DAY_NAMES[dow] ?? String(dow)) : String(dow ?? "");
+    return {
+      campaign: r.campaign.name,
+      day,
+      startHour: Number(r.campaign_criterion?.ad_schedule?.start_hour ?? 0),
+      endHour: Number(r.campaign_criterion?.ad_schedule?.end_hour ?? 24),
+    };
+  });
+}
+
+export interface ChangeEntry {
+  dateTime: string;
+  resourceType: string;
+  user: string;
+}
+
+interface ChangeRow {
+  change_event: {
+    change_date_time?: string;
+    change_resource_type?: string | number;
+    user_email?: string;
+  };
+}
+
+// ChangeEventResourceType enum → readable names.
+const CHANGE_RESOURCE: Record<number, string> = {
+  2: "Reklama",
+  3: "Reklamná skupina",
+  4: "Kľúčové slovo / kritérium",
+  5: "Kampaň",
+  6: "Rozpočet kampane",
+  7: "Bid modifier",
+  8: "Cielenie kampane",
+  13: "Reklama v skupine",
+  14: "Asset",
+  16: "Asset kampane",
+};
+
+function changeResourceName(v: string | number | undefined): string {
+  if (typeof v === "number") return CHANGE_RESOURCE[v] ?? `typ ${v}`;
+  const s = String(v ?? "").toUpperCase();
+  return s ? s.replace(/_/g, " ").toLowerCase() : "zmena";
+}
+
+export async function getChangeHistory(customerId?: string): Promise<ChangeEntry[]> {
+  // change_event requires a bounded date range, an ORDER BY and a LIMIT.
+  const gaql = `
+    SELECT
+      change_event.change_date_time,
+      change_event.change_resource_type,
+      change_event.user_email
+    FROM change_event
+    WHERE change_event.change_date_time DURING LAST_14_DAYS
+    ORDER BY change_event.change_date_time DESC
+    LIMIT 20
+  `;
+  const rows = await executeGaql<ChangeRow>(gaql, customerId);
+  return rows.map((r) => ({
+    dateTime: r.change_event.change_date_time ?? "",
+    resourceType: changeResourceName(r.change_event.change_resource_type),
+    user: r.change_event.user_email ?? "",
+  }));
+}

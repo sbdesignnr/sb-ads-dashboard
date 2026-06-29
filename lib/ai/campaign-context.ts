@@ -3,6 +3,8 @@ import {
   getAdsMetrics,
   getGeoTargets,
   getConversionActions,
+  getAdSchedules,
+  getChangeHistory,
 } from "@/lib/google-ads/account-insights";
 import { computeTotals } from "@/lib/utils/metrics";
 import { statusLabel, typeLabel } from "@/lib/utils/formatters";
@@ -68,11 +70,13 @@ export async function buildLiveCampaignContext(): Promise<LiveContext> {
   parts.push(`KAMPANE:\n${campaignLines(campaigns)}`);
 
   if (isLive) {
-    const [kw, ads, geo, conv] = await Promise.allSettled([
+    const [kw, ads, geo, conv, sched, changes] = await Promise.allSettled([
       getKeywordMetrics(),
       getAdsMetrics(),
       getGeoTargets(),
       getConversionActions(),
+      getAdSchedules(),
+      getChangeHistory(),
     ]);
 
     const keywords = kw.status === "fulfilled" ? kw.value : [];
@@ -123,6 +127,39 @@ export async function buildLiveCampaignContext(): Promise<LiveContext> {
         convList.length
           ? convList.slice(0, 20).map((c) => `- ${c.name} | status: ${c.status}`).join("\n")
           : "(žiadne konverzné akcie / tracking nenastavený)"
+      }`,
+    );
+
+    const schedList = sched.status === "fulfilled" ? sched.value : [];
+    parts.push(
+      `\nAD SCHEDULE (časový plán reklám):\n${
+        schedList.length
+          ? schedList
+              .slice(0, 20)
+              .map((s) => `- "${s.campaign}": ${s.day} ${s.startHour}:00–${s.endHour}:00`)
+              .join("\n")
+          : "(žiadny vlastný plán — reklamy bežia nepretržite 24/7)"
+      }`,
+    );
+
+    const changeList = changes.status === "fulfilled" ? changes.value : [];
+    const earliestChange = changeList.length ? changeList[changeList.length - 1].dateTime : "";
+    parts.push(
+      `\nAKTIVITA KAMPANE:\nPresný dátum spustenia Google Ads API pri aktuálnom prístupe nevracia (pole campaign.start_date nie je dostupné).${
+        earliestChange ? ` Najstaršia zaznamenaná zmena v okne 14 dní: ${earliestChange}.` : ""
+      }`,
+    );
+    parts.push(
+      `\nHISTÓRIA ZMIEN (posledných 14 dní):\n${
+        changeList.length
+          ? changeList
+              .slice(0, 15)
+              .map(
+                (c) =>
+                  `- ${c.dateTime}${c.user ? ` · ${c.user}` : ""}${c.resourceType ? ` · ${c.resourceType}` : ""}`,
+              )
+              .join("\n")
+          : "(žiadne nedávne zmeny)"
       }`,
     );
   }
