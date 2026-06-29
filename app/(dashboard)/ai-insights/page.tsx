@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
+import toast from "react-hot-toast";
 import { motion } from "framer-motion";
 import {
   Zap,
@@ -106,6 +107,25 @@ export default function AIInsightsPage() {
     setActiveTab("chat");
     chatRef.current?.ask(buildImplementPrompt(insight));
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleTrack = async (insight: AIInsight) => {
+    try {
+      const res = await fetch("/api/reminders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ insight }),
+      });
+      if (!res.ok) throw new Error();
+      const j = await res.json();
+      toast.success(
+        j.deduped
+          ? "Toto odporúčanie už sledujeme"
+          : `Pridané do sledovania — pripomenieme o ${insight.checkResultsByDays ?? 14} dní`,
+      );
+    } catch {
+      toast.error("Nepodarilo sa uložiť pripomienku");
+    }
   };
 
   const isLoading = loading || !data;
@@ -309,7 +329,13 @@ export default function AIInsightsPage() {
         ) : (
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {insights.map((insight, i) => (
-              <InsightCard key={insight.id} insight={insight} index={i} onImplement={handleImplement} />
+              <InsightCard
+                key={insight.id}
+                insight={insight}
+                index={i}
+                onImplement={handleImplement}
+                onTrack={handleTrack}
+              />
             ))}
           </div>
         )}

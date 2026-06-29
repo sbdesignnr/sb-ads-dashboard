@@ -60,6 +60,24 @@ model AiChatHistory {
   @@map("ai_chat_history")
 }
 
+model CampaignReminder {
+  id                 String   @id @default(cuid())
+  recommendationText String   @map("recommendation_text")
+  insightTitle       String?  @map("insight_title")
+  priority           String?
+  campaignId         String?  @map("campaign_id")
+  campaignName       String?  @map("campaign_name")
+  implementBy        DateTime @map("implement_by")
+  checkResultsBy     DateTime @map("check_results_by")
+  status             String   @default("pending") // pending | checked | dismissed
+  baselineMetrics    Json?    @map("baseline_metrics")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@index([status, checkResultsBy])
+  @@map("campaign_reminders")
+}
+
 model KeywordCache {
   id          String   @id @default(cuid())
   keyword     String   @unique

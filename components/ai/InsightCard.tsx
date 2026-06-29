@@ -11,6 +11,9 @@ import {
   TriangleAlert,
   ArrowRight,
   Wand2,
+  Clock,
+  CalendarClock,
+  BellPlus,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PlatformBadge } from "@/components/shared/PlatformBadge";
@@ -50,6 +53,7 @@ interface InsightCardProps {
   defaultExpanded?: boolean;
   showCampaignLink?: boolean;
   onImplement?: (insight: AIInsight) => void;
+  onTrack?: (insight: AIInsight) => void;
 }
 
 export function InsightCard({
@@ -58,6 +62,7 @@ export function InsightCard({
   defaultExpanded = false,
   showCampaignLink = true,
   onImplement,
+  onTrack,
 }: InsightCardProps) {
   const [open, setOpen] = useState(defaultExpanded);
   const p = PRIORITY[insight.priority];
@@ -125,6 +130,23 @@ export function InsightCard({
             <p className="text-sm font-medium text-foreground">{insight.expectedImpact}</p>
           </div>
 
+          {(insight.implementByDays != null || insight.checkResultsByDays != null) && (
+            <div className="flex flex-wrap gap-2 text-xs">
+              {insight.implementByDays != null && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-2 py-1 text-muted">
+                  <Clock className="h-3 w-3" />
+                  Implementovať do {insight.implementByDays} dní
+                </span>
+              )}
+              {insight.checkResultsByDays != null && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-2 py-1 text-muted">
+                  <CalendarClock className="h-3 w-3" />
+                  Skontrolovať za {insight.checkResultsByDays} dní
+                </span>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-2">
             {onImplement && (
               <button
@@ -134,6 +156,15 @@ export function InsightCard({
                 <Wand2 className="h-4 w-4" />
                 Ako implementovať
                 <ArrowRight className="h-4 w-4" />
+              </button>
+            )}
+            {onTrack && (
+              <button
+                onClick={() => onTrack(insight)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface-2 cursor-pointer"
+              >
+                <BellPlus className="h-4 w-4" />
+                Sledovať výsledky
               </button>
             )}
             {showCampaignLink && insight.campaignId && (
