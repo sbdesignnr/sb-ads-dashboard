@@ -81,6 +81,47 @@ model BlogPost {
   @@map("blog_posts")
 }
 
+model VideoCategory {
+  id        String           @id @default(cuid())
+  name      String
+  color     String           @default("#3b82f6")
+  order     Int              @default(0)
+  createdAt DateTime         @default(now()) @map("created_at")
+  channels  YoutubeChannel[]
+
+  @@map("video_categories")
+}
+
+model YoutubeChannel {
+  id               String         @id @default(cuid())
+  channelId        String         @unique @map("channel_id")
+  channelName      String         @map("channel_name")
+  channelThumbnail String?        @map("channel_thumbnail")
+  categoryId       String?        @map("category_id")
+  category         VideoCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  addedAt          DateTime       @default(now()) @map("added_at")
+  videos           YoutubeVideo[]
+
+  @@map("youtube_channels")
+}
+
+model YoutubeVideo {
+  id          String         @id @default(cuid())
+  videoId     String         @unique @map("video_id")
+  channelId   String         @map("channel_id")
+  channel     YoutubeChannel @relation(fields: [channelId], references: [channelId], onDelete: Cascade)
+  title       String
+  thumbnail   String?
+  publishedAt DateTime       @map("published_at")
+  duration    String?
+  watched     Boolean        @default(false)
+  saved       Boolean        @default(false)
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  @@index([publishedAt])
+  @@map("youtube_videos")
+}
+
 model CampaignReminder {
   id                 String   @id @default(cuid())
   recommendationText String   @map("recommendation_text")
