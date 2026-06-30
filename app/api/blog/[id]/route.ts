@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/blog/slug";
-import { computeSeoScore } from "@/lib/blog/seo";
+import { analyzeSeo } from "@/lib/blog/analyze";
 import { ensureUniqueSlug, serialize } from "@/lib/blog/store";
 
 export const runtime = "nodejs";
@@ -58,7 +58,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (status === "published" && !publishedAt) publishedAt = new Date();
   }
 
-  const seoScore = computeSeoScore({ title, content, metaTitle, metaDescription, targetKeyword });
+  const seoScore = analyzeSeo({ title, content, metaTitle, metaDescription, targetKeyword }).score;
 
   const post = await prisma.blogPost.update({
     where: { id },

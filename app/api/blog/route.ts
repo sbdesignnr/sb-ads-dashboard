@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/blog/slug";
-import { computeSeoScore } from "@/lib/blog/seo";
+import { analyzeSeo } from "@/lib/blog/analyze";
 import { ensureUniqueSlug, serialize } from "@/lib/blog/store";
 
 export const runtime = "nodejs";
@@ -51,13 +51,13 @@ export async function POST(req: NextRequest) {
       metaTitle: body.metaTitle ?? null,
       metaDescription: body.metaDescription ?? null,
       status: "draft",
-      seoScore: computeSeoScore({
+      seoScore: analyzeSeo({
         title,
         content,
         targetKeyword: body.targetKeyword,
         metaTitle: body.metaTitle,
         metaDescription: body.metaDescription,
-      }),
+      }).score,
     },
   });
 

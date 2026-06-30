@@ -4,13 +4,28 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { ArrowLeft, Save, Send, Trash2, Eye, Pencil, Loader2, Globe, Undo2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Save,
+  Send,
+  Trash2,
+  Eye,
+  Pencil,
+  Loader2,
+  Globe,
+  Undo2,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  Link2,
+  Plus,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Markdown } from "@/components/ai/Markdown";
-import { computeSeoScore, seoColor, wordCount } from "@/lib/blog/seo";
+import { analyzeSeo, type CheckStatus, type LinkSuggestion } from "@/lib/blog/analyze";
 import { cn } from "@/lib/utils";
 import type { BlogPostDTO } from "@/lib/blog/types";
 
@@ -20,7 +35,22 @@ const SCORE_BG: Record<"success" | "warning" | "danger", string> = {
   danger: "bg-danger/15 text-danger",
 };
 
-function LabeledField({ label, children }: { label: string; children: React.ReactNode }) {
+const STATUS_ICON: Record<CheckStatus, { Icon: typeof CheckCircle2; cls: string }> = {
+  ok: { Icon: CheckCircle2, cls: "text-success" },
+  warn: { Icon: AlertTriangle, cls: "text-warning" },
+  error: { Icon: XCircle, cls: "text-danger" },
+};
+
+function metaHint(len: number, lo: number, hi: number): { t: string; c: string } | null {
+  if (len === 0) return null;
+  if (len < lo) return { t: "krátke", c: "text-warning" };
+  if (len > hi) return { t: "dlhé", c: "text-danger" };
+  return { t: "OK", c: "text-success" };
+}
+
+const STATUS_ORDER: Record<CheckStatus, number> = { error: 0, warn: 1, ok: 2 };
+
+function LabeledField({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <label className="block">
       <span className="mb-1 block text-xs font-medium text-muted">{label}</span>
@@ -44,6 +74,7 @@ export function BlogEditor({ id }: { id: string }) {
   const [metaTitle, setMetaTitle] = useState("");
   const [metaDescription, setMetaDescription] = useState("");
   const [status, setStatus] = useState<"draft" | "published">("draft");
+  const [otherPosts, setOtherPosts] = useState<{ id: string; title: string; slug: string }[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -70,11 +101,30 @@ export function BlogEditor({ id }: { id: string }) {
     };
   }, [id]);
 
-  const seo = useMemo(
-    () => computeSeoScore({ title, content, metaTitle, metaDescription, targetKeyword }),
-    [title, content, metaTitle, metaDescription, targetKeyword],
+  useEffect(() => {
+    fetch("/api/blog")
+      .then((r) => r.json())
+      .then((j) => {
+        const list = (j.posts ?? []) as BlogPostDTO[];
+        setOtherPosts(
+          list
+            .filter((p) => p.id !== id && p.title.trim())
+            .map((p) => ({ id: p.id, title: p.title, slug: p.slug })),
+        );
+      })
+      .catch(() => {});
+  }, [id]);
+
+  const analysis = useMemo(
+    () =>
+      analyzeSeo({ title, content, metaTitle, metaDescription, targetKeyword, otherPosts }),
+    [title, content, metaTitle, metaDescription, targetKeyword, otherPosts],
   );
-  const words = useMemo(() => wordCount(content), [content]);
+  const seo = analysis.score;
+  const words = analysis.words;
+
+  const insertLink = (s: LinkSuggestion) =>
+    setContent((c) => `${c.replace(/\s+$/, "")}\n\n[${s.title}](/blog/${s.slug})\n`);
 
   const save = async (publish?: boolean) => {
     setSaving(true);
@@ -134,7 +184,13 @@ export function BlogEditor({ id }: { id: string }) {
     );
   }
 
-  const color = seoColor(seo);
+  const color = analysis.color;
+  const sortedChecks = [...analysis.checks].sort(
+    (a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status],
+  );
+  const issues = analysis.checks.filter((c) => c.status !== "ok").length;
+  const mtH = metaHint(metaTitle.length, 50, 60);
+  const mdH = metaHint(metaDescription.length, 150, 160);
 
   return (
     <div className="space-y-5">
@@ -227,21 +283,64 @@ export function BlogEditor({ id }: { id: string }) {
             <CardHeader>
               <CardTitle>SEO skóre</CardTitle>
             </CardHeader>
-            <CardContent className="flex items-center gap-3">
-              <div
-                className={cn(
-                  "flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-bold tabular-nums",
-                  SCORE_BG[color],
-                )}
-              >
-                {seo}
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div
+                  className={cn(
+                    "flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-bold tabular-nums",
+                    SCORE_BG[color],
+                  )}
+                >
+                  {seo}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    {seo >= 80 ? "Výborné" : seo >= 50 ? "Dá sa zlepšiť" : "Slabé"}
+                  </p>
+                  <p className="text-xs text-muted">
+                    {issues === 0 ? "Všetko v poriadku 🎉" : `${issues} vec${issues === 1 ? "" : "í"} na zlepšenie`}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm font-medium text-foreground">
-                  {seo >= 80 ? "Výborné" : seo >= 50 ? "Dá sa zlepšiť" : "Slabé"}
-                </p>
-                <p className="text-xs text-muted">Aktualizuje sa počas písania</p>
-              </div>
+
+              {issues > 0 && (
+                <p className="text-xs font-medium uppercase tracking-wide text-muted">Čo opraviť</p>
+              )}
+              <ul className="space-y-2">
+                {sortedChecks.map((c) => {
+                  const { Icon, cls } = STATUS_ICON[c.status];
+                  return (
+                    <li key={c.id} className="flex items-start gap-2">
+                      <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", cls)} />
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-foreground">{c.label}</p>
+                        <p className="text-xs text-muted">{c.message}</p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              {analysis.internalLinkSuggestions.length > 0 && (
+                <div className="border-t border-border pt-3">
+                  <p className="mb-2 flex items-center gap-1 text-xs font-medium text-foreground">
+                    <Link2 className="h-3.5 w-3.5" />
+                    Navrhované interné odkazy
+                  </p>
+                  <div className="space-y-1.5">
+                    {analysis.internalLinkSuggestions.map((s) => (
+                      <button
+                        key={s.slug}
+                        onClick={() => insertLink(s)}
+                        className="flex w-full items-center gap-1.5 rounded-md border border-border bg-surface-2/40 px-2 py-1.5 text-left text-xs text-muted transition-colors hover:border-primary/40 hover:text-foreground cursor-pointer"
+                      >
+                        <Plus className="h-3 w-3 shrink-0 text-primary" />
+                        <span className="truncate">{s.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -263,10 +362,30 @@ export function BlogEditor({ id }: { id: string }) {
                   placeholder="napr. tvorba web stránok"
                 />
               </LabeledField>
-              <LabeledField label={`Meta title (${metaTitle.length}/60)`}>
+              <LabeledField
+                label={
+                  <span className="flex items-center justify-between">
+                    Meta title
+                    <span className="font-normal">
+                      <span className="text-muted">{metaTitle.length}/60</span>
+                      {mtH && <span className={cn("ml-1", mtH.c)}>· {mtH.t}</span>}
+                    </span>
+                  </span>
+                }
+              >
                 <Input value={metaTitle} onChange={(e) => setMetaTitle(e.target.value)} />
               </LabeledField>
-              <LabeledField label={`Meta description (${metaDescription.length}/160)`}>
+              <LabeledField
+                label={
+                  <span className="flex items-center justify-between">
+                    Meta description
+                    <span className="font-normal">
+                      <span className="text-muted">{metaDescription.length}/160</span>
+                      {mdH && <span className={cn("ml-1", mdH.c)}>· {mdH.t}</span>}
+                    </span>
+                  </span>
+                }
+              >
                 <textarea
                   value={metaDescription}
                   onChange={(e) => setMetaDescription(e.target.value)}
