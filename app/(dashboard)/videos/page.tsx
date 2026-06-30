@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Youtube, Settings } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { SyncButton } from "@/components/videos/SyncButton";
 
 export default function VideosPage() {
   return (
@@ -10,13 +11,16 @@ export default function VideosPage() {
           <h1 className="text-xl font-semibold text-foreground">Videá</h1>
           <p className="text-sm text-muted">Kurátorovaný YouTube feed z vybraných kanálov.</p>
         </div>
-        <Link
-          href="/videos/settings"
-          className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/40"
-        >
-          <Settings className="h-4 w-4" />
-          Nastavenia
-        </Link>
+        <div className="flex items-center gap-2">
+          <SyncButton />
+          <Link
+            href="/videos/settings"
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/40"
+          >
+            <Settings className="h-4 w-4" />
+            Nastavenia
+          </Link>
+        </div>
       </div>
 
       <Card>

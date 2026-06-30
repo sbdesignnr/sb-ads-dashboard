@@ -91,3 +91,89 @@ export async function resolveChannel(input: string): Promise<ResolvedChannel | n
   }
   return searchChannel(value);
 }
+
+// ── Video sync helpers ───────────────────────────────────────────────────────
+
+export interface PlaylistVideo {
+  videoId: string;
+  title: string;
+  thumbnail: string | null;
+  publishedAt: string;
+}
+
+/** Maps each channelId → its "uploads" playlist id (batched, 50 ids per call). */
+export async function getUploadsPlaylists(channelIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  for (let i = 0; i < channelIds.length; i += 50) {
+    const chunk = channelIds.slice(i, i + 50);
+    const res = await fetch(`${API}/channels?part=contentDetails&id=${chunk.join(",")}&key=${key()}`);
+    if (!res.ok) continue;
+    const data = (await res.json()) as {
+      items?: { id?: string; contentDetails?: { relatedPlaylists?: { uploads?: string } } }[];
+    };
+    for (const item of data.items ?? []) {
+      const uploads = item.contentDetails?.relatedPlaylists?.uploads;
+      if (item.id && uploads) map.set(item.id, uploads);
+    }
+  }
+  return map;
+}
+
+interface PlaylistItem {
+  snippet?: {
+    title?: string;
+    publishedAt?: string;
+    thumbnails?: Record<string, { url?: string }>;
+    resourceId?: { videoId?: string };
+  };
+  contentDetails?: { videoId?: string; videoPublishedAt?: string };
+}
+
+/** Newest uploads of a channel from its uploads playlist (cheap on quota). */
+export async function getRecentUploads(playlistId: string, max = 10): Promise<PlaylistVideo[]> {
+  const res = await fetch(
+    `${API}/playlistItems?part=snippet,contentDetails&maxResults=${max}&playlistId=${playlistId}&key=${key()}`,
+  );
+  if (!res.ok) return [];
+  const data = (await res.json()) as { items?: PlaylistItem[] };
+  return (data.items ?? [])
+    .map((it) => {
+      const sn = it.snippet ?? {};
+      const t = sn.thumbnails ?? {};
+      return {
+        videoId: it.contentDetails?.videoId ?? sn.resourceId?.videoId ?? "",
+        title: sn.title ?? "",
+        thumbnail: t.medium?.url ?? t.high?.url ?? t.default?.url ?? null,
+        publishedAt: it.contentDetails?.videoPublishedAt ?? sn.publishedAt ?? new Date().toISOString(),
+      };
+    })
+    .filter((v) => v.videoId);
+}
+
+/** ISO 8601 duration (PT1H2M3S) → readable "1:02:03" / "12:34". */
+export function parseDuration(iso: string): string {
+  const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!m) return "";
+  const h = Number(m[1] || 0);
+  const min = Number(m[2] || 0);
+  const s = Number(m[3] || 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(min)}:${pad(s)}` : `${min}:${pad(s)}`;
+}
+
+/** Maps each videoId → readable duration (batched, 50 ids per call). */
+export async function getDurations(videoIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  for (let i = 0; i < videoIds.length; i += 50) {
+    const chunk = videoIds.slice(i, i + 50);
+    const res = await fetch(`${API}/videos?part=contentDetails&id=${chunk.join(",")}&key=${key()}`);
+    if (!res.ok) continue;
+    const data = (await res.json()) as {
+      items?: { id?: string; contentDetails?: { duration?: string } }[];
+    };
+    for (const item of data.items ?? []) {
+      if (item.id) map.set(item.id, parseDuration(item.contentDetails?.duration ?? ""));
+    }
+  }
+  return map;
+}
