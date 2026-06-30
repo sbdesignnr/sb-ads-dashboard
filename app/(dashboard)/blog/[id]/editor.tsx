@@ -21,15 +21,20 @@ import {
   Plus,
   Sparkles,
   Wand2,
+  BarChart3,
+  Clock,
+  LogOut,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Markdown } from "@/components/ai/Markdown";
+import { TrafficChart } from "@/components/blog/TrafficChart";
 import { analyzeSeo, type CheckStatus, type LinkSuggestion } from "@/lib/blog/analyze";
 import { cn } from "@/lib/utils";
 import type { BlogPostDTO } from "@/lib/blog/types";
+import type { ArticlePerformance } from "@/lib/blog/ga4";
 
 const SCORE_BG: Record<"success" | "warning" | "danger", string> = {
   success: "bg-success/15 text-success",
@@ -66,6 +71,30 @@ interface MetaSug {
   descriptions: string[];
 }
 
+function fmtDuration(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+function PerfStat({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Eye;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-surface-2/40 p-3 text-center">
+      <Icon className="mx-auto mb-1 h-4 w-4 text-muted" />
+      <p className="text-base font-semibold tabular-nums text-foreground">{value}</p>
+      <p className="text-[11px] text-muted">{label}</p>
+    </div>
+  );
+}
+
 function LabeledField({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <label className="block">
@@ -95,6 +124,8 @@ export function BlogEditor({ id }: { id: string }) {
   const [metaSug, setMetaSug] = useState<MetaSug | null>(null);
   const [rewriting, setRewriting] = useState(false);
   const [instruction, setInstruction] = useState("");
+  const [perf, setPerf] = useState<ArticlePerformance | null>(null);
+  const [perfLoading, setPerfLoading] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -135,6 +166,27 @@ export function BlogEditor({ id }: { id: string }) {
       })
       .catch(() => {});
   }, [id]);
+
+  useEffect(() => {
+    if (status !== "published") {
+      setPerf(null);
+      return;
+    }
+    let active = true;
+    setPerfLoading(true);
+    fetch(`/api/blog/${id}/metrics`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (active && j?.metrics) setPerf(j as ArticlePerformance);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setPerfLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id, status]);
 
   const analysis = useMemo(
     () =>
@@ -548,6 +600,47 @@ export function BlogEditor({ id }: { id: string }) {
           </Card>
         </div>
       </div>
+
+      {status === "published" && (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <BarChart3 className="h-4 w-4" />
+              </div>
+              <div>
+                <CardTitle>Výkon článku</CardTitle>
+                <p className="text-sm text-muted">Organická návštevnosť za 30 dní</p>
+              </div>
+            </div>
+            {perf &&
+              (perf.source === "ga4" ? (
+                <Badge variant="success">Naživo z GA4</Badge>
+              ) : (
+                <Badge variant="default">Simulované dáta</Badge>
+              ))}
+          </CardHeader>
+          <CardContent>
+            {perfLoading && !perf ? (
+              <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                Načítavam metriky…
+              </div>
+            ) : perf ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <PerfStat icon={Eye} label="Zobrazenia" value={perf.metrics.views.toLocaleString("sk-SK")} />
+                  <PerfStat icon={Clock} label="Priem. čas" value={fmtDuration(perf.metrics.avgTimeSec)} />
+                  <PerfStat icon={LogOut} label="Bounce rate" value={`${perf.metrics.bounceRate}%`} />
+                </div>
+                <TrafficChart data={perf.series} />
+              </div>
+            ) : (
+              <p className="py-6 text-center text-sm text-muted">Žiadne dáta o návštevnosti.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

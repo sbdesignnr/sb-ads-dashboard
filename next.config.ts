@@ -47,7 +47,7 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // google-ads-api is a Node-native package (gRPC/protobuf) — keep it external
   // so it is required at runtime instead of bundled.
-  serverExternalPackages: ["google-ads-api", "cheerio"],
+  serverExternalPackages: ["google-ads-api", "cheerio", "@google-analytics/data"],
   eslint: {
     // Lint is run separately; do not block production builds.
     ignoreDuringBuilds: true,
