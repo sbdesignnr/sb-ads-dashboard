@@ -26,6 +26,7 @@ import { CompetitorAvatar, ThreatBadge, PositioningBadge, THREAT_META } from "./
 import { formatDate, formatRelativeTime } from "@/lib/utils/formatters";
 import { cn } from "@/lib/utils";
 import { useCachedResource } from "@/lib/client-cache";
+import { ContentGaps } from "./ContentGaps";
 import type { CompetitorListItem } from "@/lib/competitors/queries";
 import type { ThreatLevel, WeeklyReport } from "@/lib/competitors/types";
 
@@ -141,6 +142,9 @@ export function CompetitorsView() {
           sub="tento týždeň"
         />
       </div>
+
+      {/* Content gaps → blog */}
+      <ContentGaps />
 
       {/* Competitor cards */}
       <div>

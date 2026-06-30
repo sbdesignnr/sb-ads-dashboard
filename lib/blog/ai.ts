@@ -101,3 +101,39 @@ ${input.text.slice(0, 6000)}
     .replace(/\s*"""$/, "")
     .trim();
 }
+
+const DRAFT_SYSTEM = `Si SEO copywriter pre SB Design (tvorba webových stránok a online marketing, slovenský trh). Napíš ZAČIATOČNÝ koncept článku v Markdowne, ŠPECIFICKÝ pre zadanú tému (nie generický).
+
+Pravidlá:
+- Začni krátkym úvodom (2–3 vety), ktorý prirodzene obsahuje kľúčové slovo.
+- Použi H2 (##) podnadpisy podľa zadanej osnovy; pod každý napíš 1–2 úvodné odseky, ktoré autor rozšíri.
+- Nepíš H1 (názov článku je samostatný), nepíš meta tagy.
+- Prirodzene zapracuj kľúčové slovo, žiadny keyword stuffing.
+- Vráť IBA Markdown obsah.`;
+
+export async function generateDraftFromGap(input: {
+  title: string;
+  targetKeyword?: string;
+  reason?: string;
+  outline?: string[];
+}): Promise<string> {
+  const client = new Anthropic();
+  const outline = (input.outline ?? []).filter(Boolean);
+  const msg = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 2500,
+    system: DRAFT_SYSTEM,
+    messages: [
+      {
+        role: "user",
+        content: `Téma článku: ${input.title}
+Cieľové kľúčové slovo: ${input.targetKeyword || "(neuvedené)"}
+${input.reason ? `Prečo je téma relevantná: ${input.reason}\n` : ""}${
+          outline.length ? `Navrhovaná osnova (H2):\n${outline.map((h) => `- ${h}`).join("\n")}\n` : ""
+        }
+Napíš koncept článku.`,
+      },
+    ],
+  });
+  return textOf(msg).trim();
+}
