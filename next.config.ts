@@ -32,7 +32,8 @@ const securityHeaders = [
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob:",
+      // Allow external cover images (Supabase Storage + admin-pasted URLs).
+      "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
       "connect-src 'self'",
       "frame-ancestors 'none'",
