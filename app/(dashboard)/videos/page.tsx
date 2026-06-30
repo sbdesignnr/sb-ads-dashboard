@@ -50,6 +50,15 @@ export default function VideosPage() {
     loadVideos();
   }, [loadVideos]);
 
+  // Lock background scroll while the fullscreen player is open (mobile).
+  useEffect(() => {
+    if (!playing) return;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [playing]);
+
   const openVideo = (v: VideoDTO) => {
     setPlaying(v);
     if (!v.watched) {
@@ -223,24 +232,27 @@ export default function VideosPage() {
         </div>
       )}
 
-      {/* Player modal */}
+      {/* Player modal — fullscreen on mobile, centered dialog on desktop */}
       {playing && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex flex-col bg-black/95 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4"
           onClick={() => setPlaying(null)}
         >
-          <div className="w-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-2 flex items-center gap-3">
+          <div
+            className="flex h-full w-full flex-col justify-center sm:h-auto sm:max-w-4xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 px-3 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:mb-2 sm:p-0">
               <p className="min-w-0 flex-1 truncate text-sm font-medium text-white">{playing.title}</p>
               <button
                 onClick={() => setPlaying(null)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 cursor-pointer"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 cursor-pointer"
                 aria-label="Zavrieť"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
+            <div className="relative aspect-video w-full overflow-hidden bg-black sm:rounded-xl">
               <iframe
                 src={`https://www.youtube-nocookie.com/embed/${playing.videoId}?autoplay=1&rel=0`}
                 title={playing.title}
