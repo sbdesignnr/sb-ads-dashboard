@@ -6,6 +6,7 @@ import {
   Sparkles,
   Crosshair,
   FileText,
+  Newspaper,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -24,6 +25,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/ai-insights", label: "AI Insights", icon: Sparkles },
   { href: "/competitors", label: "Konkurencia", icon: Crosshair },
   { href: "/reports", label: "Reporty", icon: FileText },
+  { href: "/blog", label: "Blog", icon: Newspaper },
   { href: "/settings", label: "Nastavenia", icon: Settings },
 ];
 

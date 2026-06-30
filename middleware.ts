@@ -7,6 +7,7 @@ const { auth } = NextAuth(authConfig);
 export default auth;
 
 export const config = {
-  // Protect everything except Next.js internals, the auth API, and static files.
-  matcher: ["/((?!api/auth|_next/static|_next/image|favicon.ico|.*\\..*).*)"],
+  // Protect everything except Next.js internals, the auth API, the public
+  // (read-only) API consumed by sbdesign.sk, and static files.
+  matcher: ["/((?!api/auth|api/public|_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 };

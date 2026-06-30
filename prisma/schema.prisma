@@ -60,6 +60,25 @@ model AiChatHistory {
   @@map("ai_chat_history")
 }
 
+model BlogPost {
+  id              String    @id @default(cuid())
+  title           String    @default("")
+  slug            String    @unique
+  content         String    @default("") // Markdown
+  metaTitle       String?   @map("meta_title")
+  metaDescription String?   @map("meta_description")
+  status          String    @default("draft") // draft | published
+  category        String?
+  targetKeyword   String?   @map("target_keyword")
+  seoScore        Int       @default(0) @map("seo_score")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  publishedAt     DateTime? @map("published_at")
+
+  @@index([status, publishedAt])
+  @@map("blog_posts")
+}
+
 model CampaignReminder {
   id                 String   @id @default(cuid())
   recommendationText String   @map("recommendation_text")
