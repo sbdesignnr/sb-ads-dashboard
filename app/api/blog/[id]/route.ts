@@ -43,6 +43,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const category = body.category === undefined ? current.category : str(body.category, current.category);
   const targetKeyword =
     body.targetKeyword === undefined ? current.targetKeyword : str(body.targetKeyword, current.targetKeyword);
+  const imageUrl = body.imageUrl === undefined ? current.imageUrl : str(body.imageUrl, current.imageUrl);
+  const imageAlt = body.imageAlt === undefined ? current.imageAlt : str(body.imageAlt, current.imageAlt);
 
   // Slug: explicit override, else keep; regenerate from title only if slug becomes empty.
   let slug = current.slug;
@@ -58,11 +60,32 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (status === "published" && !publishedAt) publishedAt = new Date();
   }
 
-  const seoScore = analyzeSeo({ title, content, metaTitle, metaDescription, targetKeyword }).score;
+  const seoScore = analyzeSeo({
+    title,
+    content,
+    metaTitle,
+    metaDescription,
+    targetKeyword,
+    imageUrl,
+    imageAlt,
+  }).score;
 
   const post = await prisma.blogPost.update({
     where: { id },
-    data: { title, slug, content, metaTitle, metaDescription, category, targetKeyword, status, publishedAt, seoScore },
+    data: {
+      title,
+      slug,
+      content,
+      metaTitle,
+      metaDescription,
+      imageUrl,
+      imageAlt,
+      category,
+      targetKeyword,
+      status,
+      publishedAt,
+      seoScore,
+    },
   });
 
   return NextResponse.json({ post: serialize(post) });

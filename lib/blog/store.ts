@@ -10,6 +10,8 @@ export function serialize(p: BlogPost): BlogPostDTO {
     content: p.content,
     metaTitle: p.metaTitle,
     metaDescription: p.metaDescription,
+    imageUrl: p.imageUrl,
+    imageAlt: p.imageAlt,
     status: (p.status === "published" ? "published" : "draft") as BlogStatus,
     category: p.category,
     targetKeyword: p.targetKeyword,

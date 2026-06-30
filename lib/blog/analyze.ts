@@ -29,6 +29,8 @@ export interface AnalyzeInput {
   metaTitle?: string | null;
   metaDescription?: string | null;
   targetKeyword?: string | null;
+  imageUrl?: string | null;
+  imageAlt?: string | null;
   otherPosts?: { id?: string; title: string; slug: string }[];
 }
 
@@ -186,6 +188,13 @@ export function analyzeSeo(input: AnalyzeInput): SeoAnalysis {
   if (images.length === 0) add("img-alt", "Obrázky a alt texty", "warn", "Žiadne obrázky — pridaj aspoň jeden s alt textom.", 5);
   else if (missingAlt > 0) add("img-alt", "Obrázky a alt texty", "error", `${missingAlt} z ${images.length} obrázkov nemá alt text.`, 5);
   else add("img-alt", "Obrázky a alt texty", "ok", `${images.length} obrázkov, všetky majú alt text.`, 5);
+
+  // 12. Cover image alt text
+  const coverUrl = (input.imageUrl ?? "").trim();
+  const coverAlt = (input.imageAlt ?? "").trim();
+  if (coverUrl && coverAlt) add("cover-alt", "Cover image má alt text", "ok", "Cover obrázok má vyplnený alt text.", 5);
+  else if (coverUrl) add("cover-alt", "Cover image má alt text", "error", "Cover obrázok nemá alt text — doplň ho pre SEO a prístupnosť.", 5);
+  else add("cover-alt", "Cover image má alt text", "warn", "Pridaj cover obrázok s alt textom.", 5);
 
   // Score
   const factor = (s: CheckStatus) => (s === "ok" ? 1 : s === "warn" ? 0.5 : 0);

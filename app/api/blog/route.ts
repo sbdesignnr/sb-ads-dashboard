@@ -30,6 +30,8 @@ export async function POST(req: NextRequest) {
     targetKeyword?: string;
     metaTitle?: string;
     metaDescription?: string;
+    imageUrl?: string;
+    imageAlt?: string;
   } = {};
   try {
     body = await req.json();
@@ -50,6 +52,8 @@ export async function POST(req: NextRequest) {
       targetKeyword: body.targetKeyword ?? null,
       metaTitle: body.metaTitle ?? null,
       metaDescription: body.metaDescription ?? null,
+      imageUrl: body.imageUrl ?? null,
+      imageAlt: body.imageAlt ?? null,
       status: "draft",
       seoScore: analyzeSeo({
         title,
@@ -57,6 +61,8 @@ export async function POST(req: NextRequest) {
         targetKeyword: body.targetKeyword,
         metaTitle: body.metaTitle,
         metaDescription: body.metaDescription,
+        imageUrl: body.imageUrl,
+        imageAlt: body.imageAlt,
       }).score,
     },
   });

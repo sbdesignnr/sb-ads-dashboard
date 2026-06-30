@@ -24,6 +24,8 @@ import {
   BarChart3,
   Clock,
   LogOut,
+  Image as ImageIcon,
+  X,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -126,7 +128,11 @@ export function BlogEditor({ id }: { id: string }) {
   const [instruction, setInstruction] = useState("");
   const [perf, setPerf] = useState<ArticlePerformance | null>(null);
   const [perfLoading, setPerfLoading] = useState(false);
+  const [imageUrl, setImageUrl] = useState("");
+  const [imageAlt, setImageAlt] = useState("");
+  const [uploading, setUploading] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -143,6 +149,8 @@ export function BlogEditor({ id }: { id: string }) {
         setTargetKeyword(p.targetKeyword ?? "");
         setMetaTitle(p.metaTitle ?? "");
         setMetaDescription(p.metaDescription ?? "");
+        setImageUrl(p.imageUrl ?? "");
+        setImageAlt(p.imageAlt ?? "");
         setStatus(p.status);
       })
       .finally(() => {
@@ -190,8 +198,8 @@ export function BlogEditor({ id }: { id: string }) {
 
   const analysis = useMemo(
     () =>
-      analyzeSeo({ title, content, metaTitle, metaDescription, targetKeyword, otherPosts }),
-    [title, content, metaTitle, metaDescription, targetKeyword, otherPosts],
+      analyzeSeo({ title, content, metaTitle, metaDescription, targetKeyword, imageUrl, imageAlt, otherPosts }),
+    [title, content, metaTitle, metaDescription, targetKeyword, imageUrl, imageAlt, otherPosts],
   );
   const seo = analysis.score;
   const words = analysis.words;
@@ -269,6 +277,8 @@ export function BlogEditor({ id }: { id: string }) {
           targetKeyword,
           metaTitle,
           metaDescription,
+          imageUrl,
+          imageAlt,
           ...(publish !== undefined ? { status: publish ? "published" : "draft" } : {}),
         }),
       });
@@ -292,6 +302,35 @@ export function BlogEditor({ id }: { id: string }) {
     if (!window.confirm("Naozaj vymazať tento článok?")) return;
     await fetch(`/api/blog/${id}`, { method: "DELETE" });
     router.push("/blog");
+  };
+
+  const uploadCover = async (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Vyber obrázok.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Obrázok je príliš veľký (max 5 MB).");
+      return;
+    }
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/blog/upload", { method: "POST", body: fd });
+      const j = await res.json();
+      if (res.ok && j.url) {
+        setImageUrl(j.url);
+        toast.success("Obrázok nahraný");
+      } else {
+        toast.error(j.error || "Upload zlyhal — vlož obrázok ako URL.");
+      }
+    } catch {
+      toast.error("Upload zlyhal — vlož obrázok ako URL.");
+    } finally {
+      setUploading(false);
+    }
   };
 
   if (loading) {
@@ -487,6 +526,72 @@ export function BlogEditor({ id }: { id: string }) {
                   </div>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Cover obrázok</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {imageUrl ? (
+                <div className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={imageUrl}
+                    alt={imageAlt || "Náhľad cover obrázka"}
+                    className="aspect-video w-full rounded-lg border border-border object-cover"
+                  />
+                  <button
+                    onClick={() => setImageUrl("")}
+                    className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white transition-colors hover:bg-danger cursor-pointer"
+                    aria-label="Odstrániť obrázok"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div
+                  onClick={() => coverInputRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    uploadCover(e.dataTransfer.files?.[0]);
+                  }}
+                  className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border p-6 text-center transition-colors hover:border-primary/40"
+                >
+                  {uploading ? (
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  ) : (
+                    <ImageIcon className="h-6 w-6 text-muted" />
+                  )}
+                  <p className="text-xs text-muted">
+                    Pretiahni obrázok sem alebo klikni pre nahranie
+                    <br />
+                    (JPG/PNG/WebP, max 5 MB)
+                  </p>
+                </div>
+              )}
+              <input
+                ref={coverInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+                className="hidden"
+                onChange={(e) => {
+                  uploadCover(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+              <LabeledField label="alebo URL obrázka">
+                <Input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://…" />
+              </LabeledField>
+              <LabeledField label="Alt text obrázku (popis pre SEO a prístupnosť)">
+                <Input
+                  value={imageAlt}
+                  onChange={(e) => setImageAlt(e.target.value)}
+                  placeholder="napr. Webdesignér pracujúci na firemnom webe"
+                />
+              </LabeledField>
             </CardContent>
           </Card>
 

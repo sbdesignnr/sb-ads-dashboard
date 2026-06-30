@@ -67,6 +67,8 @@ model BlogPost {
   content         String    @default("") // Markdown
   metaTitle       String?   @map("meta_title")
   metaDescription String?   @map("meta_description")
+  imageUrl        String?   @map("image_url")
+  imageAlt        String?   @map("image_alt")
   status          String    @default("draft") // draft | published
   category        String?
   targetKeyword   String?   @map("target_keyword")

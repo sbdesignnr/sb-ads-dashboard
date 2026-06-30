@@ -7,6 +7,8 @@ export interface BlogPostDTO {
   content: string;
   metaTitle: string | null;
   metaDescription: string | null;
+  imageUrl: string | null;
+  imageAlt: string | null;
   status: BlogStatus;
   category: string | null;
   targetKeyword: string | null;
