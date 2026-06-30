@@ -74,7 +74,7 @@ export function Header({ user }: HeaderProps) {
           </Select>
         </div>
 
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2 py-1.5 transition-colors hover:border-primary/40 focus:outline-none cursor-pointer">
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-primary to-secondary text-xs font-semibold text-white">
               {initials || "SB"}

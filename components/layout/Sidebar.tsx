@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -67,8 +68,15 @@ function NavLinks({
 }
 
 export function Sidebar() {
+  const pathname = usePathname();
   const { sidebarCollapsed, toggleSidebar, mobileSidebarOpen, setMobileSidebarOpen } =
     useUIStore();
+
+  // Always close the mobile drawer when the route changes so its overlay can
+  // never linger and block taps.
+  useEffect(() => {
+    setMobileSidebarOpen(false);
+  }, [pathname, setMobileSidebarOpen]);
 
   return (
     <>

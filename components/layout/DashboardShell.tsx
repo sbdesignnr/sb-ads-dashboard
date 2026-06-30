@@ -4,6 +4,7 @@ import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { BottomNav } from "./BottomNav";
 import { ReminderBanner } from "@/components/shared/ReminderBanner";
+import { PointerEventsUnlocker } from "@/components/shared/PointerEventsUnlocker";
 import { useUIStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +18,7 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
 
   return (
     <div className="min-h-screen bg-background">
+      <PointerEventsUnlocker />
       <Sidebar />
       <div
         className={cn(
