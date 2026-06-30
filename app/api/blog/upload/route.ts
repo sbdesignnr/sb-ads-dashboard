@@ -50,6 +50,9 @@ export async function POST(req: NextRequest) {
   const upload = await fetch(`${supaUrl}/storage/v1/object/${BUCKET}/${encodeURIComponent(path)}`, {
     method: "POST",
     headers: {
+      // The "apikey" header is required by the Supabase gateway — without it the
+      // newer sb_secret_* keys are treated as a JWT and fail ("Invalid Compact JWS").
+      apikey: supaKey,
       Authorization: `Bearer ${supaKey}`,
       "Content-Type": file.type,
       "x-upsert": "true",
