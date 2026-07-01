@@ -3,6 +3,10 @@
     {
       "path": "/api/videos/sync",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/leads/scan",
+      "schedule": "0 6 * * *"
     }
   ]
 }
