@@ -14,6 +14,8 @@ export interface WebsiteAnalysis {
   websiteTechnology: string | null;
   websiteAge: number | null; // years since footer copyright
   reasons: string[];
+  // Concrete business gaps we can turn into pain points / opportunities.
+  issues: string[];
 }
 
 const UA = "Mozilla/5.0 (compatible; SBDesignLeadBot/1.0; +https://sbdesign.sk)";
@@ -71,7 +73,7 @@ async function pageSpeed(url: string, strategy: "mobile" | "desktop"): Promise<n
   const q = new URLSearchParams({ url, strategy, category: "performance" });
   if (key) q.set("key", key);
   try {
-    const res = await fetch(`${PAGESPEED_API}?${q.toString()}`, { signal: AbortSignal.timeout(40000) });
+    const res = await fetch(`${PAGESPEED_API}?${q.toString()}`, { signal: AbortSignal.timeout(20000) });
     if (!res.ok) return null;
     const data = (await res.json()) as { lighthouseResult?: { categories?: { performance?: { score?: number } } } };
     const score = data.lighthouseResult?.categories?.performance?.score;
@@ -113,6 +115,41 @@ function copyrightYear(html: string): number | null {
     .map((m) => Number(m[1]))
     .filter((y) => y >= 1995 && y <= new Date().getFullYear() + 1);
   return years.length ? Math.max(...years) : null;
+}
+
+/**
+ * Concrete, business-relevant gaps we can turn into money-making opportunities.
+ * Each is phrased as an outcome the owner feels, not a technical detail.
+ * Only meaningful when the page HTML actually loaded.
+ */
+function detectBusinessGaps(html: string): string[] {
+  const lower = html.toLowerCase();
+  const gaps: string[] = [];
+
+  if (!/<meta[^>]+name=["']description["'][^>]+content=["'][^"']{10,}["']/i.test(html))
+    gaps.push("Chýba SEO popis stránky (meta description) – web sa horšie nájde v Google, uniká bezplatná návštevnosť");
+
+  if (!/<meta[^>]+property=["']og:(title|image)["']/i.test(html))
+    gaps.push("Chýba náhľad pri zdieľaní (Open Graph) – odkaz na Facebooku/Instagrame vyzerá neprofesionálne");
+
+  const hasTel = /href=["']tel:/i.test(html);
+  const hasMailto = /href=["']mailto:/i.test(html);
+  const hasForm = /<form[\s>]/i.test(html);
+  if (!hasForm && !hasMailto && !hasTel)
+    gaps.push("Nemá kontaktný formulár ani klikací telefón/e-mail – návštevník sa len ťažko ozve");
+  else if (!hasForm)
+    gaps.push("Chýba kontaktný/dopytový formulár – potenciálni klienti odchádzajú bez zanechania kontaktu");
+
+  if (!/(calendly|reservio|bookio|reservanto|noona|simplybook|bookla|rezerva[čc]|online\s+objedn|objedna[ťt]\s+sa\s+online|book\s+now)/i.test(lower))
+    gaps.push("Chýba online rezervácia/objednávka – klienti musia volať a časť z nich to vzdá (priamo stratené tržby)");
+
+  if (!/(gtag\(|google-analytics\.com|googletagmanager\.com|fbevents|connect\.facebook\.net|_paq|plausible|matomo)/i.test(lower))
+    gaps.push("Web nemeria návštevnosť (chýba Analytics/pixel) – firma nevie, čo funguje, a nedá sa efektívne inzerovať");
+
+  if (!/application\/ld\+json|schema\.org/i.test(lower))
+    gaps.push("Chýbajú štruktúrované dáta (schema.org) – Google nezobrazí hodnotenia, otváracie hodiny či adresu priamo vo výsledkoch");
+
+  return gaps;
 }
 
 export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
@@ -187,6 +224,11 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
 
   score = Math.min(100, score);
 
+  // The concrete findings the AI turns into pain points: scoring reasons plus
+  // the business gaps (only when the page actually loaded).
+  const issues = [...reasons];
+  if (site.reachable) issues.push(...detectBusinessGaps(site.html));
+
   return {
     websiteScore: score,
     qualified: score >= QUALIFY_AT,
@@ -194,6 +236,7 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
     pageSpeedDesktop: psDesktop,
     hasSsl: site.hasSsl,
     isMobileFriendly: hasViewport,
+    issues,
     websiteTechnology: platform.technology ?? (jqOld ? "jQuery <3" : null),
     websiteAge: cy ? Math.max(0, currentYear - cy) : null,
     reasons,

@@ -22,6 +22,10 @@ export interface LeadDTO {
   pageSpeedDesktop: number | null;
   hasSsl: boolean | null;
   isMobileFriendly: boolean | null;
+  websiteIssues: string[];
+  aiSummary: string | null;
+  aiPainPoint: string | null;
+  aiOpportunity: string | null;
   ownerName: string | null;
   ownerPosition: string | null;
   companyEmail: string | null;

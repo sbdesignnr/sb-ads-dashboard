@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { generateAnalysis, generateEmail } from "@/lib/leads/ai";
+import { briefFromLead, generateEmail } from "@/lib/leads/ai";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,8 +28,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const segmentName = segment?.name ?? "firma";
 
   try {
-    const text = type === "email" ? await generateEmail(lead, segmentName) : await generateAnalysis(lead, segmentName);
-    return NextResponse.json({ text });
+    if (type === "email") {
+      const text = await generateEmail(lead, segmentName);
+      return NextResponse.json({ text });
+    }
+    // Regenerate the opportunity brief and persist it on the lead.
+    const brief = await briefFromLead(lead, segmentName);
+    await prisma.lead.update({
+      where: { id },
+      data: {
+        aiSummary: brief.summary || null,
+        aiPainPoint: brief.painPoint || null,
+        aiOpportunity: brief.opportunity || null,
+      },
+    });
+    return NextResponse.json({ brief });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }

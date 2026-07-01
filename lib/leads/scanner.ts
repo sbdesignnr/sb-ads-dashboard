@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { searchBusinesses, placesConfigured, type PlaceBusiness } from "./google-places";
 import { analyzeWebsite } from "./website-analyzer";
 import { enrichCompany } from "./orsr";
+import { generateBrief } from "./ai";
 
 export interface ScanSummary {
   jobId: string;
@@ -37,7 +38,7 @@ async function mapPool<T>(items: T[], limit: number, fn: (item: T, index: number
  * `leads`. The scan job is updated progressively so the UI can poll it.
  */
 export async function scanSegment(segmentId: string, opts: { maxBusinesses?: number } = {}): Promise<ScanSummary> {
-  const maxBusinesses = opts.maxBusinesses ?? 20;
+  const maxBusinesses = opts.maxBusinesses ?? 12;
   const segment = await prisma.leadSegment.findUnique({ where: { id: segmentId } });
   if (!segment) return { jobId: "", foundTotal: 0, foundQualified: 0, error: "segment_not_found" };
 
@@ -84,6 +85,27 @@ export async function scanSegment(segmentId: string, opts: { maxBusinesses?: num
       try {
         const analysis = await analyzeWebsite(b.website);
         const orsr = await enrichCompany({ name: b.name }).catch(() => null);
+
+        // Turn the concrete findings into a pain point + opportunity (best-effort).
+        const brief = process.env.ANTHROPIC_API_KEY
+          ? await generateBrief({
+              companyName: b.name,
+              segmentName: segment.name,
+              websiteUrl: b.website,
+              companyCity: b.city ?? orsr?.city ?? null,
+              ownerName: orsr?.ownerName ?? null,
+              ownerPosition: orsr?.ownerPosition ?? null,
+              websiteScore: analysis.websiteScore,
+              websiteTechnology: analysis.websiteTechnology,
+              websiteAge: analysis.websiteAge,
+              pageSpeedMobile: analysis.pageSpeedMobile,
+              pageSpeedDesktop: analysis.pageSpeedDesktop,
+              hasSsl: analysis.hasSsl,
+              isMobileFriendly: analysis.isMobileFriendly,
+              issues: analysis.issues,
+            }).catch(() => null)
+          : null;
+
         const now = new Date();
         const scan = {
           websiteScore: analysis.websiteScore,
@@ -93,6 +115,15 @@ export async function scanSegment(segmentId: string, opts: { maxBusinesses?: num
           pageSpeedDesktop: analysis.pageSpeedDesktop,
           hasSsl: analysis.hasSsl,
           isMobileFriendly: analysis.isMobileFriendly,
+          websiteIssues: analysis.issues,
+          // Only overwrite AI fields when we actually produced a brief.
+          ...(brief
+            ? {
+                aiSummary: brief.summary || null,
+                aiPainPoint: brief.painPoint || null,
+                aiOpportunity: brief.opportunity || null,
+              }
+            : {}),
         };
 
         await prisma.lead.upsert({

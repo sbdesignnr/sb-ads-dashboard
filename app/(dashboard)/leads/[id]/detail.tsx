@@ -18,10 +18,12 @@ import {
   Check,
   Loader2,
   Save,
+  AlertTriangle,
+  TrendingDown,
+  Lightbulb,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Markdown } from "@/components/ai/Markdown";
 import { copyToClipboard } from "@/lib/export";
 import { cn } from "@/lib/utils";
 import { type LeadDTO, type LeadStatus, LEAD_STATUS_LABEL } from "@/lib/leads/types";
@@ -46,7 +48,8 @@ export function LeadDetail({ id }: { id: string }) {
   const [notes, setNotes] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
 
-  const [analysis, setAnalysis] = useState("");
+  const [brief, setBrief] = useState<{ summary: string; painPoint: string; opportunity: string } | null>(null);
+  const [issues, setIssues] = useState<string[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
   const [email, setEmail] = useState("");
   const [emailing, setEmailing] = useState(false);
@@ -60,6 +63,14 @@ export function LeadDetail({ id }: { id: string }) {
           setLead(j.lead);
           setSegmentName(j.segmentName ?? null);
           setNotes(j.lead.notes ?? "");
+          setIssues(j.lead.websiteIssues ?? []);
+          if (j.lead.aiSummary || j.lead.aiPainPoint || j.lead.aiOpportunity) {
+            setBrief({
+              summary: j.lead.aiSummary ?? "",
+              painPoint: j.lead.aiPainPoint ?? "",
+              opportunity: j.lead.aiOpportunity ?? "",
+            });
+          }
         }
       })
       .finally(() => setLoading(false));
@@ -100,9 +111,9 @@ export function LeadDetail({ id }: { id: string }) {
         body: JSON.stringify({ type }),
       });
       const j = await res.json();
-      if (res.ok && j.text) {
+      if (res.ok && (j.text || j.brief)) {
         if (type === "email") setEmail(j.text);
-        else setAnalysis(j.text);
+        else setBrief(j.brief);
       } else {
         toast.error(j.error || "Generovanie zlyhalo");
       }
@@ -219,20 +230,59 @@ export function LeadDetail({ id }: { id: string }) {
             </CardContent>
           </Card>
 
+          {issues.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Zistené nedostatky</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-1.5">
+                  {issues.map((it, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-foreground">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                      <span>{it}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader className="flex-row items-center justify-between space-y-0">
-              <CardTitle>AI analýza</CardTitle>
+              <CardTitle>Príležitosť (AI)</CardTitle>
               <Button variant="secondary" size="sm" onClick={() => runAi("analysis")} disabled={analyzing}>
                 {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {analysis ? "Znova" : "Analyzovať"}
+                {brief ? "Prepočítať" : "Analyzovať"}
               </Button>
             </CardHeader>
-            <CardContent>
-              {analysis ? (
-                <Markdown>{analysis}</Markdown>
+            <CardContent className="space-y-3">
+              {brief ? (
+                <>
+                  {brief.summary && <p className="text-sm leading-relaxed text-foreground">{brief.summary}</p>}
+                  {brief.painPoint && (
+                    <div className="rounded-lg border border-danger/25 bg-danger/5 p-3">
+                      <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-danger">
+                        <TrendingDown className="h-3.5 w-3.5" />
+                        Kde firma stráca
+                      </p>
+                      <p className="text-sm leading-relaxed text-foreground">{brief.painPoint}</p>
+                    </div>
+                  )}
+                  {brief.opportunity && (
+                    <div className="rounded-lg border border-primary/25 bg-primary/5 p-3">
+                      <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-primary">
+                        <Lightbulb className="h-3.5 w-3.5" />
+                        Čo vieme ponúknuť
+                      </p>
+                      <p className="text-sm leading-relaxed text-foreground">{brief.opportunity}</p>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="py-2 text-sm text-muted">
-                  Klikni na „Analyzovať" — AI vysvetlí prečo je web zastaralý a čo by sme mohli ponúknuť.
+                  Klikni na „Analyzovať" — AI z konkrétnych nedostatkov pripraví pain point a príležitosť, na ktorej
+                  firme reálne pomôžeme (a zarobíme).
                 </p>
               )}
             </CardContent>

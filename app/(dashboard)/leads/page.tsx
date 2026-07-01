@@ -248,6 +248,12 @@ export default function LeadsPage() {
                     </p>
                   </div>
 
+                  {l.aiPainPoint && (
+                    <p className="line-clamp-2 rounded-lg bg-surface-2/60 px-2.5 py-2 text-xs leading-relaxed text-muted">
+                      {l.aiPainPoint}
+                    </p>
+                  )}
+
                   <div className="mt-auto pt-1">
                     <Badge variant={STATUS_VARIANT[l.status]}>{LEAD_STATUS_LABEL[l.status]}</Badge>
                   </div>
