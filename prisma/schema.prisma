@@ -81,6 +81,66 @@ model BlogPost {
   @@map("blog_posts")
 }
 
+model LeadSegment {
+  id        String        @id @default(cuid())
+  name      String
+  color     String        @default("#3b82f6")
+  icon      String?
+  keywords  String[]      @default([])
+  createdAt DateTime      @default(now()) @map("created_at")
+  leads     Lead[]
+  scanJobs  LeadScanJob[]
+
+  @@map("lead_segments")
+}
+
+model Lead {
+  id                String       @id @default(cuid())
+  segmentId         String?      @map("segment_id")
+  segment           LeadSegment? @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  companyName       String       @map("company_name")
+  ico               String?
+  websiteUrl        String?      @unique @map("website_url")
+  websiteScore      Int?         @map("website_score")
+  websiteAge        Int?         @map("website_age")
+  websiteTechnology String?      @map("website_technology")
+  pageSpeedMobile   Int?         @map("page_speed_mobile")
+  pageSpeedDesktop  Int?         @map("page_speed_desktop")
+  hasSsl            Boolean?     @map("has_ssl")
+  isMobileFriendly  Boolean?     @map("is_mobile_friendly")
+  ownerName         String?      @map("owner_name")
+  ownerPosition     String?      @map("owner_position")
+  companyEmail      String?      @map("company_email")
+  companyPhone      String?      @map("company_phone")
+  companyAddress    String?      @map("company_address")
+  companyCity       String?      @map("company_city")
+  status            String       @default("new") // new | contacted | rejected | converted
+  notes             String?
+  source            String?
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+  lastScannedAt     DateTime?    @map("last_scanned_at")
+
+  @@index([segmentId, status])
+  @@map("leads")
+}
+
+model LeadScanJob {
+  id             String       @id @default(cuid())
+  segmentId      String?      @map("segment_id")
+  segment        LeadSegment? @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  status         String       @default("pending") // pending | running | completed | failed
+  foundTotal     Int          @default(0) @map("found_total")
+  foundQualified Int          @default(0) @map("found_qualified")
+  startedAt      DateTime?    @map("started_at")
+  completedAt    DateTime?    @map("completed_at")
+  errorMessage   String?      @map("error_message")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@index([segmentId, createdAt])
+  @@map("lead_scan_jobs")
+}
+
 model VideoCategory {
   id        String           @id @default(cuid())
   name      String

@@ -8,6 +8,7 @@ import {
   FileText,
   Newspaper,
   Youtube,
+  Target,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -28,6 +29,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/reports", label: "Reporty", icon: FileText },
   { href: "/blog", label: "Blog", icon: Newspaper },
   { href: "/videos", label: "Videá", icon: Youtube },
+  { href: "/leads", label: "Leady", icon: Target },
   { href: "/settings", label: "Nastavenia", icon: Settings },
 ];
 
