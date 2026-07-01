@@ -1,9 +1,12 @@
 // Website "outdatedness" analyzer. A HIGHER websiteScore means a more outdated
-// site — i.e. a better lead for us. Qualified when websiteScore >= 40.
+// site — i.e. a better lead for us. Scoring is graduated so the score works as a
+// ranking; `qualified` (score >= QUALIFY_AT) is only a soft badge.
+
+const QUALIFY_AT = 30;
 
 export interface WebsiteAnalysis {
   websiteScore: number; // 0-100, higher = more outdated
-  qualified: boolean; // score >= 40
+  qualified: boolean; // score >= QUALIFY_AT
   pageSpeedMobile: number | null;
   pageSpeedDesktop: number | null;
   hasSsl: boolean;
@@ -129,31 +132,64 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
 
   let score = 0;
   const reasons: string[] = [];
-  if (psMobile !== null && psMobile < 50) {
-    score += 30;
-    reasons.push(`Pomalý web na mobile (PageSpeed ${psMobile}/100)`);
+
+  // PageSpeed mobile — strongest signal, graduated by how slow the site is.
+  if (psMobile !== null) {
+    if (psMobile < 30) {
+      score += 35;
+      reasons.push(`Veľmi pomalý na mobile (PageSpeed ${psMobile}/100)`);
+    } else if (psMobile < 50) {
+      score += 25;
+      reasons.push(`Pomalý na mobile (PageSpeed ${psMobile}/100)`);
+    } else if (psMobile < 70) {
+      score += 12;
+      reasons.push(`Podpriemerná rýchlosť na mobile (PageSpeed ${psMobile}/100)`);
+    }
   }
+
+  // PageSpeed desktop — secondary signal.
+  if (psDesktop !== null && psDesktop < 60) {
+    score += 8;
+    reasons.push(`Podpriemerná rýchlosť na desktope (PageSpeed ${psDesktop}/100)`);
+  }
+
   if (isOldTech) {
     score += 20;
     reasons.push(`Zastaraná technológia (${platform.technology ?? (jqOld ? "staré jQuery <3" : "neznáma")})`);
   }
-  if (!site.hasSsl) {
-    score += 20;
-    reasons.push("Chýba SSL certifikát (HTTPS)");
-  }
-  if (cy && cy < 2022) {
+
+  if (!site.reachable) {
+    // A site we can't even load is itself a strong signal (dead / broken / blocks bots).
     score += 15;
-    reasons.push(`Zastaraný copyright v pätičke (${cy})`);
+    reasons.push("Web sa nepodarilo načítať (možno nefunkčný)");
+  } else {
+    if (!site.hasSsl) {
+      score += 20;
+      reasons.push("Chýba SSL certifikát (HTTPS)");
+    }
+    if (!hasViewport) {
+      score += 15;
+      reasons.push("Nie je mobilne responzívny (chýba meta viewport)");
+    }
   }
-  if (!hasViewport) {
-    score += 15;
-    reasons.push("Nie je mobilne responzívny (chýba meta viewport)");
+
+  // Copyright age in the footer — graduated.
+  if (cy) {
+    const age = currentYear - cy;
+    if (age >= 4) {
+      score += 18;
+      reasons.push(`Veľmi zastaraný copyright v pätičke (${cy})`);
+    } else if (age >= 2) {
+      score += 10;
+      reasons.push(`Zastaraný copyright v pätičke (${cy})`);
+    }
   }
+
   score = Math.min(100, score);
 
   return {
     websiteScore: score,
-    qualified: score >= 40,
+    qualified: score >= QUALIFY_AT,
     pageSpeedMobile: psMobile,
     pageSpeedDesktop: psDesktop,
     hasSsl: site.hasSsl,

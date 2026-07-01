@@ -19,6 +19,18 @@ function normalizeWebsite(url: string): string {
   }
 }
 
+/** Run `fn` over `items` with at most `limit` in flight — keeps scans within Vercel's time budget. */
+async function mapPool<T>(items: T[], limit: number, fn: (item: T, index: number) => Promise<void>): Promise<void> {
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < items.length) {
+      const idx = cursor++;
+      await fn(items[idx], idx);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+
 /**
  * Scans one segment: discover businesses via Google Places, analyze each site,
  * and for qualified (outdated, score >= 40) ones enrich via ORSR and upsert into
@@ -64,14 +76,13 @@ export async function scanSegment(segmentId: string, opts: { maxBusinesses?: num
     }
     await prisma.leadScanJob.update({ where: { id: job.id }, data: { foundTotal: businesses.length } });
 
-    // 2. Analyze + persist qualified leads.
+    // 2. Analyze every discovered site and persist it (the score ranks how outdated
+    //    it is; `qualified` is only a badge). Runs a few in parallel to stay fast.
     let qualified = 0;
-    for (const b of businesses) {
-      if (!b.website) continue;
+    await mapPool(businesses, 5, async (b) => {
+      if (!b.website) return;
       try {
         const analysis = await analyzeWebsite(b.website);
-        if (!analysis.qualified) continue;
-
         const orsr = await enrichCompany({ name: b.name }).catch(() => null);
         const now = new Date();
         const scan = {
@@ -113,12 +124,14 @@ export async function scanSegment(segmentId: string, opts: { maxBusinesses?: num
             lastScannedAt: now,
           },
         });
-        qualified++;
-        await prisma.leadScanJob.update({ where: { id: job.id }, data: { foundQualified: qualified } });
+        if (analysis.qualified) {
+          qualified++;
+          await prisma.leadScanJob.update({ where: { id: job.id }, data: { foundQualified: qualified } });
+        }
       } catch {
         /* skip this business, keep scanning */
       }
-    }
+    });
 
     await prisma.leadScanJob.update({
       where: { id: job.id },
