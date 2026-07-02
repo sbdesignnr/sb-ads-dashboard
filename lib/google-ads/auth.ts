@@ -135,13 +135,27 @@ export async function ensureFreshAccessToken(): Promise<string | null> {
     console.log("[google-ads] access token refreshed");
     return refreshed.access_token;
   } catch (err) {
-    console.error("[google-ads] token refresh failed:", (err as Error).message);
+    const message = (err as Error).message;
+    console.error("[google-ads] token refresh failed:", message);
+    // A revoked/expired refresh token is permanently dead — clear it so the UI
+    // honestly shows "Nepripojené" (with a Connect button) instead of pretending
+    // to be connected while silently serving demo data.
+    if (/invalid_grant/.test(message)) {
+      await disconnectGoogleAds();
+      console.warn("[google-ads] refresh token invalid_grant → disconnected; reconnect required");
+    }
     return null;
   }
 }
 
 export async function getConnectionStatus(): Promise<GoogleAdsConnectionStatus> {
-  const token = await getStoredToken();
+  let token = await getStoredToken();
+  // Validate the refresh token — a dead one (invalid_grant) is cleared inside
+  // ensureFreshAccessToken, so the status reflects reality instead of a stale row.
+  if (token?.refreshToken) {
+    await ensureFreshAccessToken();
+    token = await getStoredToken();
+  }
   return {
     connected: Boolean(token?.refreshToken),
     configured: isGoogleAdsConfigured(),
