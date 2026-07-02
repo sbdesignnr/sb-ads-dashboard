@@ -19,6 +19,7 @@ export interface WebsiteAnalysis {
   // Contact data + text scraped from the site itself (home + contact/about pages).
   extractedEmails: string[];
   extractedPhones: string[];
+  extractedIco: string | null; // IČO from the footer/contact — enables exact ORSR match
   pageText: string;
 }
 
@@ -188,6 +189,14 @@ function extractPhones(html: string): string[] {
   return [...found].slice(0, 5);
 }
 
+function extractIco(html: string): string | null {
+  const text = decodeEntities(html.replace(/<[^>]+>/g, " "));
+  const m = text.match(/I[ČC]O\s*[:\-]?\s*(\d{2}\s?\d{3}\s?\d{3})\b/i);
+  if (!m) return null;
+  const ico = m[1].replace(/\s/g, "");
+  return ico.length === 8 ? ico : null;
+}
+
 function visibleText(html: string): string {
   return html
     .replace(/<(script|style|noscript|svg)[\s\S]*?<\/\1>/gi, " ")
@@ -233,6 +242,7 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
   const combinedHtml = site.html + contactHtml;
   const extractedEmails = site.reachable ? extractEmails(combinedHtml) : [];
   const extractedPhones = site.reachable ? extractPhones(combinedHtml) : [];
+  const extractedIco = site.reachable ? extractIco(combinedHtml) : null;
   const pageText = site.reachable ? visibleText(combinedHtml).slice(0, 5000) : "";
 
   const platform = detectPlatform(site.html, site.headers);
@@ -314,6 +324,7 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
     issues,
     extractedEmails,
     extractedPhones,
+    extractedIco,
     pageText,
     websiteTechnology: platform.technology ?? (jqOld ? "jQuery <3" : null),
     websiteAge: cy ? Math.max(0, currentYear - cy) : null,

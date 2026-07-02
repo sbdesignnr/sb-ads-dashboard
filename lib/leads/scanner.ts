@@ -47,7 +47,9 @@ export async function enrichLead(
   if (!lead?.websiteUrl) return null;
 
   const analysis = await analyzeWebsite(lead.websiteUrl);
-  const orsr = await enrichCompany({ ico: lead.ico, name: lead.companyName }).catch(() => null);
+  // Prefer an IČO scraped from the site — it gives an exact ORSR match (owner + activity).
+  const ico = lead.ico ?? analysis.extractedIco;
+  const orsr = await enrichCompany({ ico, name: lead.companyName }).catch(() => null);
 
   const dossier = process.env.ANTHROPIC_API_KEY
     ? await generateDossier({
@@ -56,7 +58,7 @@ export async function enrichLead(
         communicationStyle: segment.communicationStyle,
         websiteUrl: lead.websiteUrl,
         companyCity: lead.companyCity ?? orsr?.city ?? null,
-        ico: lead.ico ?? orsr?.ico ?? null,
+        ico: orsr?.ico ?? ico ?? null,
         companyActive: orsr?.active ?? null,
         orsrStatusNote: orsr?.statusNote ?? null,
         orsrOwnerName: orsr?.ownerName ?? null,
@@ -88,7 +90,7 @@ export async function enrichLead(
       hasSsl: analysis.hasSsl,
       isMobileFriendly: analysis.isMobileFriendly,
       websiteIssues: analysis.issues,
-      ico: orsr?.ico ?? lead.ico ?? undefined,
+      ico: orsr?.ico ?? ico ?? undefined,
       companyActive: orsr?.active ?? undefined,
       companyAddress: lead.companyAddress ?? orsr?.address ?? undefined,
       companyCity: lead.companyCity ?? orsr?.city ?? undefined,
