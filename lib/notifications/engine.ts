@@ -10,6 +10,7 @@ import {
   getTodayConversions,
 } from "./gads-signals";
 import { judgeAlerts } from "./ai";
+import { generateWeeklyPlan } from "@/lib/blog/weekly-plan";
 import type { AlertCandidate, AlertSeverity, FinalAlert } from "./types";
 
 const SEVERITY_ICON: Record<AlertSeverity, string> = {
@@ -23,9 +24,25 @@ function bratislavaDate(now = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Bratislava" }).format(now); // YYYY-MM-DD
 }
 
-function dashboardLink(): string {
-  const base = (process.env.NEXTAUTH_URL || process.env.GOOGLE_OAUTH_REDIRECT_URI?.replace(/\/api\/.*/, "") || "").replace(/\/$/, "");
-  return base ? `${base}/google-ads` : "";
+/** ISO-week key like "2026-W27" (Bratislava) so blog ideas fire once a week. */
+function isoWeek(now = new Date()): string {
+  const d = new Date(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Bratislava" }).format(now));
+  const target = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNr = (target.getUTCDay() + 6) % 7;
+  target.setUTCDate(target.getUTCDate() - dayNr + 3);
+  const firstThursday = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
+  const week = 1 + Math.round(((target.getTime() - firstThursday.getTime()) / 86_400_000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+  return `${target.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+function siteBase(): string {
+  return (process.env.NEXTAUTH_URL || process.env.GOOGLE_OAUTH_REDIRECT_URI?.replace(/\/api\/.*/, "") || "").replace(/\/$/, "");
+}
+
+function linkFor(type: string): string | undefined {
+  const base = siteBase();
+  if (!base) return undefined;
+  return type === "blog_suggestion" ? `${base}/blog` : `${base}/google-ads`;
 }
 
 export interface RunResult {
@@ -41,12 +58,39 @@ export async function runNotifications(): Promise<RunResult> {
   const settings = await getNotificationSettings();
   const token = await getStoredToken();
   const connected = Boolean(token?.refreshToken);
-  if (!connected) return { connected: false, candidates: 0, sent: 0, skipped: 0, error: "not_connected" };
 
   const customerId = getConfiguredCustomerId() ?? undefined;
   const day = bratislavaDate();
   const candidates: AlertCandidate[] = [];
   const conversionAlerts: FinalAlert[] = [];
+  const extraAlerts: FinalAlert[] = [];
+
+  // --- Blog idea (independent of Google Ads) — at most once per ISO week ---
+  if (settings.enabled && settings.alertBlog && settings.telegramChatId && process.env.ANTHROPIC_API_KEY) {
+    const key = `blog_suggestion:${isoWeek()}`;
+    const exists = await prisma.sentAlert.findUnique({ where: { dedupKey: key } });
+    if (!exists) {
+      try {
+        const topic = (await generateWeeklyPlan())[0];
+        if (topic) {
+          extraAlerts.push({
+            key,
+            type: "blog_suggestion",
+            severity: "info",
+            title: `Nápad na blog: ${topic.title}`,
+            body: `${topic.reason}\n\nKľúčové slovo: ${topic.targetKeyword} · SEO potenciál ${topic.potentialLabel} (${topic.seoPotential}/100). V dashboarde ti AI vygeneruje celý článok.`,
+          });
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  if (!connected) {
+    // Deliver the blog idea even when Google Ads is disconnected, then stop.
+    return deliverFinals(settings, [...extraAlerts], 0, false);
+  }
 
   // --- Conversions (deterministic delta vs stored state) ---
   const today = await getTodayConversions(customerId);
@@ -142,7 +186,7 @@ export async function runNotifications(): Promise<RunResult> {
   const fresh = candidates.filter((c) => !already.has(c.key));
 
   // --- AI expert judges the action candidates ---
-  let finals: FinalAlert[] = [...conversionAlerts];
+  const finals: FinalAlert[] = [...conversionAlerts, ...extraAlerts];
   if (fresh.length && process.env.ANTHROPIC_API_KEY) {
     let judged: Awaited<ReturnType<typeof judgeAlerts>> = [];
     try {
@@ -164,12 +208,20 @@ export async function runNotifications(): Promise<RunResult> {
     }
   }
 
-  // --- Deliver ---
+  return deliverFinals(settings, finals, candidates.length, true);
+}
+
+/** Push finalized alerts to Telegram (quiet hours honoured; non-critical deferred). */
+async function deliverFinals(
+  settings: Awaited<ReturnType<typeof getNotificationSettings>>,
+  finals: FinalAlert[],
+  candidatesCount: number,
+  connected: boolean,
+): Promise<RunResult> {
   if (!settings.enabled || !settings.telegramChatId) {
-    return { connected: true, candidates: candidates.length, sent: 0, skipped: finals.length };
+    return { connected, candidates: candidatesCount, sent: 0, skipped: finals.length };
   }
   const quiet = inQuietHours(settings);
-  const link = dashboardLink();
   let sent = 0;
   let skipped = 0;
   for (const a of finals) {
@@ -179,7 +231,8 @@ export async function runNotifications(): Promise<RunResult> {
     }
     const text = `${SEVERITY_ICON[a.severity]} <b>${escapeHtml(a.title)}</b>\n\n${escapeHtml(a.body)}`;
     const res = await sendTelegram(settings.telegramChatId, text, {
-      link: link || undefined,
+      link: linkFor(a.type),
+      linkLabel: a.type === "blog_suggestion" ? "Otvoriť blog" : "Otvoriť dashboard",
       silent: a.severity === "info",
     });
     if (res.ok) {
@@ -194,15 +247,14 @@ export async function runNotifications(): Promise<RunResult> {
       skipped++;
     }
   }
-
-  return { connected: true, candidates: candidates.length, sent, skipped };
+  return { connected, candidates: candidatesCount, sent, skipped };
 }
 
 /** Send a one-off test message so the user can confirm delivery works. */
 export async function sendTestNotification(): Promise<{ ok: boolean; error?: string }> {
   const settings = await getNotificationSettings();
   if (!settings.telegramChatId) return { ok: false, error: "no_chat" };
-  const link = dashboardLink();
+  const link = linkFor("test");
   return sendTelegram(
     settings.telegramChatId,
     `✅ <b>Test upozornenia</b>\n\nToto je skúšobná správa zo SB Ads Dashboardu. Ak ju vidíš, mobilné upozornenia fungujú.`,

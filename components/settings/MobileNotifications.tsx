@@ -14,6 +14,7 @@ interface Settings {
   enabled: boolean;
   alertConversions: boolean;
   alertActions: boolean;
+  alertBlog: boolean;
   minConversionValue: number | null;
   quietHoursStart: number | null;
   quietHoursEnd: number | null;
@@ -152,6 +153,16 @@ export function MobileNotifications() {
                 </p>
               </div>
               <Switch checked={settings.alertActions} onCheckedChange={(v) => patch({ alertActions: v })} />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">Nápady na blog (týždenne)</p>
+                <p className="text-xs text-muted">
+                  Raz týždenne AI navrhne tému článku s odôvodnením (sezónnosť, trend, medzera oproti konkurencii) a
+                  SEO potenciálom.
+                </p>
+              </div>
+              <Switch checked={settings.alertBlog} onCheckedChange={(v) => patch({ alertBlog: v })} />
             </div>
             <div className="flex items-center gap-2 pt-1">
               <Button variant="secondary" size="sm" onClick={test} disabled={busy === "test"}>

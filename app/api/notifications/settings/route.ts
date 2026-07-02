@@ -15,6 +15,7 @@ export async function GET() {
       enabled: s.enabled,
       alertConversions: s.alertConversions,
       alertActions: s.alertActions,
+      alertBlog: s.alertBlog,
       minConversionValue: s.minConversionValue,
       quietHoursStart: s.quietHoursStart,
       quietHoursEnd: s.quietHoursEnd,
@@ -36,6 +37,7 @@ export async function PUT(req: NextRequest) {
   if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
   if (typeof body.alertConversions === "boolean") patch.alertConversions = body.alertConversions;
   if (typeof body.alertActions === "boolean") patch.alertActions = body.alertActions;
+  if (typeof body.alertBlog === "boolean") patch.alertBlog = body.alertBlog;
   if (body.minConversionValue === null || typeof body.minConversionValue === "number")
     patch.minConversionValue = body.minConversionValue;
   const hour = (v: unknown) => (v === null ? null : typeof v === "number" && v >= 0 && v <= 23 ? Math.floor(v) : undefined);

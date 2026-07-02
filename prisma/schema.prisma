@@ -156,6 +156,7 @@ model NotificationSetting {
   enabled           Boolean  @default(true)
   alertConversions  Boolean  @default(true) @map("alert_conversions")
   alertActions      Boolean  @default(true) @map("alert_actions")
+  alertBlog         Boolean  @default(true) @map("alert_blog")
   minConversionValue Float?  @map("min_conversion_value")
   quietHoursStart   Int?     @map("quiet_hours_start") // 0-23 local hour, inclusive
   quietHoursEnd     Int?     @map("quiet_hours_end")

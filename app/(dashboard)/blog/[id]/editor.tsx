@@ -125,6 +125,7 @@ export function BlogEditor({ id }: { id: string }) {
   const [metaLoading, setMetaLoading] = useState(false);
   const [metaSug, setMetaSug] = useState<MetaSug | null>(null);
   const [rewriting, setRewriting] = useState(false);
+  const [generatingFull, setGeneratingFull] = useState(false);
   const [instruction, setInstruction] = useState("");
   const [perf, setPerf] = useState<ArticlePerformance | null>(null);
   const [perfLoading, setPerfLoading] = useState(false);
@@ -260,6 +261,39 @@ export function BlogEditor({ id }: { id: string }) {
       toast.error("Vylepšenie zlyhalo");
     } finally {
       setRewriting(false);
+    }
+  };
+
+  const generateFull = async () => {
+    if (!title.trim()) {
+      toast.error("Najprv zadaj názov / tému článku");
+      return;
+    }
+    if (content.trim() && !confirm("Prepísať súčasný obsah kompletným AI článkom?")) return;
+    setGeneratingFull(true);
+    try {
+      const res = await fetch("/api/blog/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, targetKeyword, category }),
+      });
+      const j = await res.json();
+      if (res.ok && j.article) {
+        const a = j.article;
+        setContent(a.content);
+        if (a.metaTitle) setMetaTitle(a.metaTitle);
+        if (a.metaDescription) setMetaDescription(a.metaDescription);
+        if (a.imageAlt && !imageAlt) setImageAlt(a.imageAlt);
+        if (a.title && a.title !== title) setTitle(a.title);
+        if (a.slug && !slug) setSlug(a.slug);
+        toast.success("Článok vygenerovaný — skontroluj a ulož");
+      } else {
+        toast.error(j.error || "Generovanie zlyhalo");
+      }
+    } catch {
+      toast.error("Generovanie zlyhalo");
+    } finally {
+      setGeneratingFull(false);
     }
   };
 
@@ -448,6 +482,10 @@ export function BlogEditor({ id }: { id: string }) {
                 <Button variant="secondary" size="sm" onClick={rewriteSelection} disabled={rewriting}>
                   {rewriting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
                   Vylepšiť výber / odsek
+                </Button>
+                <Button size="sm" onClick={generateFull} disabled={generatingFull}>
+                  {generatingFull ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  Vygenerovať celý článok
                 </Button>
               </div>
             </>
