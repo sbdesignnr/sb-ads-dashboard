@@ -87,6 +87,7 @@ function SegmentRow({
   const [name, setName] = useState(seg.name);
   const [color, setColor] = useState(seg.color);
   const [keywords, setKeywords] = useState(seg.keywords.join(", "));
+  const [comm, setComm] = useState(seg.communicationStyle ?? "");
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -100,6 +101,7 @@ function SegmentRow({
           name: name.trim(),
           color,
           keywords: keywords.split(",").map((k) => k.trim()).filter(Boolean),
+          communicationStyle: comm,
         }),
       });
       const j = await res.json();
@@ -141,6 +143,13 @@ function SegmentRow({
           onChange={(e) => setKeywords(e.target.value)}
           className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
           placeholder="Kľúčové slová (oddelené čiarkou)"
+        />
+        <textarea
+          value={comm}
+          onChange={(e) => setComm(e.target.value)}
+          rows={2}
+          className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+          placeholder="Štýl komunikácie pre AI (napr. formálne a vecne pre advokátov / neformálne a energicky pre trénerov)"
         />
         <div className="flex gap-2">
           <Button size="sm" onClick={save} disabled={saving}>
@@ -202,6 +211,7 @@ export default function LeadsSettingsPage() {
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState(PALETTE[0]);
   const [newKeywords, setNewKeywords] = useState("");
+  const [newComm, setNewComm] = useState("");
   const [creating, setCreating] = useState(false);
 
   const loadJobs = useCallback(async () => {
@@ -237,6 +247,7 @@ export default function LeadsSettingsPage() {
           name: newName.trim(),
           color: newColor,
           keywords: newKeywords.split(",").map((k) => k.trim()).filter(Boolean),
+          communicationStyle: newComm,
         }),
       });
       const j = await res.json();
@@ -244,6 +255,7 @@ export default function LeadsSettingsPage() {
         setSegments((prev) => [...prev, j.segment]);
         setNewName("");
         setNewKeywords("");
+        setNewComm("");
         setNewColor(PALETTE[0]);
         toast.success("Segment pridaný");
       } else {
@@ -315,6 +327,13 @@ export default function LeadsSettingsPage() {
               placeholder="Kľúčové slová (oddelené čiarkou)"
             />
           </div>
+          <textarea
+            value={newComm}
+            onChange={(e) => setNewComm(e.target.value)}
+            rows={2}
+            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+            placeholder="Štýl komunikácie pre AI (napr. formálne a vecne pre advokátov / neformálne a energicky pre trénerov) — nepovinné"
+          />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <ColorPicker value={newColor} onChange={setNewColor} />
             <Button size="sm" onClick={create} disabled={creating || !newName.trim()}>

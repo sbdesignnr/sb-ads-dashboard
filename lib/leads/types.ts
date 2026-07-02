@@ -6,6 +6,7 @@ export interface SegmentDTO {
   color: string;
   icon: string | null;
   keywords: string[];
+  communicationStyle: string | null;
   leadCount: number;
 }
 
@@ -26,6 +27,9 @@ export interface LeadDTO {
   aiSummary: string | null;
   aiPainPoint: string | null;
   aiOpportunity: string | null;
+  aiOutreachAngle: string | null;
+  bestContactTime: string | null;
+  companyActive: boolean | null;
   ownerName: string | null;
   ownerPosition: string | null;
   companyEmail: string | null;

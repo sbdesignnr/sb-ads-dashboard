@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { briefFromLead, generateEmail } from "@/lib/leads/ai";
+import { generateEmail } from "@/lib/leads/ai";
+import { enrichLead } from "@/lib/leads/scanner";
+import { serializeLead } from "@/lib/leads/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,24 +27,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const lead = await prisma.lead.findUnique({ where: { id } });
   if (!lead) return NextResponse.json({ error: "not_found" }, { status: 404 });
   const segment = lead.segmentId ? await prisma.leadSegment.findUnique({ where: { id: lead.segmentId } }) : null;
-  const segmentName = segment?.name ?? "firma";
 
   try {
     if (type === "email") {
-      const text = await generateEmail(lead, segmentName);
+      const text = await generateEmail(lead, { name: segment?.name ?? "firma", communicationStyle: segment?.communicationStyle });
       return NextResponse.json({ text });
     }
-    // Regenerate the opportunity brief and persist it on the lead.
-    const brief = await briefFromLead(lead, segmentName);
-    await prisma.lead.update({
-      where: { id },
-      data: {
-        aiSummary: brief.summary || null,
-        aiPainPoint: brief.painPoint || null,
-        aiOpportunity: brief.opportunity || null,
-      },
-    });
-    return NextResponse.json({ brief });
+    // Re-run the full enrichment (scrape contacts + analyze + ORSR + dossier) and persist.
+    await enrichLead(id, { id: segment?.id ?? "", name: segment?.name ?? "firma", communicationStyle: segment?.communicationStyle ?? null });
+    const updated = await prisma.lead.findUnique({ where: { id } });
+    return NextResponse.json({ lead: updated ? serializeLead(updated) : null });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }

@@ -21,6 +21,9 @@ import {
   AlertTriangle,
   TrendingDown,
   Lightbulb,
+  Clock,
+  Compass,
+  Ban,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -111,9 +114,17 @@ export function LeadDetail({ id }: { id: string }) {
         body: JSON.stringify({ type }),
       });
       const j = await res.json();
-      if (res.ok && (j.text || j.brief)) {
-        if (type === "email") setEmail(j.text);
-        else setBrief(j.brief);
+      if (res.ok && type === "email" && j.text) {
+        setEmail(j.text);
+      } else if (res.ok && type === "analysis" && j.lead) {
+        setLead(j.lead);
+        setIssues(j.lead.websiteIssues ?? []);
+        setBrief({
+          summary: j.lead.aiSummary ?? "",
+          painPoint: j.lead.aiPainPoint ?? "",
+          opportunity: j.lead.aiOpportunity ?? "",
+        });
+        toast.success("Analýza aktualizovaná");
       } else {
         toast.error(j.error || "Generovanie zlyhalo");
       }
@@ -179,6 +190,13 @@ export function LeadDetail({ id }: { id: string }) {
           {lead.websiteScore ?? "—"}
         </span>
       </div>
+
+      {lead.companyActive === false && (
+        <div className="flex items-center gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
+          <Ban className="h-4 w-4 shrink-0" />
+          Firma je podľa registra neaktívna (vymazaná/v likvidácii) — pravdepodobne nemá zmysel ju oslovovať.
+        </div>
+      )}
 
       {/* Status management */}
       <div className="flex flex-wrap items-center gap-2">
@@ -276,6 +294,24 @@ export function LeadDetail({ id }: { id: string }) {
                         Čo vieme ponúknuť
                       </p>
                       <p className="text-sm leading-relaxed text-foreground">{brief.opportunity}</p>
+                    </div>
+                  )}
+                  {lead.aiOutreachAngle && (
+                    <div className="flex items-start gap-2 text-sm">
+                      <Compass className="mt-0.5 h-4 w-4 shrink-0 text-secondary" />
+                      <span>
+                        <span className="text-muted">Ako osloviť: </span>
+                        <span className="text-foreground">{lead.aiOutreachAngle}</span>
+                      </span>
+                    </div>
+                  )}
+                  {lead.bestContactTime && (
+                    <div className="flex items-start gap-2 text-sm">
+                      <Clock className="mt-0.5 h-4 w-4 shrink-0 text-secondary" />
+                      <span>
+                        <span className="text-muted">Najlepší čas: </span>
+                        <span className="text-foreground">{lead.bestContactTime}</span>
+                      </span>
                     </div>
                   )}
                 </>

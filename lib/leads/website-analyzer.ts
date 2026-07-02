@@ -16,6 +16,10 @@ export interface WebsiteAnalysis {
   reasons: string[];
   // Concrete business gaps we can turn into pain points / opportunities.
   issues: string[];
+  // Contact data + text scraped from the site itself (home + contact/about pages).
+  extractedEmails: string[];
+  extractedPhones: string[];
+  pageText: string;
 }
 
 const UA = "Mozilla/5.0 (compatible; SBDesignLeadBot/1.0; +https://sbdesign.sk)";
@@ -152,6 +156,63 @@ function detectBusinessGaps(html: string): string[] {
   return gaps;
 }
 
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&amp;/gi, "&");
+}
+
+function extractEmails(html: string): string[] {
+  const decoded = decodeEntities(html.replace(/\s*(?:\[at\]|\(at\)|&#64;|\s+at\s+)\s*/gi, "@"));
+  const found = new Set<string>();
+  for (const m of decoded.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)) {
+    const e = m[0].toLowerCase();
+    if (/\.(png|jpg|jpeg|gif|webp|svg|css|js)$/.test(e)) continue;
+    if (/(sentry|wixpress|example\.com|yourdomain|domain\.com|email\.com|@2x|u003)/.test(e)) continue;
+    found.add(e);
+  }
+  return [...found].slice(0, 5);
+}
+
+function extractPhones(html: string): string[] {
+  const found = new Set<string>();
+  for (const m of html.matchAll(/href=["']tel:([^"']+)["']/gi)) {
+    const p = m[1].replace(/[^\d+]/g, "");
+    if (p.replace(/\D/g, "").length >= 9) found.add(p);
+  }
+  const text = decodeEntities(html.replace(/<[^>]+>/g, " "));
+  for (const m of text.matchAll(/(?:\+421|00421|0)\s?\d{2}[\s/-]?\d{3}[\s/-]?\d{2}[\s/-]?\d{2}\b/g)) {
+    found.add(m[0].replace(/[\s/-]+/g, " ").trim());
+  }
+  return [...found].slice(0, 5);
+}
+
+function visibleText(html: string): string {
+  return html
+    .replace(/<(script|style|noscript|svg)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const CONTACT_PATHS = ["/kontakt", "/kontakty", "/contact", "/o-nas", "/o-nás", "/about"];
+
+async function loadContactPages(origin: string): Promise<string> {
+  let combined = "";
+  let fetched = 0;
+  for (const path of CONTACT_PATHS) {
+    if (fetched >= 2) break;
+    const r = await fetchOnce(`${origin}${path}`);
+    if (r && r.ok && r.html) {
+      combined += " " + r.html;
+      fetched++;
+    }
+  }
+  return combined;
+}
+
 export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
   const url = normalizeUrl(rawUrl);
   const [site, psMobile, psDesktop] = await Promise.all([
@@ -159,6 +220,20 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
     pageSpeed(url, "mobile"),
     pageSpeed(url, "desktop"),
   ]);
+
+  // Scrape contact/about pages too — that's where the owner name, e-mail and
+  // phone usually live (and Places/ORSR often miss them).
+  let origin = "";
+  try {
+    origin = new URL(site.reachable ? url : url).origin;
+  } catch {
+    /* ignore */
+  }
+  const contactHtml = site.reachable && origin ? await loadContactPages(origin) : "";
+  const combinedHtml = site.html + contactHtml;
+  const extractedEmails = site.reachable ? extractEmails(combinedHtml) : [];
+  const extractedPhones = site.reachable ? extractPhones(combinedHtml) : [];
+  const pageText = site.reachable ? visibleText(combinedHtml).slice(0, 5000) : "";
 
   const platform = detectPlatform(site.html, site.headers);
   const jqOld = jqueryOld(site.html);
@@ -237,6 +312,9 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
     hasSsl: site.hasSsl,
     isMobileFriendly: hasViewport,
     issues,
+    extractedEmails,
+    extractedPhones,
+    pageText,
     websiteTechnology: platform.technology ?? (jqOld ? "jQuery <3" : null),
     websiteAge: cy ? Math.max(0, currentYear - cy) : null,
     reasons,

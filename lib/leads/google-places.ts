@@ -123,6 +123,67 @@ export async function searchBusinesses(
   return out;
 }
 
+// Biggest Slovak population centres, roughly largest-first. Text Search is
+// biased toward one area per query, so we sweep cities to cover the whole market.
+export const SK_CITIES = [
+  "Bratislava", "Košice", "Prešov", "Žilina", "Nitra", "Banská Bystrica",
+  "Trnava", "Trenčín", "Martin", "Poprad", "Prievidza", "Zvolen",
+  "Považská Bystrica", "Nové Zámky", "Michalovce", "Spišská Nová Ves",
+  "Komárno", "Levice", "Humenné", "Bardejov", "Liptovský Mikuláš", "Ružomberok",
+];
+
+function normWebsite(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.host.toLowerCase().replace(/^www\./, "")}`;
+  } catch {
+    return url.trim().toLowerCase();
+  }
+}
+
+/**
+ * Broad discovery across keywords × cities (+ a nationwide query per keyword),
+ * deduped by website host. Iterates largest cities first and STOPS as soon as it
+ * reaches `cap` — so dense segments finish fast while sparse ones (e.g. stavebné
+ * spoločnosti) keep sweeping more cities to gather enough leads.
+ */
+export async function discoverBusinesses(
+  keywords: string[],
+  opts: { cap?: number; cities?: string[]; maxPagesPerQuery?: number } = {},
+): Promise<PlaceBusiness[]> {
+  const cap = opts.cap ?? 80;
+  const cities = opts.cities ?? SK_CITIES;
+  const maxPages = opts.maxPagesPerQuery ?? 1;
+  const kws = keywords.length ? keywords : ["firma"];
+
+  const seen = new Set<string>();
+  const out: PlaceBusiness[] = [];
+  const add = (list: PlaceBusiness[]) => {
+    for (const b of list) {
+      if (!b.website) continue;
+      const host = normWebsite(b.website);
+      if (seen.has(host)) continue;
+      seen.add(host);
+      out.push({ ...b });
+      if (out.length >= cap) return true;
+    }
+    return false;
+  };
+
+  // Nationwide pass first (cheap, catches the obvious ones), then city sweep.
+  for (const kw of kws) {
+    if (out.length >= cap) return out;
+    if (add(await searchBusinesses(`${kw} Slovensko`, { maxPages }))) return out;
+  }
+  for (const city of cities) {
+    for (const kw of kws) {
+      if (out.length >= cap) return out;
+      if (add(await searchBusinesses(`${kw} ${city}`, { maxPages }))) return out;
+    }
+  }
+  return out;
+}
+
 export interface QualifiedLead extends PlaceBusiness {
   analysis: WebsiteAnalysis;
 }

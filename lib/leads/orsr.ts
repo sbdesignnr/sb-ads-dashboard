@@ -51,6 +51,8 @@ export interface OrsrDetail {
   city: string | null;
   ownerName: string | null;
   ownerPosition: string | null;
+  active: boolean; // false if struck off / deleted from the register
+  statusNote: string | null; // e.g. "v likvidácii", "konkurz", "vymazaná"
 }
 
 function parseResults(html: string, limit: number): OrsrCompany[] {
@@ -107,7 +109,19 @@ export async function getCompanyDetail(id: string, sid: string): Promise<OrsrDet
     ownerName = org[2].match(NAME_RE)?.[1]?.trim() ?? null;
   }
 
-  return { ico, address, city: extractCity(address), ownerName, ownerPosition };
+  // Activity status: a "Dátum výmazu" (deletion) means the company no longer exists.
+  let active = true;
+  let statusNote: string | null = null;
+  if (/Dátum výmazu:\s*\d/.test(text)) {
+    active = false;
+    statusNote = "vymazaná z registra";
+  } else if (/v\s+likvid[aá]cii|vstup(?:e|u)?\s+do\s+likvid/i.test(text)) {
+    statusNote = "v likvidácii";
+  } else if (/konkurz|vyhlásenie\s+konkurzu/i.test(text)) {
+    statusNote = "konkurz";
+  }
+
+  return { ico, address, city: extractCity(address), ownerName, ownerPosition, active, statusNote };
 }
 
 /**

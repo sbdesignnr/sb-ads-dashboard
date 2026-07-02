@@ -3,10 +3,41 @@ import type { Lead } from "@prisma/client";
 
 const MODEL = "claude-sonnet-4-6";
 
-export interface LeadBrief {
-  summary: string; // honest diagnosis in the owner's language
-  painPoint: string; // the sharpest business pain point (revenue impact)
-  opportunity: string; // concrete thing we'd build + how it earns/saves
+export interface LeadDossier {
+  ownerName: string | null; // person to address (from website or ORSR)
+  ownerRole: string | null;
+  email: string | null; // best contact e-mail found on the site
+  phone: string | null; // best contact phone
+  summary: string; // honest diagnosis incl. design & optimization
+  painPoint: string; // sharpest business pain point (revenue impact)
+  opportunity: string; // concrete thing we'd build + how it earns
+  bestContactTime: string; // best outreach window for this profession
+  outreachAngle: string; // how to approach & tone for this person/segment
+}
+
+export interface DossierInput {
+  companyName: string;
+  segmentName: string;
+  communicationStyle?: string | null;
+  websiteUrl?: string | null;
+  companyCity?: string | null;
+  ico?: string | null;
+  companyActive?: boolean | null;
+  orsrStatusNote?: string | null;
+  orsrOwnerName?: string | null;
+  orsrOwnerPosition?: string | null;
+  placesPhone?: string | null;
+  extractedEmails?: string[];
+  extractedPhones?: string[];
+  websiteScore?: number | null;
+  websiteTechnology?: string | null;
+  websiteAge?: number | null;
+  pageSpeedMobile?: number | null;
+  pageSpeedDesktop?: number | null;
+  hasSsl?: boolean | null;
+  isMobileFriendly?: boolean | null;
+  issues?: string[];
+  pageText?: string;
 }
 
 function textOf(msg: Anthropic.Message): string {
@@ -17,134 +48,137 @@ function textOf(msg: Anthropic.Message): string {
     .trim();
 }
 
-export interface FactsInput {
-  companyName: string;
-  segmentName: string;
-  websiteUrl?: string | null;
-  companyCity?: string | null;
-  ownerName?: string | null;
-  ownerPosition?: string | null;
-  websiteScore?: number | null;
-  websiteTechnology?: string | null;
-  websiteAge?: number | null;
-  pageSpeedMobile?: number | null;
-  pageSpeedDesktop?: number | null;
-  hasSsl?: boolean | null;
-  isMobileFriendly?: boolean | null;
-  issues?: string[];
-}
-
-function factsBlock(f: FactsInput): string {
+function dossierFacts(f: DossierInput): string {
   const yes = (b: boolean | null | undefined) => (b == null ? "neznáme" : b ? "áno" : "nie");
+  const list = (a?: string[]) => (a && a.length ? a.join(", ") : "—");
   const issues = f.issues && f.issues.length ? f.issues.map((i) => `- ${i}`).join("\n") : "- (žiadne konkrétne zistené)";
-  return `Firma: ${f.companyName}
-Segment: ${f.segmentName}
-Web: ${f.websiteUrl ?? "—"}
+  return `FIRMA
+Názov: ${f.companyName}
+Segment (typ podnikania): ${f.segmentName}
 Mesto: ${f.companyCity ?? "—"}
-Konateľ: ${f.ownerName ?? "neznámy"}${f.ownerPosition ? ` (${f.ownerPosition})` : ""}
-Skóre zastaralosti webu: ${f.websiteScore ?? "—"}/100 (vyššie = zastaralejšie)
-Technológia webu: ${f.websiteTechnology ?? "neznáma"}
-Vek webu (podľa copyrightu): ${f.websiteAge != null ? `~${f.websiteAge} rokov` : "neznámy"}
-PageSpeed mobile: ${f.pageSpeedMobile ?? "—"}/100, desktop: ${f.pageSpeedDesktop ?? "—"}/100
-Má SSL (HTTPS): ${yes(f.hasSsl)}
-Mobilne responzívny: ${yes(f.isMobileFriendly)}
+IČO: ${f.ico ?? "—"}  | Stav v registri: ${f.companyActive == null ? "neznámy" : f.companyActive ? "aktívna" : "NEAKTÍVNA"}${f.orsrStatusNote ? ` (${f.orsrStatusNote})` : ""}
+Konateľ podľa ORSR: ${f.orsrOwnerName ?? "—"}${f.orsrOwnerPosition ? ` (${f.orsrOwnerPosition})` : ""}
+Telefón (Google): ${f.placesPhone ?? "—"}
 
-Konkrétne zistené nedostatky webu:
-${issues}`;
+KONTAKTY NÁJDENÉ NA WEBE
+E-maily: ${list(f.extractedEmails)}
+Telefóny: ${list(f.extractedPhones)}
+
+TECHNICKÝ STAV WEBU
+Web: ${f.websiteUrl ?? "—"}
+Skóre zastaralosti: ${f.websiteScore ?? "—"}/100 (vyššie = zastaralejšie)
+Technológia: ${f.websiteTechnology ?? "neznáma"}
+Vek podľa copyrightu: ${f.websiteAge != null ? `~${f.websiteAge} rokov` : "neznámy"}
+PageSpeed mobil: ${f.pageSpeedMobile ?? "—"}/100, desktop: ${f.pageSpeedDesktop ?? "—"}/100
+SSL/HTTPS: ${yes(f.hasSsl)}  | Responzívny: ${yes(f.isMobileFriendly)}
+Zistené nedostatky:
+${issues}
+
+TEXT Z WEBU (úryvok, home + kontakt/o-nás)
+${f.pageText ? f.pageText.slice(0, 4500) : "(web sa nepodarilo načítať)"}`;
 }
 
-function factsFromLead(lead: Lead, segmentName: string): FactsInput {
-  return {
-    companyName: lead.companyName,
-    segmentName,
-    websiteUrl: lead.websiteUrl,
-    companyCity: lead.companyCity,
-    ownerName: lead.ownerName,
-    ownerPosition: lead.ownerPosition,
-    websiteScore: lead.websiteScore,
-    websiteTechnology: lead.websiteTechnology,
-    websiteAge: lead.websiteAge,
-    pageSpeedMobile: lead.pageSpeedMobile,
-    pageSpeedDesktop: lead.pageSpeedDesktop,
-    hasSsl: lead.hasSsl,
-    isMobileFriendly: lead.isMobileFriendly,
-    issues: lead.websiteIssues,
-  };
-}
+const DOSSIER_SYSTEM = `Si senior konzultant a obchodník SB Design (weby a digitálne riešenia na mieru, Slovensko). Dostaneš kompletné dáta o firme a jej webe. Priprav dôkladný podklad pre oslovenie – tak, aby obchodník presne vedel, KOHO, KEDY a AKO osloviť a čím firme reálne pomôžeme (a na čom zarobí).
 
-const BRIEF_SYSTEM = `Si senior konzultant SB Design (weby a digitálne riešenia na mieru, Slovensko). Dostaneš technické zistenia o webe firmy. Priprav interný podklad pre obchodníka – aby presne vedel, čím firme REÁLNE pomôžeme a na čom firma zarobí.
+Zásady:
+- KONTAKTY (dôležité, NEVYMÝŠĽAJ): e-mail vyber IBA zo zoznamu "E-maily" nižšie – ak je prázdny, daj null. Telefón vyber IBA zo zoznamu "Telefóny" alebo z "Telefón (Google)" – inak null. NIKDY nevymýšľaj e-mail ani číslo. Meno majiteľa/konateľa urči z textu webu alebo ORSR (uprednostni konkrétnu osobu pred generickým info@); ak sa nedá, null.
+- ANALÝZA (summary): 2–4 vety, MAX ~80 slov. Posúď stručne to najdôležitejšie – vek/modernosť dizajnu, responzívnosť, rýchlosť, konverzné prvky (rezervácia, formulár, CTA), SEO, dôveryhodnosť. Konkrétne, žiadna vata.
+- PAIN: 1 najsilnejší pain point – čo to firmu reálne stojí (stratení klienti/rezervácie/tržby/dôvera/Google návštevnosť). Ak sa dá, naznač dopad. Max ~50 slov.
+- OPPORTUNITY: 1 konkrétna vec, ktorú postavíme, + ako mu pomôže zarobiť/ušetriť. Hmatateľné a relevantné pre jeho typ podnikania. Max ~50 slov.
+- BEST CONTACT TIME: konkrétne dni + hodinové okno + krátky dôvod, podľa typu profesie. Max ~40 slov.
+- OUTREACH ANGLE: ako a akým tónom osloviť tohto človeka – prispôsob typu podnikania (advokát = formálne, vecne; fitness tréner = neformálne, energicky). Bez nátlaku. Max ~40 slov.
+- Píš po slovensky, vecne, bez marketingových fráz a superlatívov. VYPLŇ VŠETKY polia.
 
-Filozofia: hodnota, nie nátlak. Nehľadaj chyby pre chyby – hľadaj, kde firma prichádza o klientov, čas alebo peniaze, a čo vieme postaviť, aby to napravila. Vieme spraviť takmer čokoľvek a rýchlo (moderné weby, rezervačné systémy, automatizácie, e-shopy, AI nástroje).
+Ak je firma NEAKTÍVNA v registri, jasne to spomeň v summary (nemá zmysel ju oslovovať).
 
-Buď konkrétny a vecný, píš po slovensky, bez marketingových fráz a superlatívov. Zohľadni typ podnikania (segment) – čo v ňom reálne prináša klientov.
+Výsledok vlož VÝHRADNE cez nástroj "uloz_dossier".`;
 
-Vráť PRESNE tento formát, tri riadky s prefixmi a nič iné navyše:
-SUMMARY: 1–2 vety – úprimná diagnóza stavu webu očami majiteľa (nie technický žargón).
-PAIN: 1 najsilnejší, konkrétny pain point – čo ho to reálne stojí (stratené rezervácie/klienti/tržby/dôvera/Google návštevnosť). Ak sa dá, naznač dopad.
-OPPORTUNITY: 1 konkrétna vec, ktorú by sme postavili, + ako mu pomôže zarobiť alebo ušetriť. Hmatateľné a relevantné pre jeho biznis.`;
+const DOSSIER_TOOL: Anthropic.Tool = {
+  name: "uloz_dossier",
+  description: "Uloží štruktúrovaný podklad k leadu.",
+  input_schema: {
+    type: "object",
+    properties: {
+      ownerName: { type: ["string", "null"], description: "Meno majiteľa/konateľa alebo null" },
+      ownerRole: { type: ["string", "null"], description: "Rola/pozícia alebo null" },
+      email: { type: ["string", "null"], description: "Najlepší kontaktný e-mail z webu alebo null" },
+      phone: { type: ["string", "null"], description: "Najlepší kontaktný telefón alebo null" },
+      summary: { type: "string", description: "Úprimná hĺbková diagnóza webu (dizajn, optimalizácia, SEO, konverzie)" },
+      painPoint: { type: "string", description: "Najsilnejší pain point s dopadom" },
+      opportunity: { type: "string", description: "Konkrétne riešenie + ako zarobí/ušetrí" },
+      bestContactTime: { type: "string", description: "Najlepší čas oslovenia + krátky dôvod" },
+      outreachAngle: { type: "string", description: "Ako a akým tónom osloviť tohto človeka" },
+    },
+    required: ["ownerName", "ownerRole", "email", "phone", "summary", "painPoint", "opportunity", "bestContactTime", "outreachAngle"],
+  } as Anthropic.Tool.InputSchema,
+};
 
-const EMAIL_SYSTEM = `Si copywriter SB Design (weby a digitálne riešenia na mieru, Slovensko). Napíš KRÁTKY personalizovaný e-mail konkrétnej firme. Cieľ: aby majiteľ SÁM pocítil, že by mu to pomohlo – žiadny nátlak, žiadne strašenie, žiadna urgencia.
-
-Pravidlá:
-- Ak je známy konateľ, oslov ho menom; inak firmu slušne.
-- Otvor konkrétnym postrehom o ICH biznise/webe (vychádzaj z pain pointu), nie o nás.
-- Pomenuj 1 konkrétny problém a hlavne PRÍLEŽITOSŤ – čo by im to prinieslo (viac rezervácií/klientov/tržieb, menej roboty). Vychádzaj z pripraveného pain pointu a príležitosti nižšie.
-- Ponúkni konkrétnu vec, ktorú vieme rýchlo postaviť. Sebavedomo, ale ľudsky.
-- Žiadne superlatívy ani fráza typu "posunúť na vyššiu úroveň". Znie ako od človeka, ktorý fakt vie pomôcť.
-- Jemné, nezáväzné CTA (napr. že pošleme pár konkrétnych nápadov alebo krátky hovor, ak to bude zaujímať).
-- Max 160 slov.
-Formát: prvý riadok "Predmet: …", potom prázdny riadok a telo e-mailu.`;
-
-function parseBrief(text: string): LeadBrief {
-  const get = (label: string) => {
-    const re = new RegExp(`${label}\\s*:\\s*([\\s\\S]*?)(?=\\n\\s*(?:SUMMARY|PAIN|OPPORTUNITY)\\s*:|$)`, "i");
-    return re.exec(text)?.[1]?.trim() ?? "";
-  };
-  const summary = get("SUMMARY");
-  const painPoint = get("PAIN");
-  const opportunity = get("OPPORTUNITY");
-  if (!summary && !painPoint && !opportunity) return { summary: text.trim(), painPoint: "", opportunity: "" };
-  return { summary, painPoint, opportunity };
-}
-
-/** Structured opportunity brief from concrete website findings. */
-export async function generateBrief(f: FactsInput): Promise<LeadBrief> {
+/** Full AI dossier: contact extraction + deep analysis + pain/opportunity + timing + angle. */
+export async function generateDossier(f: DossierInput): Promise<LeadDossier> {
   const client = new Anthropic();
   const msg = await client.messages.create({
     model: MODEL,
-    max_tokens: 600,
-    system: BRIEF_SYSTEM,
-    messages: [{ role: "user", content: factsBlock(f) }],
+    max_tokens: 1400,
+    system: DOSSIER_SYSTEM,
+    tools: [DOSSIER_TOOL],
+    tool_choice: { type: "tool", name: "uloz_dossier" },
+    messages: [{ role: "user", content: dossierFacts(f) }],
   });
-  return parseBrief(textOf(msg));
+  const block = msg.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+  const d = (block?.input ?? {}) as Partial<LeadDossier>;
+
+  // Safety net against hallucinated contacts: only accept an e-mail/phone that was
+  // actually scraped from the site (or the Google phone).
+  const digits = (s: string) => s.replace(/\D/g, "").slice(-9);
+  const emailPool = new Set((f.extractedEmails ?? []).map((e) => e.toLowerCase()));
+  const phonePool = new Set([...(f.extractedPhones ?? []), f.placesPhone ?? ""].filter(Boolean).map(digits));
+  const email = d.email && emailPool.has(d.email.toLowerCase()) ? d.email : (f.extractedEmails?.[0] ?? null);
+  const phone = d.phone && phonePool.has(digits(d.phone)) ? d.phone : (f.extractedPhones?.[0] ?? f.placesPhone ?? null);
+
+  return {
+    ownerName: d.ownerName ?? null,
+    ownerRole: d.ownerRole ?? null,
+    email,
+    phone,
+    summary: d.summary ?? "",
+    painPoint: d.painPoint ?? "",
+    opportunity: d.opportunity ?? "",
+    bestContactTime: d.bestContactTime ?? "",
+    outreachAngle: d.outreachAngle ?? "",
+  };
 }
 
-export function briefFromLead(lead: Lead, segmentName: string): Promise<LeadBrief> {
-  return generateBrief(factsFromLead(lead, segmentName));
-}
+const EMAIL_SYSTEM = `Si copywriter SB Design (weby a digitálne riešenia na mieru, Slovensko). Napíš KRÁTKY personalizovaný e-mail konkrétnej firme. Cieľ: aby majiteľ SÁM pocítil, že by mu to pomohlo – žiadny nátlak, strašenie ani urgencia.
 
-/** Human-readable analysis (Markdown) for the detail page — built on the brief. */
-export async function generateAnalysis(lead: Lead, segmentName: string): Promise<string> {
-  const b = await briefFromLead(lead, segmentName);
-  const parts: string[] = [];
-  if (b.summary) parts.push(b.summary);
-  if (b.painPoint) parts.push(`**Kde firma stráca:** ${b.painPoint}`);
-  if (b.opportunity) parts.push(`**Čo vieme spraviť:** ${b.opportunity}`);
-  return parts.join("\n\n");
-}
+Pravidlá:
+- Ak je známy konateľ, oslov ho menom; inak firmu slušne.
+- TÓN a register PRISPÔSOB typu podnikania a poznámke o štýle komunikácie a uhle oslovenia nižšie (advokát znie inak než fitness tréner).
+- Otvor konkrétnym postrehom o ICH biznise/webe (z pain pointu), nie o nás.
+- Pomenuj 1 problém a hlavne PRÍLEŽITOSŤ – čo im to prinesie (viac rezervácií/klientov/tržieb, menej roboty). Vychádzaj z pripraveného pain pointu a príležitosti.
+- Ponúkni konkrétnu vec, ktorú vieme rýchlo postaviť. Sebavedomo, ale ľudsky. Žiadne superlatívy.
+- Jemné, nezáväzné CTA.
+- Max 160 slov.
+Formát: prvý riadok "Predmet: …", prázdny riadok, telo.`;
 
-/** Personalized, value-first cold email using the stored brief if present. */
-export async function generateEmail(lead: Lead, segmentName: string): Promise<string> {
+export async function generateEmail(
+  lead: Lead,
+  segment: { name: string; communicationStyle?: string | null },
+): Promise<string> {
   const client = new Anthropic();
-  const brief =
-    lead.aiPainPoint || lead.aiOpportunity
-      ? `\n\nPripravený pain point: ${lead.aiPainPoint ?? "—"}\nPripravená príležitosť (čo postaviť a ako to zarobí): ${lead.aiOpportunity ?? "—"}`
-      : "";
+  const ctx = `Firma: ${lead.companyName}
+Segment: ${segment.name}
+Konateľ: ${lead.ownerName ?? "neznámy"}${lead.ownerPosition ? ` (${lead.ownerPosition})` : ""}
+Mesto: ${lead.companyCity ?? "—"}
+Štýl komunikácie pre segment: ${segment.communicationStyle?.trim() || "(prispôsob typu podnikania sám)"}
+Uhol oslovenia: ${lead.aiOutreachAngle ?? "—"}
+Pain point: ${lead.aiPainPoint ?? "—"}
+Príležitosť (čo postaviť a ako to zarobí): ${lead.aiOpportunity ?? "—"}
+Zhrnutie stavu webu: ${lead.aiSummary ?? "—"}`;
   const msg = await client.messages.create({
     model: MODEL,
     max_tokens: 800,
     system: EMAIL_SYSTEM,
-    messages: [{ role: "user", content: factsBlock(factsFromLead(lead, segmentName)) + brief }],
+    messages: [{ role: "user", content: ctx }],
   });
   return textOf(msg);
 }

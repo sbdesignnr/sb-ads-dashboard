@@ -19,6 +19,9 @@ export function serializeLead(l: Lead): LeadDTO {
     aiSummary: l.aiSummary,
     aiPainPoint: l.aiPainPoint,
     aiOpportunity: l.aiOpportunity,
+    aiOutreachAngle: l.aiOutreachAngle,
+    bestContactTime: l.bestContactTime,
+    companyActive: l.companyActive,
     ownerName: l.ownerName,
     ownerPosition: l.ownerPosition,
     companyEmail: l.companyEmail,
@@ -41,6 +44,7 @@ export function serializeSegment(s: LeadSegment & { _count?: { leads: number } }
     color: s.color,
     icon: s.icon,
     keywords: s.keywords,
+    communicationStyle: s.communicationStyle,
     leadCount: s._count?.leads ?? 0,
   };
 }

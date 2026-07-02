@@ -82,14 +82,15 @@ model BlogPost {
 }
 
 model LeadSegment {
-  id        String        @id @default(cuid())
-  name      String
-  color     String        @default("#3b82f6")
-  icon      String?
-  keywords  String[]      @default([])
-  createdAt DateTime      @default(now()) @map("created_at")
-  leads     Lead[]
-  scanJobs  LeadScanJob[]
+  id                 String        @id @default(cuid())
+  name               String
+  color              String        @default("#3b82f6")
+  icon               String?
+  keywords           String[]      @default([])
+  communicationStyle String?       @map("communication_style")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  leads              Lead[]
+  scanJobs           LeadScanJob[]
 
   @@map("lead_segments")
 }
@@ -112,6 +113,9 @@ model Lead {
   aiSummary         String?      @map("ai_summary")
   aiPainPoint       String?      @map("ai_pain_point")
   aiOpportunity     String?      @map("ai_opportunity")
+  aiOutreachAngle   String?      @map("ai_outreach_angle")
+  bestContactTime   String?      @map("best_contact_time")
+  companyActive     Boolean?     @map("company_active")
   ownerName         String?      @map("owner_name")
   ownerPosition     String?      @map("owner_position")
   companyEmail      String?      @map("company_email")
