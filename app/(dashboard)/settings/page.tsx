@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { GoogleAdsConnection } from "@/components/settings/GoogleAdsConnection";
+import { MobileNotifications } from "@/components/settings/MobileNotifications";
 
 const ACCENTS = [
   { name: "Electric Blue", color: "#3B82F6" },
@@ -72,6 +73,9 @@ export default function SettingsPage() {
 
       {/* Google Ads — real API connection */}
       <GoogleAdsConnection />
+
+      {/* Mobile push notifications (Telegram) */}
+      <MobileNotifications />
 
       {/* Other connected platforms */}
       <Card>

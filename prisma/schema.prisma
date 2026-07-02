@@ -149,6 +149,46 @@ model LeadScanJob {
   @@map("lead_scan_jobs")
 }
 
+// Singleton row (id = "primary") holding push-notification preferences.
+model NotificationSetting {
+  id                String   @id @default("primary")
+  telegramChatId    String?  @map("telegram_chat_id")
+  enabled           Boolean  @default(true)
+  alertConversions  Boolean  @default(true) @map("alert_conversions")
+  alertActions      Boolean  @default(true) @map("alert_actions")
+  minConversionValue Float?  @map("min_conversion_value")
+  quietHoursStart   Int?     @map("quiet_hours_start") // 0-23 local hour, inclusive
+  quietHoursEnd     Int?     @map("quiet_hours_end")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("notification_settings")
+}
+
+// De-dupe log so the same alert isn't pushed repeatedly.
+model SentAlert {
+  id         String   @id @default(cuid())
+  dedupKey   String   @unique @map("dedup_key")
+  type       String
+  severity   String
+  campaignId String?  @map("campaign_id")
+  title      String
+  body       String
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("sent_alerts")
+}
+
+// Last-seen conversion totals per campaign, to detect new conversions.
+model CampaignConvState {
+  campaignId       String   @id @map("campaign_id")
+  conversions      Float    @default(0)
+  conversionsValue Float    @default(0) @map("conversions_value")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@map("campaign_conv_state")
+}
+
 model VideoCategory {
   id        String           @id @default(cuid())
   name      String

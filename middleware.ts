@@ -9,5 +9,5 @@ export default auth;
 export const config = {
   // Protect everything except Next.js internals, the auth API, the public
   // (read-only) API consumed by sbdesign.sk, and static files.
-  matcher: ["/((?!api/auth|api/public|api/videos/sync|api/leads/scan|_next/static|_next/image|favicon.ico|.*\\..*).*)"],
+  matcher: ["/((?!api/auth|api/public|api/videos/sync|api/leads/scan|api/notifications/run|_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 };
