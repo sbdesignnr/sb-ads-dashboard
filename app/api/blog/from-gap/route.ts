@@ -4,17 +4,17 @@ import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/blog/slug";
 import { analyzeSeo } from "@/lib/blog/analyze";
 import { ensureUniqueSlug, serialize } from "@/lib/blog/store";
-import { generateDraftFromGap } from "@/lib/blog/ai";
+import { generateFullArticle } from "@/lib/blog/ai";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 90;
+export const maxDuration = 120;
 
 function outlineMarkdown(reason: string | undefined, outline: string[]): string {
   const head = reason ? `> ${reason}\n\n` : "";
   const body = outline.length
-    ? outline.map((h) => `## ${h}\n\n_Doplň obsah…_\n`).join("\n")
-    : "## Úvod\n\n_Doplň obsah…_\n";
+    ? outline.map((h) => `## ${h}\n\n`).join("\n")
+    : "## Úvod\n\n";
   return head + body;
 }
 
@@ -40,32 +40,40 @@ export async function POST(req: NextRequest) {
   const targetKeyword = (body.targetKeyword ?? "").trim() || null;
   const outline = Array.isArray(body.outline) ? body.outline.filter((x) => typeof x === "string") : [];
 
-  let content: string;
-  if (process.env.ANTHROPIC_API_KEY) {
-    try {
-      content = await generateDraftFromGap({
+  // Generate a complete, publication-ready article (same engine as the editor button).
+  const article = process.env.ANTHROPIC_API_KEY
+    ? await generateFullArticle({
         title,
         targetKeyword: targetKeyword ?? undefined,
         reason: body.reason,
         outline,
-      });
-    } catch {
-      content = outlineMarkdown(body.reason, outline);
-    }
-  } else {
-    content = outlineMarkdown(body.reason, outline);
-  }
+        category: body.category,
+      }).catch(() => null)
+    : null;
 
-  const slug = await ensureUniqueSlug(slugify(title));
+  const finalTitle = article?.title || title;
+  const content = article?.content || outlineMarkdown(body.reason, outline);
+  const kw = article?.targetKeyword || targetKeyword;
+  const slug = await ensureUniqueSlug(article?.slug || slugify(finalTitle));
+
   const post = await prisma.blogPost.create({
     data: {
-      title,
+      title: finalTitle,
       slug,
       content,
+      metaTitle: article?.metaTitle ?? null,
+      metaDescription: article?.metaDescription ?? null,
+      imageAlt: article?.imageAlt ?? null,
       category: body.category ?? "Z konkurencie",
-      targetKeyword,
+      targetKeyword: kw,
       status: "draft",
-      seoScore: analyzeSeo({ title, content, targetKeyword }).score,
+      seoScore: analyzeSeo({
+        title: finalTitle,
+        content,
+        targetKeyword: kw,
+        metaTitle: article?.metaTitle,
+        metaDescription: article?.metaDescription,
+      }).score,
     },
   });
 
