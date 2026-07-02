@@ -13,6 +13,7 @@ export interface FullArticle {
   imageAlt: string;
   excerpt: string; // 1-2 sentence intro/summary
   content: string; // Markdown body starting at H2 (no H1)
+  targetKeyword: string; // the keyword the article is optimized for
 }
 
 const ARTICLE_SYSTEM = `Si špičkový slovenský copywriter a SEO stratég pre SB Design (tvorba webov a online marketing). Píšeš články, ktoré čitateľovi REÁLNE pomôžu a zároveň rankujú v Google vyššie než konkurencia. Cieľ: dobyť konkurenciu kvalitou a užitočnosťou.
@@ -23,8 +24,9 @@ const ARTICLE_SYSTEM = `Si špičkový slovenský copywriter a SEO stratég pre 
 - Striedaj dĺžku viet, používaj konkrétne čísla, príklady, mini-návody. Krátke odseky (2–4 vety). Skenovateľné.
 - Expertíza a dôveryhodnosť (E-E-A-T): reálne rady, ktoré vie autor obhájiť. Žiadne vágne všeobecnosti.
 
-SEO ŠTRUKTÚRA:
-- Cieľové kľúčové slovo prirodzene v prvom odseku, v jednom H2 a v meta. Žiadny keyword stuffing.
+SEO ŠTRUKTÚRA (dodrž PRESNE — inak článok neprejde SEO kontrolou):
+- Cieľové kľúčové slovo použi DOSLOVNE (rovnaké slová) na týchto miestach: v titulku (title), v PRVOM odseku tela, aspoň v jednom H2 nadpise, v metaTitle aj v metaDescription. V tele ho zopakuj celkovo 3–5× prirodzene (hustota ~1 %). Žiadny keyword stuffing.
+- metaTitle musí mať 50–60 znakov a začínať kľúčovým slovom. metaDescription 150–160 znakov a obsahovať kľúčové slovo + jemné CTA.
 - H2 (##) sekcie logicky podľa vyhľadávacieho zámeru; kde dáva zmysel, pridaj H3 (###) pododdiely.
 - Na začiatku krátky odsek, ktorý priamo odpovie na hlavnú otázku (vhodné na featured snippet).
 - Používaj odrážky a číslované zoznamy tam, kde pomáhajú. Kde vhodné, pridaj krátku porovnávaciu alebo "checklist" časť.
@@ -47,10 +49,27 @@ const ARTICLE_TOOL: Anthropic.Tool = {
       imageAlt: { type: "string", description: "Popisný alt text k titulnému obrázku (s kľúčovým slovom)" },
       excerpt: { type: "string", description: "1–2 vety zhrnutie/úvod pre výpis a OG popis" },
       content: { type: "string", description: "Telo článku v Markdowne, začína H2 (bez H1), s H3, zoznamami a FAQ sekciou" },
+      targetKeyword: { type: "string", description: "Presné cieľové kľúčové slovo, na ktoré je článok optimalizovaný" },
     },
-    required: ["title", "metaTitle", "metaDescription", "slug", "imageAlt", "excerpt", "content"],
+    required: ["title", "metaTitle", "metaDescription", "slug", "imageAlt", "excerpt", "content", "targetKeyword"],
   } as Anthropic.Tool.InputSchema,
 };
+
+/** Trim to a word boundary within `max` chars; optionally pad a short title with a brand suffix. */
+function clampMeta(s: string, max: number): string {
+  s = s.trim().replace(/\s+/g, " ");
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const sp = cut.lastIndexOf(" ");
+  return (sp > max * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s.,;:–-]+$/, "").trim();
+}
+
+function metaTitleFit(s: string): string {
+  const t = clampMeta(s, 60);
+  // Nudge a too-short title into the ideal 50–60 range with a clean brand suffix.
+  if (t.length < 50 && `${t} – SB Design`.length <= 60) return `${t} – SB Design`;
+  return t;
+}
 
 function asciiSlug(s: string): string {
   return s
@@ -95,12 +114,13 @@ Napíš kompletný, hotový článok pripravený na publikáciu.`,
   const title = (a.title || input.title).trim();
   return {
     title,
-    metaTitle: (a.metaTitle || title).trim().slice(0, 70),
-    metaDescription: (a.metaDescription || a.excerpt || "").trim().slice(0, 175),
+    metaTitle: metaTitleFit(a.metaTitle || title),
+    metaDescription: clampMeta(a.metaDescription || a.excerpt || "", 160),
     slug: asciiSlug(a.slug || title),
     imageAlt: (a.imageAlt || title).trim(),
     excerpt: (a.excerpt || "").trim(),
     content: (a.content || "").trim(),
+    targetKeyword: (input.targetKeyword || a.targetKeyword || "").trim(),
   };
 }
 

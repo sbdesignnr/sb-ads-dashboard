@@ -38,6 +38,14 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** Lowercase + strip diacritics so keyword matching isn't brittle (kaviareň ≈ kaviaren). */
+function fold(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+}
+
 function toPlainText(md: string): string {
   return md
     .replace(/```[\s\S]*?```/g, " ")
@@ -80,10 +88,10 @@ export function analyzeSeo(input: AnalyzeInput): SeoAnalysis {
   const content = input.content ?? "";
   const metaTitle = input.metaTitle ?? "";
   const metaDescription = input.metaDescription ?? "";
-  const kw = (input.targetKeyword ?? "").trim().toLowerCase();
+  const kw = fold((input.targetKeyword ?? "").trim());
 
   const plain = toPlainText(content);
-  const plainLower = plain.toLowerCase();
+  const plainFold = fold(plain);
   const words = plain ? plain.split(/\s+/).length : 0;
 
   const checks: SeoCheck[] = [];
@@ -102,14 +110,14 @@ export function analyzeSeo(input: AnalyzeInput): SeoAnalysis {
     add("kw-intro", "Kľúčové slovo v úvode", "warn", "Nastav kľúčové slovo.", 5);
     add("kw-meta", "Kľúčové slovo v meta description", "warn", "Nastav kľúčové slovo.", 5);
   } else {
-    const occ = (plainLower.match(new RegExp(escapeRegExp(kw), "g")) ?? []).length;
+    const occ = (plainFold.match(new RegExp(escapeRegExp(kw), "g")) ?? []).length;
     const density = words > 0 ? (occ / words) * 100 : 0;
 
     add(
       "kw-title",
       "Kľúčové slovo v nadpise",
-      title.toLowerCase().includes(kw) ? "ok" : "warn",
-      title.toLowerCase().includes(kw)
+      fold(title).includes(kw) ? "ok" : "warn",
+      fold(title).includes(kw)
         ? "Kľúčové slovo je v názve článku."
         : `Pridaj „${input.targetKeyword}" do názvu článku.`,
       10,
@@ -120,7 +128,7 @@ export function analyzeSeo(input: AnalyzeInput): SeoAnalysis {
     else if (occ < 2) add("kw-density", "Hustota kľúčového slova", "warn", `Iba ${occ}× — pridaj ešte pár prirodzených výskytov (ideál 0,5–2,5 %).`, 10);
     else add("kw-density", "Hustota kľúčového slova", "ok", `${occ}× v obsahu (hustota ${density.toFixed(1)} %).`, 10);
 
-    const intro = plainLower.slice(0, 600);
+    const intro = plainFold.slice(0, 600);
     add(
       "kw-intro",
       "Kľúčové slovo v úvode",
@@ -132,8 +140,8 @@ export function analyzeSeo(input: AnalyzeInput): SeoAnalysis {
     add(
       "kw-meta",
       "Kľúčové slovo v meta description",
-      metaDescription.toLowerCase().includes(kw) ? "ok" : "warn",
-      metaDescription.toLowerCase().includes(kw) ? "Kľúčové slovo je v meta description." : "Pridaj kľúčové slovo do meta description.",
+      fold(metaDescription).includes(kw) ? "ok" : "warn",
+      fold(metaDescription).includes(kw) ? "Kľúčové slovo je v meta description." : "Pridaj kľúčové slovo do meta description.",
       5,
     );
   }

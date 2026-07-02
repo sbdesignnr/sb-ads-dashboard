@@ -286,6 +286,7 @@ export function BlogEditor({ id }: { id: string }) {
         if (a.imageAlt && !imageAlt) setImageAlt(a.imageAlt);
         if (a.title && a.title !== title) setTitle(a.title);
         if (a.slug && !slug) setSlug(a.slug);
+        if (a.targetKeyword && !targetKeyword) setTargetKeyword(a.targetKeyword);
         toast.success("Článok vygenerovaný — skontroluj a ulož");
       } else {
         toast.error(j.error || "Generovanie zlyhalo");
