@@ -182,7 +182,7 @@ export default function CampaignsPage() {
     try {
       const j = await fetch(`/api/leads/emails/${email.id}/send`, { method: "POST" }).then((r) => r.json());
       if (j.success) {
-        toast.success(`Odoslané: ${email.companyName}`);
+        toast.success("Email odoslaný ✓");
         setQueue((q) => q.filter((e) => e.id !== email.id));
         setFollowups((q) => q.filter((e) => e.id !== email.id));
         loadCampaigns();
@@ -371,6 +371,7 @@ export default function CampaignsPage() {
                   onOpen={() => setEditing(e)}
                   onApprove={() => act(e, "approve")}
                   onReject={() => act(e, "reject")}
+                  onSend={() => sendNow(e)}
                   busy={busyId === e.id}
                 />
               ))}
@@ -400,6 +401,7 @@ export default function CampaignsPage() {
                   onApprove={() => act(e, "approve")}
                   onReject={() => act(e, "reject")}
                   onGenerate={!e.body?.trim() ? () => generateBody(e) : undefined}
+                  onSend={e.body?.trim() ? () => sendNow(e) : undefined}
                   busy={busyId === e.id}
                   showType
                 />
@@ -429,6 +431,12 @@ export default function CampaignsPage() {
             setEditing(null);
             loadCampaigns();
           }}
+          onSent={(id) => {
+            setQueue((q) => q.filter((e) => e.id !== id));
+            setFollowups((q) => q.filter((e) => e.id !== id));
+            setEditing(null);
+            loadCampaigns();
+          }}
         />
       )}
     </div>
@@ -443,6 +451,7 @@ function EmailRow({
   onApprove,
   onReject,
   onGenerate,
+  onSend,
   busy,
   showType,
 }: {
@@ -453,6 +462,7 @@ function EmailRow({
   onApprove: () => void;
   onReject: () => void;
   onGenerate?: () => void;
+  onSend?: () => void;
   busy?: boolean;
   showType?: boolean;
 }) {
@@ -484,6 +494,18 @@ function EmailRow({
         <Button size="sm" variant="ghost" onClick={onOpen} aria-label="Upraviť">
           <Pencil className="h-4 w-4" />
         </Button>
+        {onSend && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onSend}
+            disabled={busy || !email.companyEmail}
+            aria-label="Odoslať teraz"
+            title={email.companyEmail ? "Odoslať teraz" : "Chýba email"}
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 text-primary" />}
+          </Button>
+        )}
         <Button size="sm" variant="ghost" onClick={onApprove} disabled={busy} aria-label="Schváliť">
           <Check className="h-4 w-4 text-success" />
         </Button>
@@ -501,16 +523,19 @@ function EmailEditor({
   onSaved,
   onApproved,
   onRejected,
+  onSent,
 }: {
   email: LeadEmailDTO;
   onClose: () => void;
   onSaved: (e: LeadEmailDTO) => void;
   onApproved: (id: string) => void;
   onRejected: (id: string) => void;
+  onSent: (id: string) => void;
 }) {
   const [subject, setSubject] = useState(email.subject);
   const [body, setBody] = useState(email.body);
   const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
 
   const save = async (): Promise<LeadEmailDTO | null> => {
     const j = await fetch(`/api/leads/emails/${email.id}`, {
@@ -537,6 +562,24 @@ function EmailEditor({
   const reject = async () => {
     await fetch(`/api/leads/emails/${email.id}/reject`, { method: "PATCH" });
     onRejected(email.id);
+  };
+
+  const sendNow = async () => {
+    setSending(true);
+    try {
+      // Persist any edits first so the sent copy matches what's on screen.
+      const updated = await save();
+      if (updated) onSaved(updated);
+      const j = await fetch(`/api/leads/emails/${email.id}/send`, { method: "POST" }).then((r) => r.json());
+      if (j.success) {
+        toast.success("Email odoslaný ✓");
+        onSent(email.id);
+      } else {
+        toast.error(j.error || "Odoslanie zlyhalo");
+      }
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -593,14 +636,23 @@ function EmailEditor({
                   toast.success("Uložené");
                 }
               }}
-              disabled={saving}
+              disabled={saving || sending}
             >
               <Check className="h-4 w-4" />
               Uložiť zmeny
             </Button>
-            <Button size="sm" onClick={saveAndApprove} disabled={saving}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            <Button size="sm" variant="secondary" onClick={saveAndApprove} disabled={saving || sending}>
+              <Check className="h-4 w-4" />
               Uložiť & Schváliť
+            </Button>
+            <Button
+              size="sm"
+              onClick={sendNow}
+              disabled={saving || sending || !email.companyEmail}
+              title={email.companyEmail ? "Odoslať teraz" : "Chýba email"}
+            >
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Odoslať teraz
             </Button>
           </div>
         </div>
