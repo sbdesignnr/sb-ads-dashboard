@@ -31,7 +31,7 @@ import { copyToClipboard } from "@/lib/export";
 import { cn } from "@/lib/utils";
 import { type LeadDTO, type LeadStatus, LEAD_STATUS_LABEL } from "@/lib/leads/types";
 
-const STATUSES: LeadStatus[] = ["new", "contacted", "converted", "rejected"];
+const STATUSES: LeadStatus[] = ["new", "contacted", "responded", "converted", "rejected"];
 
 function Row({ icon: Icon, label, children }: { icon: typeof Globe; label: string; children: React.ReactNode }) {
   return (

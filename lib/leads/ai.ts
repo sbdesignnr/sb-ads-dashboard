@@ -148,37 +148,126 @@ export async function generateDossier(f: DossierInput): Promise<LeadDossier> {
   };
 }
 
-const EMAIL_SYSTEM = `Si copywriter SB Design (weby a digitálne riešenia na mieru, Slovensko). Napíš KRÁTKY personalizovaný e-mail konkrétnej firme. Cieľ: aby majiteľ SÁM pocítil, že by mu to pomohlo – žiadny nátlak, strašenie ani urgencia.
+const OUTREACH_SYSTEM = `Si Samuel Bibeň, 22-ročný web developer z Nitry. Píšeš osobný cold email majiteľovi/konateľovi firmy. Píšeš vždy v slovenčine.
 
-Pravidlá:
-- Ak je známy konateľ, oslov ho menom; inak firmu slušne.
-- TÓN a register PRISPÔSOB typu podnikania a poznámke o štýle komunikácie a uhle oslovenia nižšie (advokát znie inak než fitness tréner).
-- Otvor konkrétnym postrehom o ICH biznise/webe (z pain pointu), nie o nás.
-- Pomenuj 1 problém a hlavne PRÍLEŽITOSŤ – čo im to prinesie (viac rezervácií/klientov/tržieb, menej roboty). Vychádzaj z pripraveného pain pointu a príležitosti.
-- Ponúkni konkrétnu vec, ktorú vieme rýchlo postaviť. Sebavedomo, ale ľudsky. Žiadne superlatívy.
-- Jemné, nezáväzné CTA.
-- Max 160 slov.
-Formát: prvý riadok "Predmet: …", prázdny riadok, telo.`;
+PRAVIDLÁ ŠTÝLU:
+- Píš ako človek, nie ako marketér. Krátke vety. Bez buzzwords.
+- NIKDY NEPOUŽÍVAJ: "radi by sme", "naša spoločnosť", "profesionálne riešenia", "komplexný prístup", "digitálna prezentácia", "online prítomnosť", "webová stránka" (použi "web" alebo "stránka")
+- VŽDY: konkrétny problém ktorý si videl priamo na ich webe, konkrétny dopad na ich biznis v ich odvetví
+- Dĺžka tela emailu: 100-150 slov MAX
+- Tón: vecný, priamy, ľudský, bez preháňania
+- Nikdy nezačínaj prvú vetu s "Moje meno je" alebo komplimentom
 
+ŠTRUKTÚRA EMAILU:
+1. Oslovenie: "Dobrý deň, pán/pani [priezvisko]," (ak neznáme meno, použi "Dobrý deň,")
+2. Odsek 1 (2-3 vety): Čo konkrétne si videl na ich webe + čo to znamená pre ich biznis
+3. Odsek 2 (1-2 vety): Čo vieš spraviť — jednoducho, bez techno-žargónu
+4. CTA (1 veta): Podľa segmentu (pozri nižšie)
+5. Podpis: "S pozdravom,\\nSamuel Bibeň\\nSB Design | sbdesign.sk\\n+421 911 183 131"
+
+PREDMET EMAILU — pravidlá:
+- Konkrétny, nie clickbait
+- Spomína ich web alebo firmu
+- Max 60 znakov
+- Príklady dobrých predmetov:
+  "Web stavreko.sk – prečo vám unikajú dopyty zo Zvolena"
+  "arkatelier.sk – nápad na jedno vylepšenie"
+  "completreal.sk – rýchla otázka"
+
+CTA PODĽA SEGMENTU:
+- Stavebné firmy / remeselníci: "Ak vás to zaujíma — napíšte len áno a do 24 hodín pošlem ukážku aj s orientačnou cenou. Žiadne záväzky."
+- Realitné kancelárie: "Ak chcete vidieť ako by to vyzeralo pre vás — stačí odpovedať. Ukážku pripravím do 24 hodín."
+- Advokáti / účtovníci: "Ak má zmysel sa o tom porozprávať, rád si nájdem 15 minút. Stačí odpovedať na tento mail."
+- Architekti / dizajnéri: "Ak vás zaujíma ako by mohlo vaše portfólio vyzerať — napíšte mi. Ukážku spravím zadarmo."
+- Fyzioterapeuti / psychológovia / lekári: "Ak vás zaujíma ako to vyriešiť — napíšte mi. Ukážku nového webu pripravím zadarmo."
+- Fitness tréneri / športové štúdiá: "Ak chcete viac klientov cez Google — stačí napísať. Ukážku pripravím do 24 hodín."
+- Reštaurácie / kaviarne: "Ak vás zaujíma ako by to vyzeralo — odpíšte. Návrh pripravím do 24 hodín."
+- Ostatné: "Ak vás to zaujíma — stačí odpovedať. Rád ukážem konkrétny návrh."
+
+FOLLOWUP 1 (po 3 dňoch) — kratší, priateľský:
+Dĺžka: 50-70 slov
+Tón: "len sa pripomínam, chápem že ste zaneprázdnení"
+Štruktúra: 1 veta pripomienka na predošlý mail + 1 veta o čom to bolo + CTA
+Predmet: "Re: " + pôvodný predmet
+
+FOLLOWUP 2 (po 7 dňoch) — posledný, bez tlaku:
+Dĺžka: 40-50 slov
+Tón: definitívny, bez tlaku, nechávam dvere otvorené
+Štruktúra: "Posielam poslednú správu..." + krátka ponuka + "Ak nie teraz, pokojne sa ozvite neskôr."
+Predmet: "Re: " + pôvodný predmet
+
+ČOMU SA VŽDY VYHÝBAJ:
+- Viac ako 3 odseky v hlavnom emailu
+- Slová: "prezentácia", "portfólio webu", "moderný web" (príliš generic), "profesionálny"
+- Otázky na konci ("Čo myslíte?", "Mali by ste záujem?") — namiesto toho priamy CTA
+- HTML formátovanie v tele — plain text znie ľudskejšie
+
+Výsledok vlož VÝHRADNE cez nástroj "uloz_email".`;
+
+const OUTREACH_TOOL: Anthropic.Tool = {
+  name: "uloz_email",
+  description: "Uloží predmet a telo cold emailu.",
+  input_schema: {
+    type: "object",
+    properties: {
+      subject: { type: "string", description: "Predmet emailu (max 60 znakov, spomína web/firmu)" },
+      body: { type: "string", description: "Telo emailu v plain texte (žiadne HTML), vrátane podpisu" },
+    },
+    required: ["subject", "body"],
+  } as Anthropic.Tool.InputSchema,
+};
+
+export interface OutreachEmail {
+  subject: string;
+  body: string;
+}
+
+/** Generate an initial cold email or a follow-up as { subject, body }. */
+export async function generateOutreachEmail(input: {
+  lead: Lead;
+  segmentName: string;
+  type: "initial" | "followup1" | "followup2";
+  previousSubject?: string | null;
+  previousBody?: string | null;
+}): Promise<OutreachEmail> {
+  const { lead, segmentName, type } = input;
+  const facts = `DÁTA O FIRME (použi konkrétne, nevymýšľaj):
+Firma: ${lead.companyName}
+Segment (odvetvie): ${segmentName}
+Web: ${lead.websiteUrl ?? "—"}
+Mesto: ${lead.companyCity ?? "—"}
+Konateľ/kontakt: ${lead.ownerName ?? "neznámy"}${lead.ownerPosition ? ` (${lead.ownerPosition})` : ""}
+Konkrétne nedostatky webu: ${(lead.websiteIssues ?? []).slice(0, 5).join("; ") || "—"}
+Pain point: ${lead.aiPainPoint ?? "—"}
+Príležitosť (čo vieme spraviť): ${lead.aiOpportunity ?? "—"}
+Zhrnutie stavu webu: ${lead.aiSummary ?? "—"}`;
+
+  const instruction =
+    type === "initial"
+      ? "Napíš PRVÝ (initial) cold email podľa štruktúry a pravidiel."
+      : type === "followup1"
+        ? `Napíš FOLLOWUP 1 (po 3 dňoch). Predmet: "Re: ${input.previousSubject ?? lead.companyName}". Nadväzuj na predošlý email:\n"""\n${input.previousBody ?? ""}\n"""`
+        : `Napíš FOLLOWUP 2 (po 7 dňoch), posledný. Predmet: "Re: ${input.previousSubject ?? lead.companyName}". Nadväzuj na predošlý email:\n"""\n${input.previousBody ?? ""}\n"""`;
+
+  const client = new Anthropic();
+  const msg = await client.messages.create({
+    model: MODEL,
+    max_tokens: 700,
+    system: OUTREACH_SYSTEM,
+    tools: [OUTREACH_TOOL],
+    tool_choice: { type: "tool", name: "uloz_email" },
+    messages: [{ role: "user", content: `${facts}\n\n${instruction}` }],
+  });
+  const block = msg.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+  const d = (block?.input ?? {}) as Partial<OutreachEmail>;
+  return { subject: (d.subject ?? "").trim().slice(0, 120), body: (d.body ?? "").trim() };
+}
+
+/** Back-compat for the lead detail page: returns "Predmet: …\\n\\n<body>". */
 export async function generateEmail(
   lead: Lead,
   segment: { name: string; communicationStyle?: string | null },
 ): Promise<string> {
-  const client = new Anthropic();
-  const ctx = `Firma: ${lead.companyName}
-Segment: ${segment.name}
-Konateľ: ${lead.ownerName ?? "neznámy"}${lead.ownerPosition ? ` (${lead.ownerPosition})` : ""}
-Mesto: ${lead.companyCity ?? "—"}
-Štýl komunikácie pre segment: ${segment.communicationStyle?.trim() || "(prispôsob typu podnikania sám)"}
-Uhol oslovenia: ${lead.aiOutreachAngle ?? "—"}
-Pain point: ${lead.aiPainPoint ?? "—"}
-Príležitosť (čo postaviť a ako to zarobí): ${lead.aiOpportunity ?? "—"}
-Zhrnutie stavu webu: ${lead.aiSummary ?? "—"}`;
-  const msg = await client.messages.create({
-    model: MODEL,
-    max_tokens: 800,
-    system: EMAIL_SYSTEM,
-    messages: [{ role: "user", content: ctx }],
-  });
-  return textOf(msg);
+  const e = await generateOutreachEmail({ lead, segmentName: segment.name, type: "initial" });
+  return `Predmet: ${e.subject}\n\n${e.body}`;
 }

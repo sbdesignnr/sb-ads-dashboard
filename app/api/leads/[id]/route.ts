@@ -5,7 +5,7 @@ import { serializeLead } from "@/lib/leads/store";
 
 export const dynamic = "force-dynamic";
 
-const STATUSES = ["new", "contacted", "rejected", "converted"];
+const STATUSES = ["new", "contacted", "responded", "rejected", "converted"];
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();

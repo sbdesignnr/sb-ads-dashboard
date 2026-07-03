@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useUIStore, type DateRangeDays } from "@/lib/store";
 import { getPageTitle } from "./nav";
+import { NotificationBell } from "./NotificationBell";
 
 const RANGE_OPTIONS: { value: DateRangeDays; label: string }[] = [
   { value: 7, label: "Posledných 7 dní" },
@@ -73,6 +74,8 @@ export function Header({ user }: HeaderProps) {
             </SelectContent>
           </Select>
         </div>
+
+        <NotificationBell />
 
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2 py-1.5 transition-colors hover:border-primary/40 focus:outline-none cursor-pointer">

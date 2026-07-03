@@ -1,5 +1,5 @@
-import type { Lead, LeadSegment } from "@prisma/client";
-import type { LeadDTO, LeadStatus, SegmentDTO } from "./types";
+import type { Lead, LeadSegment, LeadEmail, LeadCampaign } from "@prisma/client";
+import type { CampaignDTO, EmailStatus, EmailType, LeadDTO, LeadEmailDTO, LeadStatus, SegmentDTO } from "./types";
 
 export function serializeLead(l: Lead): LeadDTO {
   return {
@@ -28,12 +28,54 @@ export function serializeLead(l: Lead): LeadDTO {
     companyPhone: l.companyPhone,
     companyAddress: l.companyAddress,
     companyCity: l.companyCity,
-    status: (["new", "contacted", "rejected", "converted"].includes(l.status) ? l.status : "new") as LeadStatus,
+    status: (["new", "contacted", "responded", "rejected", "converted"].includes(l.status) ? l.status : "new") as LeadStatus,
     notes: l.notes,
     source: l.source,
     createdAt: l.createdAt.toISOString(),
     updatedAt: l.updatedAt.toISOString(),
     lastScannedAt: l.lastScannedAt ? l.lastScannedAt.toISOString() : null,
+  };
+}
+
+type LeadLite = Pick<Lead, "companyName" | "companyEmail" | "companyCity" | "websiteUrl"> & {
+  segment?: { name: string } | null;
+};
+
+export function serializeLeadEmail(e: LeadEmail & { lead?: LeadLite | null }): LeadEmailDTO {
+  const iso = (d: Date | null) => (d ? d.toISOString() : null);
+  return {
+    id: e.id,
+    leadId: e.leadId,
+    companyName: e.lead?.companyName ?? "—",
+    companyEmail: e.lead?.companyEmail ?? null,
+    companyCity: e.lead?.companyCity ?? null,
+    segmentName: e.lead?.segment?.name ?? null,
+    websiteUrl: e.lead?.websiteUrl ?? null,
+    subject: e.subject,
+    body: e.body,
+    emailType: e.emailType as EmailType,
+    status: e.status as EmailStatus,
+    scheduledAt: iso(e.scheduledAt),
+    sentAt: iso(e.sentAt),
+    openedAt: iso(e.openedAt),
+    repliedAt: iso(e.repliedAt),
+    createdAt: e.createdAt.toISOString(),
+  };
+}
+
+export function serializeCampaign(c: LeadCampaign): CampaignDTO {
+  return {
+    id: c.id,
+    name: c.name,
+    segmentId: c.segmentId,
+    dailyLimit: c.dailyLimit,
+    sendTime: c.sendTime,
+    isActive: c.isActive,
+    totalSent: c.totalSent,
+    totalOpened: c.totalOpened,
+    totalReplied: c.totalReplied,
+    startedAt: c.startedAt ? c.startedAt.toISOString() : null,
+    createdAt: c.createdAt.toISOString(),
   };
 }
 

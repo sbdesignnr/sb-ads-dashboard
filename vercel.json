@@ -11,6 +11,10 @@
     {
       "path": "/api/notifications/run",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/send-emails",
+      "schedule": "25 8 * * *"
     }
   ]
 }

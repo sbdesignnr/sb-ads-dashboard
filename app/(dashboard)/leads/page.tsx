@@ -12,6 +12,7 @@ import {
   MapPin,
   Gauge,
   Layers,
+  Mail,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +31,7 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
 const STATUS_VARIANT: Record<LeadStatus, "default" | "info" | "warning" | "success" | "danger"> = {
   new: "info",
   contacted: "warning",
+  responded: "success",
   converted: "success",
   rejected: "default",
 };
@@ -116,13 +118,22 @@ export default function LeadsPage() {
           <h1 className="text-xl font-semibold text-foreground">Leady</h1>
           <p className="text-sm text-muted">Firmy so zastaralými webmi, pripravené na oslovenie.</p>
         </div>
-        <Link
-          href="/leads/settings"
-          className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/40"
-        >
-          <Settings className="h-4 w-4" />
-          Nastavenia
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/leads/kampane"
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/40"
+          >
+            <Mail className="h-4 w-4" />
+            Kampane
+          </Link>
+          <Link
+            href="/leads/settings"
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/40"
+          >
+            <Settings className="h-4 w-4" />
+            Nastavenia
+          </Link>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[240px_1fr]">

@@ -99,6 +99,7 @@ model Lead {
   id                String       @id @default(cuid())
   segmentId         String?      @map("segment_id")
   segment           LeadSegment? @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  emails            LeadEmail[]
   companyName       String       @map("company_name")
   ico               String?
   websiteUrl        String?      @unique @map("website_url")
@@ -131,6 +132,46 @@ model Lead {
 
   @@index([segmentId, status])
   @@map("leads")
+}
+
+// One outreach e-mail (initial or follow-up) for a lead.
+model LeadEmail {
+  id             String    @id @default(cuid())
+  leadId         String    @map("lead_id")
+  lead           Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  subject        String
+  body           String    @db.Text
+  emailType      String    @map("email_type") // initial | followup1 | followup2
+  status         String    @default("draft") // draft | approved | sent | failed | rejected
+  scheduledAt    DateTime? @map("scheduled_at")
+  sentAt         DateTime? @map("sent_at")
+  openedAt       DateTime? @map("opened_at")
+  repliedAt      DateTime? @map("replied_at")
+  brevoMessageId String?   @map("brevo_message_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, scheduledAt])
+  @@index([leadId])
+  @@index([brevoMessageId])
+  @@map("lead_emails")
+}
+
+// A sending campaign scoped to a segment, with a daily cap + send time.
+model LeadCampaign {
+  id           String    @id @default(cuid())
+  name         String
+  segmentId    String?   @map("segment_id")
+  dailyLimit   Int       @default(20) @map("daily_limit")
+  sendTime     String    @default("08:30") @map("send_time")
+  isActive     Boolean   @default(false) @map("is_active")
+  totalSent    Int       @default(0) @map("total_sent")
+  totalOpened  Int       @default(0) @map("total_opened")
+  totalReplied Int       @default(0) @map("total_replied")
+  startedAt    DateTime? @map("started_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@map("lead_campaigns")
 }
 
 model LeadScanJob {
