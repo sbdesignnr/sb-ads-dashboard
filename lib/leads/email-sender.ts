@@ -14,9 +14,34 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// Keep the plain-text feel but preserve line breaks in HTML-only clients.
+// Em/en dashes read as "AI-written" and render inconsistently — use a plain hyphen.
+function normalizeDashes(s: string): string {
+  return s.replace(/[—–]/g, "-");
+}
+
+// HTML email: the body followed by Samuel's signature card. Body is escaped and
+// its line breaks converted to <br>.
 function toHtml(body: string): string {
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#222;white-space:pre-wrap">${escapeHtml(body)}</div>`;
+  const safeBody = escapeHtml(normalizeDashes(body)).replace(/\n/g, "<br>");
+  return `
+<div style="font-family: Arial, sans-serif; font-size: 14px; color: #000000; max-width: 600px;">
+  <div style="white-space: pre-wrap;">${safeBody}</div>
+  <br><br>
+  <table cellpadding="0" cellspacing="0" style="border-left: 3px solid #4A90D9; padding-left: 12px; margin-top: 8px;">
+    <tr>
+      <td style="vertical-align: top; font-family: Arial, sans-serif;">
+        <div style="font-weight: bold; font-size: 15px;">Bc. Samuel Bibeň</div>
+        <div style="color: #666666; font-size: 12px; margin-bottom: 6px;">Digitálny Marketing</div>
+        <div style="font-size: 12px; line-height: 1.8; color: #333333;">
+          M: +421 911 183 131<br>
+          E: <a href="mailto:biben@sbdesign.sk" style="color: #4A90D9; text-decoration: none;">biben@sbdesign.sk</a> |
+          <a href="https://www.sbdesign.sk" style="color: #4A90D9; text-decoration: none;">www.sbdesign.sk</a><br>
+          Mostná 42 | 949 01 Nitra
+        </div>
+      </td>
+    </tr>
+  </table>
+</div>`;
 }
 
 export interface SendResult {
@@ -50,9 +75,9 @@ export async function sendLeadEmail(leadEmailId: string): Promise<SendResult> {
     sender: SENDER,
     to: [{ email: lead.companyEmail.trim(), name: lead.companyName }],
     replyTo: SENDER,
-    subject: email.subject,
+    subject: normalizeDashes(email.subject),
     htmlContent: toHtml(email.body),
-    textContent: email.body,
+    textContent: normalizeDashes(email.body),
     tags: ["lead-outreach", email.emailType],
   };
 
