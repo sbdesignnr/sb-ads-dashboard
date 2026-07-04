@@ -29,6 +29,12 @@ function toHtml(body: string): string {
   <br><br>
   <table cellpadding="0" cellspacing="0" style="border-left: 3px solid #4A90D9; padding-left: 12px; margin-top: 8px;">
     <tr>
+      <td style="padding-right: 14px; vertical-align: top;">
+        <img src="https://mtktuwvwgdnyjduhvsko.supabase.co/storage/v1/object/public/assets/Fotka-nova-2.png"
+        width="72" height="72"
+        style="border-radius: 50%; object-fit: cover; object-position: top;"
+        alt="Samuel Bibeň">
+      </td>
       <td style="vertical-align: top; font-family: Arial, sans-serif;">
         <div style="font-weight: bold; font-size: 15px;">Bc. Samuel Bibeň</div>
         <div style="color: #666666; font-size: 12px; margin-bottom: 6px;">Digitálny Marketing</div>
