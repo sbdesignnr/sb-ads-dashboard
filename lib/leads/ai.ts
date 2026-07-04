@@ -163,7 +163,7 @@ PRAVIDLÁ ŠTÝLU:
 2. Odsek 1 (2-3 vety): Čo konkrétne si videl na ich webe + čo to znamená pre ich biznis
 3. Odsek 2 (1-2 vety): Čo vieš spraviť — jednoducho, bez techno-žargónu
 4. CTA (1 veta): Podľa segmentu (pozri nižšie)
-5. Podpis: "S pozdravom,\\nSamuel Bibeň\\nSB Design | sbdesign.sk\\n+421 911 183 131"
+5. Podpis: Ukonči email len s "S pozdravom,\\nSamuel Bibeň" - bez telefónu, bez webu, bez ďalších kontaktov. Vizitka sa pridá automaticky.
 
 PREDMET EMAILU — pravidlá:
 - Konkrétny, nie clickbait
