@@ -25,6 +25,47 @@ function extFor(mime: string): string {
   return "webm";
 }
 
+function fold(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+// Minimal SpeechRecognition typings (not in the standard TS DOM lib).
+interface SRAlternative {
+  transcript: string;
+}
+interface SRResult {
+  readonly length: number;
+  readonly [index: number]: SRAlternative;
+}
+interface SRResultList {
+  readonly length: number;
+  readonly [index: number]: SRResult;
+}
+interface SRResultEvent {
+  results: SRResultList;
+}
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: ((e: SRResultEvent) => void) | null;
+  onend: (() => void) | null;
+  onerror: ((e: { error?: string }) => void) | null;
+}
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+
+function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as {
+    SpeechRecognition?: SpeechRecognitionCtor;
+    webkitSpeechRecognition?: SpeechRecognitionCtor;
+  };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
 export interface UseJarvis {
   state: JarvisState;
   transcript: string;
@@ -33,6 +74,11 @@ export interface UseJarvis {
   toggle: () => void;
   startListening: () => void;
   stopListening: () => void;
+  // Wake-word ("jarvis") continuous listening — opt-in (only the command center uses it).
+  wakeWordActive: boolean;
+  wakeWordSupported: boolean;
+  startWakeWordListening: () => void;
+  stopWakeWordListening: () => void;
 }
 
 /** The transcribe → think → speak voice pipeline, shared by the button + command center. */
@@ -55,6 +101,15 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
   const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
+
+  // Wake-word state.
+  const [wakeWordActive, setWakeWordActive] = useState(false);
+  const [wakeWordSupported, setWakeWordSupported] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const wakeActiveRef = useRef(false);
+  const recognizingRef = useRef(false);
+  const suppressRestartRef = useRef(false);
+  const startListeningRef = useRef<(() => void) | null>(null);
 
   const stateRef = useRef<JarvisState>("idle");
   useEffect(() => {
@@ -165,6 +220,16 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
     setTranscript("");
     setResponse("");
     setErrorMsg("");
+    // Release the mic from wake-word recognition before recording.
+    suppressRestartRef.current = true;
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch {
+        /* ignore */
+      }
+    }
+    recognizingRef.current = false;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -241,6 +306,99 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
     }
   }, [startListening, stopListening]);
 
+  // --- Wake word ("jarvis") via the browser SpeechRecognition API ---
+  useEffect(() => {
+    startListeningRef.current = startListening;
+  }, [startListening]);
+
+  useEffect(() => {
+    setWakeWordSupported(!!getSpeechRecognitionCtor());
+  }, []);
+
+  const startRecognition = useCallback(() => {
+    if (recognizingRef.current || !wakeActiveRef.current || stateRef.current !== "idle") return;
+    let rec = recognitionRef.current;
+    if (!rec) {
+      const Ctor = getSpeechRecognitionCtor();
+      if (!Ctor) return;
+      rec = new Ctor();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = "sk-SK";
+      rec.onresult = (e) => {
+        let text = "";
+        for (let i = 0; i < e.results.length; i++) text += (e.results[i][0]?.transcript ?? "") + " ";
+        if (fold(text).includes("jarvi")) {
+          // Wake word detected → hand off to the Whisper recording flow.
+          suppressRestartRef.current = true;
+          recognizingRef.current = false;
+          try {
+            rec!.abort();
+          } catch {
+            /* ignore */
+          }
+          startListeningRef.current?.();
+        }
+      };
+      rec.onend = () => {
+        recognizingRef.current = false;
+        // Keep it alive across the API's periodic auto-stops while idle.
+        if (wakeActiveRef.current && !suppressRestartRef.current && stateRef.current === "idle") {
+          try {
+            rec!.start();
+            recognizingRef.current = true;
+          } catch {
+            /* already running */
+          }
+        }
+      };
+      rec.onerror = (e) => {
+        recognizingRef.current = false;
+        if (e?.error === "not-allowed" || e?.error === "service-not-allowed") {
+          wakeActiveRef.current = false;
+          setWakeWordActive(false);
+        }
+      };
+      recognitionRef.current = rec;
+    }
+    try {
+      rec.start();
+      recognizingRef.current = true;
+    } catch {
+      /* start() throws if already running */
+    }
+  }, []);
+
+  const startWakeWordListening = useCallback(() => {
+    if (!getSpeechRecognitionCtor()) return; // unsupported → no-op (fallback to click)
+    wakeActiveRef.current = true;
+    suppressRestartRef.current = false;
+    setWakeWordActive(true);
+    startRecognition();
+  }, [startRecognition]);
+
+  const stopWakeWordListening = useCallback(() => {
+    wakeActiveRef.current = false;
+    setWakeWordActive(false);
+    recognizingRef.current = false;
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch {
+        /* ignore */
+      }
+    }
+  }, []);
+
+  // Resume wake-word listening once the pipeline returns to idle.
+  useEffect(() => {
+    if (state === "idle" && wakeActiveRef.current) {
+      suppressRestartRef.current = false;
+      const t = setTimeout(() => startRecognition(), 400);
+      return () => clearTimeout(t);
+    }
+  }, [state, startRecognition]);
+
   useEffect(() => {
     if (!shortcut) return;
     const onKey = (e: KeyboardEvent) => {
@@ -259,8 +417,26 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
       sourceNodeRef.current?.stop();
       audioCtxRef.current?.close().catch(() => {});
+      wakeActiveRef.current = false;
+      try {
+        recognitionRef.current?.abort();
+      } catch {
+        /* ignore */
+      }
     };
   }, [cleanupRecording]);
 
-  return { state, transcript, response, errorMsg, toggle, startListening, stopListening };
+  return {
+    state,
+    transcript,
+    response,
+    errorMsg,
+    toggle,
+    startListening,
+    stopListening,
+    wakeWordActive,
+    wakeWordSupported,
+    startWakeWordListening,
+    stopWakeWordListening,
+  };
 }

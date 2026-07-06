@@ -122,9 +122,16 @@ const PARTICLES = Array.from({ length: 14 }, (_, i) => ({
 
 export function JarvisCommandCenter() {
   const router = useRouter();
-  const { state, transcript, response, errorMsg, toggle } = useJarvis();
+  const { state, transcript, response, errorMsg, toggle, wakeWordActive, wakeWordSupported, startWakeWordListening, stopWakeWordListening } =
+    useJarvis();
   const [stats, setStats] = useState<Stats | null>(null);
   const [clock, setClock] = useState("");
+
+  // Start "jarvis" wake-word listening on this page (no-op if unsupported).
+  useEffect(() => {
+    startWakeWordListening();
+    return () => stopWakeWordListening();
+  }, [startWakeWordListening, stopWakeWordListening]);
 
   useEffect(() => {
     let active = true;
@@ -320,6 +327,17 @@ export function JarvisCommandCenter() {
           response && <p className="text-center text-base leading-relaxed text-white/90">{response}</p>
         )}
       </div>
+
+      {/* Wake-word indicator (above the status bar) */}
+      {wakeWordSupported && wakeWordActive && (
+        <div
+          className="absolute bottom-12 right-6 z-10 flex items-center gap-1.5 text-[11px] tracking-[0.2em] text-green-400"
+          style={{ opacity: 0.6 }}
+        >
+          <Hex className="text-green-400" />
+          WAKE WORD ACTIVE
+        </div>
+      )}
 
       {/* Bottom status bar */}
       <div className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-3 border-t border-[#4A90D9]/15 bg-black/60 py-2 text-[11px] tracking-[0.2em] text-[#4A90D9]/50 backdrop-blur-sm">
