@@ -7,15 +7,6 @@ export type JarvisState = "idle" | "listening" | "thinking" | "speaking" | "erro
 const RECORD_MS = 5000; // fixed recording window — always stop + send after this
 const BUBBLE_HIDE_MS = 8000;
 
-function pickMimeType(): string {
-  if (typeof MediaRecorder === "undefined") return "";
-  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
-  for (const c of candidates) {
-    if (MediaRecorder.isTypeSupported(c)) return c;
-  }
-  return "";
-}
-
 function extFor(mime: string): string {
   if (mime.includes("webm")) return "webm";
   if (mime.includes("mp4")) return "m4a";
@@ -89,14 +80,9 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const mimeRef = useRef<string>("");
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const rafRef = useRef<number | null>(null);
-  const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Wake-word state.
   const [wakeWordActive, setWakeWordActive] = useState(false);
@@ -112,6 +98,11 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
     stateRef.current = state;
   }, [state]);
 
+  const setBoth = useCallback((s: JarvisState) => {
+    setState(s);
+    stateRef.current = s;
+  }, []);
+
   const scheduleHide = useCallback(() => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     hideTimerRef.current = setTimeout(() => {
@@ -121,107 +112,23 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
     }, BUBBLE_HIDE_MS);
   }, []);
 
-  const cleanupRecording = useCallback(() => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
-    if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
-    maxTimerRef.current = null;
-    analyserRef.current = null;
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-  }, []);
-
-  const fail = useCallback(
+  const showError = useCallback(
     (msg: string) => {
-      cleanupRecording();
+      console.error("[Jarvis] Error:", msg);
       setErrorMsg(msg);
-      setState("error");
       scheduleHide();
-      setTimeout(() => setState((s) => (s === "error" ? "idle" : s)), 1500);
+      setBoth("idle");
     },
-    [cleanupRecording, scheduleHide],
+    [scheduleHide, setBoth],
   );
-
-  const runPipeline = useCallback(
-    async (blob: Blob, ext: string) => {
-      setState("thinking");
-      try {
-        const fd = new FormData();
-        fd.append("audio", blob, `audio.${ext}`);
-        console.log("[Jarvis] Sending to Whisper...");
-        const tRes = await fetch("/api/jarvis/transcribe", { method: "POST", body: fd });
-        const tJson = await tRes.json();
-        if (!tRes.ok) return fail(tJson.error || "Prepis zlyhal");
-        const text = (tJson.transcript ?? "").trim();
-        console.log("[Jarvis] Transcript:", text);
-        if (!text) return fail("Nič som nepočul, skús znova.");
-        setTranscript(text);
-        setResponse("");
-        scheduleHide();
-
-        const thRes = await fetch("/api/jarvis/think", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text }),
-        });
-        const thJson = await thRes.json();
-        if (!thRes.ok) return fail(thJson.error || "Rozmýšľanie zlyhalo");
-        const answer = (thJson.response ?? "").trim();
-        console.log("[Jarvis] Jarvis response:", answer);
-        setResponse(answer);
-        scheduleHide();
-
-        console.log("[Jarvis] Speaking...");
-        const spRes = await fetch("/api/jarvis/speak", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: answer }),
-        });
-        if (!spRes.ok) {
-          const j = await spRes.json().catch(() => ({}));
-          return fail(j.error || "Hlas zlyhal");
-        }
-        const arrayBuf = await spRes.arrayBuffer();
-        const ctx = audioCtxRef.current ?? new AudioContext();
-        audioCtxRef.current = ctx;
-        if (ctx.state === "suspended") await ctx.resume();
-        const audioBuf = await ctx.decodeAudioData(arrayBuf);
-        const src = ctx.createBufferSource();
-        sourceNodeRef.current = src;
-        src.buffer = audioBuf;
-        src.connect(ctx.destination);
-        src.onended = () => {
-          sourceNodeRef.current = null;
-          setState((s) => (s === "speaking" ? "idle" : s));
-        };
-        setState("speaking");
-        src.start();
-      } catch (e) {
-        fail((e as Error).message || "Niečo zlyhalo");
-      }
-    },
-    [fail, scheduleHide],
-  );
-
-  const stopListening = useCallback(() => {
-    if (recorderRef.current && recorderRef.current.state !== "inactive") {
-      recorderRef.current.stop();
-    }
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
-    if (maxTimerRef.current) clearTimeout(maxTimerRef.current);
-    maxTimerRef.current = null;
-  }, []);
 
   const startListening = useCallback(async () => {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      return fail("Mikrofón nie je dostupný v tomto prehliadači.");
-    }
-    setTranscript("");
-    setResponse("");
-    setErrorMsg("");
+    // Only start from a resting state.
+    if (stateRef.current !== "idle" && stateRef.current !== "error") return;
+
     // Release the mic from wake-word recognition before recording.
     suppressRestartRef.current = true;
+    recognizingRef.current = false;
     if (recognitionRef.current) {
       try {
         recognitionRef.current.abort();
@@ -229,53 +136,134 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
         /* ignore */
       }
     }
-    recognizingRef.current = false;
+
+    setTranscript("");
+    setResponse("");
+    setErrorMsg("");
+    setBoth("listening");
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      const mime = pickMimeType();
-      mimeRef.current = mime;
-      const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      const recorder = new MediaRecorder(stream);
       recorderRef.current = recorder;
-      chunksRef.current = [];
+      const chunks: BlobPart[] = [];
+
       recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
+        if (e.data.size > 0) chunks.push(e.data);
       };
-      recorder.onstop = () => {
-        cleanupRecording();
-        const type = mimeRef.current || "audio/webm";
-        const blob = new Blob(chunksRef.current, { type });
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+
+        const type = recorder.mimeType || "audio/webm";
+        const blob = new Blob(chunks, { type });
         console.log("[Jarvis] Recording stopped, blob size:", blob.size);
-        if (blob.size < 800) {
-          fail("Nahrávka je príliš krátka.");
+
+        if (blob.size < 1000) {
+          console.log("[Jarvis] Audio too small, ignoring");
+          setBoth("idle");
           return;
         }
-        runPipeline(blob, extFor(type));
+
+        setBoth("thinking");
+        try {
+          console.log("[Jarvis] Sending to Whisper...");
+          const formData = new FormData();
+          formData.append("audio", blob, `audio.${extFor(type)}`);
+          const transcribeRes = await fetch("/api/jarvis/transcribe", { method: "POST", body: formData });
+          const transcribeJson = await transcribeRes.json();
+          if (!transcribeRes.ok) return showError(transcribeJson.error || "Prepis zlyhal");
+          const text = (transcribeJson.transcript ?? "").trim();
+          console.log("[Jarvis] Transcript:", text);
+          if (!text) {
+            setBoth("idle");
+            return;
+          }
+          setTranscript(text);
+          scheduleHide();
+
+          const thinkRes = await fetch("/api/jarvis/think", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: text }),
+          });
+          const thinkJson = await thinkRes.json();
+          if (!thinkRes.ok) return showError(thinkJson.error || "Rozmýšľanie zlyhalo");
+          const answer = (thinkJson.response ?? "").trim();
+          console.log("[Jarvis] Response:", answer);
+          setResponse(answer);
+          scheduleHide();
+
+          setBoth("speaking");
+          console.log("[Jarvis] Speaking...");
+          const speakRes = await fetch("/api/jarvis/speak", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: answer }),
+          });
+          if (!speakRes.ok) {
+            const j = await speakRes.json().catch(() => ({}));
+            return showError(j.error || "Hlas zlyhal");
+          }
+          const audioBuffer = await speakRes.arrayBuffer();
+          const ctx = audioCtxRef.current ?? new AudioContext();
+          audioCtxRef.current = ctx;
+          if (ctx.state === "suspended") await ctx.resume();
+          const decoded = await ctx.decodeAudioData(audioBuffer);
+          const source = ctx.createBufferSource();
+          sourceNodeRef.current = source;
+          source.buffer = decoded;
+          source.connect(ctx.destination);
+          source.onended = () => {
+            sourceNodeRef.current = null;
+            setBoth("idle");
+            console.log("[Jarvis] Done");
+          };
+          source.start();
+        } catch (err) {
+          showError((err as Error).message || "Niečo zlyhalo");
+        }
       };
 
       recorder.start();
-      setState("listening");
       console.log("[Jarvis] Recording started");
-      // Fixed 5s window — always stop and send (reliable across browsers).
-      // Manual second click on the orb (toggle → stopListening) stops earlier.
-      maxTimerRef.current = setTimeout(() => stopListening(), RECORD_MS);
-    } catch (e) {
-      const err = e as Error;
-      fail(err.name === "NotAllowedError" ? "Prístup k mikrofónu bol zamietnutý." : err.message || "Nahrávanie zlyhalo.");
+
+      // Fixed 5s window — always stop and send. Manual second click stops earlier.
+      setTimeout(() => {
+        if (recorder.state === "recording") {
+          console.log("[Jarvis] Timeout — stopping recorder");
+          recorder.stop();
+        }
+      }, RECORD_MS);
+    } catch (err) {
+      const e = err as Error;
+      showError(e.name === "NotAllowedError" ? "Prístup k mikrofónu bol zamietnutý." : e.message || "Nahrávanie zlyhalo.");
     }
-  }, [cleanupRecording, fail, runPipeline, stopListening]);
+  }, [scheduleHide, setBoth, showError]);
+
+  const stopListening = useCallback(() => {
+    if (recorderRef.current?.state === "recording") {
+      recorderRef.current.stop();
+    }
+  }, []);
 
   const toggle = useCallback(() => {
     const s = stateRef.current;
     if (s === "listening") stopListening();
     else if (s === "speaking") {
-      sourceNodeRef.current?.stop();
+      try {
+        sourceNodeRef.current?.stop();
+      } catch {
+        /* ignore */
+      }
       sourceNodeRef.current = null;
-      setState("idle");
+      setBoth("idle");
     } else if (s === "idle" || s === "error") {
       startListening();
     }
-  }, [startListening, stopListening]);
+  }, [setBoth, startListening, stopListening]);
 
   // --- Wake word ("jarvis") via the browser SpeechRecognition API ---
   useEffect(() => {
@@ -370,6 +358,7 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
     }
   }, [state, startRecognition]);
 
+  // Keyboard shortcut: Cmd/Ctrl+Shift+J
   useEffect(() => {
     if (!shortcut) return;
     const onKey = (e: KeyboardEvent) => {
@@ -382,11 +371,16 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
     return () => window.removeEventListener("keydown", onKey);
   }, [shortcut, toggle]);
 
+  // Cleanup on unmount.
   useEffect(() => {
     return () => {
-      cleanupRecording();
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-      sourceNodeRef.current?.stop();
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      try {
+        sourceNodeRef.current?.stop();
+      } catch {
+        /* ignore */
+      }
       audioCtxRef.current?.close().catch(() => {});
       wakeActiveRef.current = false;
       try {
@@ -395,7 +389,7 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
         /* ignore */
       }
     };
-  }, [cleanupRecording]);
+  }, []);
 
   return {
     state,
