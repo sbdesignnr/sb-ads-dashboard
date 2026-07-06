@@ -10,6 +10,7 @@ import {
   Youtube,
   Target,
   Settings,
+  Bot,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,6 +31,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/blog", label: "Blog", icon: Newspaper },
   { href: "/videos", label: "Videá", icon: Youtube },
   { href: "/leads", label: "Leady", icon: Target },
+  { href: "/jarvis", label: "Jarvis", icon: Bot },
   { href: "/settings", label: "Nastavenia", icon: Settings },
 ];
 
