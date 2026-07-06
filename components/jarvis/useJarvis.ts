@@ -103,6 +103,24 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
     stateRef.current = s;
   }, []);
 
+  // Returns a live, resumed AudioContext. Calling resume() during the click
+  // gesture unlocks playback despite the browser autoplay policy.
+  const ensureAudioContext = useCallback(async (): Promise<AudioContext> => {
+    let ctx = audioCtxRef.current;
+    if (!ctx || ctx.state === "closed") {
+      ctx = new AudioContext();
+      audioCtxRef.current = ctx;
+    }
+    if (ctx.state === "suspended") {
+      try {
+        await ctx.resume();
+      } catch {
+        /* ignore */
+      }
+    }
+    return ctx;
+  }, []);
+
   const scheduleHide = useCallback(() => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     hideTimerRef.current = setTimeout(() => {
@@ -125,6 +143,9 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
   const startListening = useCallback(async () => {
     // Only start from a resting state.
     if (stateRef.current !== "idle" && stateRef.current !== "error") return;
+
+    // Unlock audio playback within this user gesture (browser autoplay policy).
+    void ensureAudioContext();
 
     // Release the mic from wake-word recognition before recording.
     suppressRestartRef.current = true;
@@ -208,9 +229,8 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
             return showError(j.error || "Hlas zlyhal");
           }
           const audioBuffer = await speakRes.arrayBuffer();
-          const ctx = audioCtxRef.current ?? new AudioContext();
-          audioCtxRef.current = ctx;
-          if (ctx.state === "suspended") await ctx.resume();
+          const ctx = await ensureAudioContext();
+          console.log("[Jarvis] AudioContext state:", ctx.state);
           const decoded = await ctx.decodeAudioData(audioBuffer);
           const source = ctx.createBufferSource();
           sourceNodeRef.current = source;
@@ -241,7 +261,7 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
       const e = err as Error;
       showError(e.name === "NotAllowedError" ? "Prístup k mikrofónu bol zamietnutý." : e.message || "Nahrávanie zlyhalo.");
     }
-  }, [scheduleHide, setBoth, showError]);
+  }, [ensureAudioContext, scheduleHide, setBoth, showError]);
 
   const stopListening = useCallback(() => {
     if (recorderRef.current?.state === "recording") {
