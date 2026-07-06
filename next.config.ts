@@ -48,6 +48,10 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  compiler: {
+    // TEMPORARY (Jarvis debugging): keep console.* in production. Revert later.
+    removeConsole: false,
+  },
   // google-ads-api is a Node-native package (gRPC/protobuf) — keep it external
   // so it is required at runtime instead of bundled.
   serverExternalPackages: ["google-ads-api", "cheerio", "@google-analytics/data"],
