@@ -24,6 +24,10 @@ async function buildSystemPrompt(): Promise<string> {
     emailsApproved,
     activeCampaigns,
     segments,
+    blogPublished,
+    blogDraft,
+    recentPosts,
+    videosCount,
   ] = await Promise.all([
     prisma.lead.count(),
     prisma.lead.count({ where: { status: "new" } }),
@@ -39,9 +43,20 @@ async function buildSystemPrompt(): Promise<string> {
       orderBy: { leads: { _count: "desc" } },
       take: 3,
     }),
+    // BlogPost uses a `status` field ("draft" | "published"), not a boolean.
+    prisma.blogPost.count({ where: { status: "published" } }),
+    prisma.blogPost.count({ where: { status: "draft" } }),
+    prisma.blogPost.findMany({ select: { title: true }, orderBy: { createdAt: "desc" }, take: 3 }),
+    // The video model is YoutubeVideo.
+    prisma.youtubeVideo.count().catch(() => 0),
   ]);
 
+  // No Google Ads spend cache yet — calling the live API on every question would
+  // slow Jarvis down, so this stays null until a cached source is wired.
+  const googleAdsSpend: number | null = null;
+
   const topSegments = segments.map((s) => `${s.name} (${s._count.leads})`).join(", ") || "žiadne";
+  const recentTitles = recentPosts.map((p) => p.title).filter(Boolean).join(", ") || "žiadne";
 
   return `Si Jarvis, osobný AI asistent Samuela Bibeňa, zakladateľa SB Design Agency v Nitre, Slovensko.
 Odpovedáš VŽDY po slovensky. Maximálne 2-3 vety.
@@ -58,9 +73,19 @@ AKTUÁLNE DÁTA (${new Date().toLocaleDateString("sk-SK")}):
 - Emaily čakajúce na schválenie: ${emailsDraft}
 - Schválené emaily: ${emailsApproved}
 - Aktívne kampane: ${activeCampaigns}
+- Google Ads útrata tento mesiac: ${googleAdsSpend != null ? `${googleAdsSpend}€` : "nedostupné"}
 - Top segmenty: ${topSegments}
+- Blog článkov celkom: ${blogPublished + blogDraft} (${blogPublished} publikovaných, ${blogDraft} drafty)
+- Posledné články: ${recentTitles}
+- Videí na YouTube: ${videosCount}
 
-Samuel sa ťa môže pýtať na tieto dáta alebo na všeobecné biznis rady. Odpovedaj prirodzene po slovensky ako skutočný asistent.`;
+Samuel sa ťa môže pýtať na tieto dáta alebo na všeobecné biznis rady.
+
+Ak sa Samuel pýta na článok, blog, SEO — odpovedaj na základe blog dát.
+Ak sa pýta na video, YouTube — odpovedaj na základe video dát.
+Ak sa pýta na kampaň, email, lead — odpovedaj na základe lead/email dát.
+Ak niečo nevieš alebo nemáš dáta — povedz to priamo, nepridávaj si vlastné čísla.
+Vždy odpovedaj v 2-3 vetách maximum.`;
 }
 
 export async function POST(req: NextRequest) {
