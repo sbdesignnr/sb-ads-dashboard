@@ -4,9 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export type JarvisState = "idle" | "listening" | "thinking" | "speaking" | "error";
 
-const SILENCE_MS = 2500; // auto-stop after this much silence
-const MIN_RECORD_MS = 700; // ignore silence in the very first moment
-const MAX_RECORD_MS = 15000; // hard cap
+const RECORD_MS = 5000; // fixed recording window — always stop + send after this
 const BUBBLE_HIDE_MS = 8000;
 
 function pickMimeType(): string {
@@ -96,8 +94,6 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const rafRef = useRef<number | null>(null);
-  const startedAtRef = useRef<number>(0);
-  const lastSoundRef = useRef<number>(0);
   const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
@@ -152,10 +148,12 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
       try {
         const fd = new FormData();
         fd.append("audio", blob, `audio.${ext}`);
+        console.log("[Jarvis] Sending to Whisper...");
         const tRes = await fetch("/api/jarvis/transcribe", { method: "POST", body: fd });
         const tJson = await tRes.json();
         if (!tRes.ok) return fail(tJson.error || "Prepis zlyhal");
         const text = (tJson.transcript ?? "").trim();
+        console.log("[Jarvis] Transcript:", text);
         if (!text) return fail("Nič som nepočul, skús znova.");
         setTranscript(text);
         setResponse("");
@@ -169,9 +167,11 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
         const thJson = await thRes.json();
         if (!thRes.ok) return fail(thJson.error || "Rozmýšľanie zlyhalo");
         const answer = (thJson.response ?? "").trim();
+        console.log("[Jarvis] Jarvis response:", answer);
         setResponse(answer);
         scheduleHide();
 
+        console.log("[Jarvis] Speaking...");
         const spRes = await fetch("/api/jarvis/speak", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -245,6 +245,7 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
         cleanupRecording();
         const type = mimeRef.current || "audio/webm";
         const blob = new Blob(chunksRef.current, { type });
+        console.log("[Jarvis] Recording stopped, blob size:", blob.size);
         if (blob.size < 800) {
           fail("Nahrávka je príliš krátka.");
           return;
@@ -253,41 +254,11 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
       };
 
       recorder.start();
-      startedAtRef.current = Date.now();
-      lastSoundRef.current = Date.now();
       setState("listening");
-
-      const ctx = audioCtxRef.current ?? new AudioContext();
-      audioCtxRef.current = ctx;
-      if (ctx.state === "suspended") await ctx.resume();
-      const sourceNode = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      sourceNode.connect(analyser);
-      analyserRef.current = analyser;
-      const buf = new Uint8Array(analyser.fftSize);
-
-      const tick = () => {
-        const an = analyserRef.current;
-        if (!an || stateRef.current !== "listening") return;
-        an.getByteTimeDomainData(buf);
-        let sum = 0;
-        for (let i = 0; i < buf.length; i++) {
-          const v = (buf[i] - 128) / 128;
-          sum += v * v;
-        }
-        const rms = Math.sqrt(sum / buf.length);
-        const now = Date.now();
-        if (rms > 0.025) lastSoundRef.current = now;
-        const elapsed = now - startedAtRef.current;
-        if (elapsed > MIN_RECORD_MS && now - lastSoundRef.current > SILENCE_MS) {
-          stopListening();
-          return;
-        }
-        rafRef.current = requestAnimationFrame(tick);
-      };
-      rafRef.current = requestAnimationFrame(tick);
-      maxTimerRef.current = setTimeout(() => stopListening(), MAX_RECORD_MS);
+      console.log("[Jarvis] Recording started");
+      // Fixed 5s window — always stop and send (reliable across browsers).
+      // Manual second click on the orb (toggle → stopListening) stops earlier.
+      maxTimerRef.current = setTimeout(() => stopListening(), RECORD_MS);
     } catch (e) {
       const err = e as Error;
       fail(err.name === "NotAllowedError" ? "Prístup k mikrofónu bol zamietnutý." : err.message || "Nahrávanie zlyhalo.");
