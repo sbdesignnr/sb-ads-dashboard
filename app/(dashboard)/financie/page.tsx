@@ -88,6 +88,7 @@ export default function FinancePage() {
   const [q, setQ] = useState("");
   const [editCatId, setEditCatId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [showAddAccount, setShowAddAccount] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadMeta = useCallback(async () => {
@@ -283,6 +284,10 @@ export default function FinancePage() {
               <Plus className="h-4 w-4" />
               Pridať manuálne
             </Button>
+            <Button variant="ghost" size="sm" className="w-full" onClick={() => setShowAddAccount(true)}>
+              <Plus className="h-4 w-4" />
+              Nový účet
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -397,6 +402,82 @@ export default function FinancePage() {
           }}
         />
       )}
+
+      {showAddAccount && (
+        <AddAccountModal
+          onClose={() => setShowAddAccount(false)}
+          onSaved={(id) => {
+            setShowAddAccount(false);
+            setAccount(id);
+            loadMeta();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddAccountModal({ onClose, onSaved }: { onClose: () => void; onSaved: (id: string) => void }) {
+  const [name, setName] = useState("");
+  const [type, setType] = useState<"personal" | "business">("personal");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!name.trim()) return toast.error("Zadaj názov účtu");
+    setSaving(true);
+    try {
+      const j = await fetch("/api/finance/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), type }),
+      }).then((r) => r.json());
+      if (j.account) {
+        toast.success("Účet vytvorený");
+        onSaved(j.account.id);
+      } else {
+        toast.error(j.error || "Vytvorenie zlyhalo");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-foreground">Nový účet</h2>
+          <button onClick={onClose} className="text-muted hover:text-foreground">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="space-y-3">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Názov (napr. Podnikateľský účet SLSP)"
+            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => setType("personal")}
+              className={cn("rounded-lg border px-3 py-2 text-sm font-medium", type === "personal" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted")}
+            >
+              Osobný
+            </button>
+            <button
+              onClick={() => setType("business")}
+              className={cn("rounded-lg border px-3 py-2 text-sm font-medium", type === "business" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted")}
+            >
+              Podnikateľský
+            </button>
+          </div>
+          <Button className="w-full" onClick={save} disabled={saving}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+            Vytvoriť
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
