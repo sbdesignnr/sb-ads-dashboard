@@ -171,6 +171,7 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
       const chunks: BlobPart[] = [];
 
       recorder.ondataavailable = (e) => {
+        console.log("[Jarvis] Data chunk:", e.data.size);
         if (e.data.size > 0) chunks.push(e.data);
       };
 
@@ -247,13 +248,20 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
         }
       };
 
-      recorder.start();
+      // Timeslice → ondataavailable fires every second, so chunks fill up
+      // progressively instead of only on stop().
+      recorder.start(1000);
       console.log("[Jarvis] Recording started");
 
       // Fixed 5s window — always stop and send. Manual second click stops earlier.
       setTimeout(() => {
         if (recorder.state === "recording") {
           console.log("[Jarvis] Timeout — stopping recorder");
+          try {
+            recorder.requestData(); // flush accumulated data before stopping
+          } catch {
+            /* ignore */
+          }
           recorder.stop();
         }
       }, RECORD_MS);
@@ -265,6 +273,11 @@ export function useJarvis(options: { shortcut?: boolean } = {}): UseJarvis {
 
   const stopListening = useCallback(() => {
     if (recorderRef.current?.state === "recording") {
+      try {
+        recorderRef.current.requestData();
+      } catch {
+        /* ignore */
+      }
       recorderRef.current.stop();
     }
   }, []);
