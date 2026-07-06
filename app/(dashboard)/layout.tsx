@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { DashboardShell } from "@/components/layout/DashboardShell";
+import { JarvisButton } from "@/components/jarvis/JarvisButton";
 
 export default async function DashboardLayout({
   children,
@@ -13,8 +14,11 @@ export default async function DashboardLayout({
   }
 
   return (
-    <DashboardShell user={{ name: session.user.name, email: session.user.email }}>
-      {children}
-    </DashboardShell>
+    <>
+      <DashboardShell user={{ name: session.user.name, email: session.user.email }}>
+        {children}
+      </DashboardShell>
+      <JarvisButton />
+    </>
   );
 }
