@@ -321,3 +321,44 @@ model GoogleAdsToken {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 }
+
+// ── Finance module ──────────────────────────────────────────────────────────
+
+model FinanceAccount {
+  id           String               @id @default(cuid())
+  name         String
+  type         String               // personal | business
+  currency     String               @default("EUR")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  transactions FinanceTransaction[]
+
+  @@map("finance_accounts")
+}
+
+model FinanceTransaction {
+  id          String         @id @default(cuid())
+  accountId   String         @map("account_id")
+  account     FinanceAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  date        DateTime
+  amount      Decimal        @db.Decimal(12, 2) // + income, - expense
+  description String
+  category    String
+  subcategory String?
+  type        String         // income | expense | transfer
+  source      String         // csv_import | manual | voice
+  notes       String?
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  @@index([accountId, date])
+  @@index([date])
+  @@map("finance_transactions")
+}
+
+model FinanceBudget {
+  id           String   @id @default(cuid())
+  category     String
+  monthlyLimit Decimal  @map("monthly_limit") @db.Decimal(12, 2)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("finance_budgets")
+}

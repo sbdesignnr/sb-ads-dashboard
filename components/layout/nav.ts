@@ -11,6 +11,7 @@ import {
   Target,
   Settings,
   Bot,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -28,6 +29,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/ai-insights", label: "AI Insights", icon: Sparkles },
   { href: "/competitors", label: "Konkurencia", icon: Crosshair },
   { href: "/reports", label: "Reporty", icon: FileText },
+  { href: "/financie", label: "Financie", icon: Wallet },
   { href: "/blog", label: "Blog", icon: Newspaper },
   { href: "/videos", label: "Videá", icon: Youtube },
   { href: "/leads", label: "Leady", icon: Target },

@@ -2,10 +2,55 @@ import { NextResponse, type NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getFinanceSummary } from "@/lib/finance/summary";
+import { getOrCreateDefaultAccount } from "@/lib/finance/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+function fold(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+function currentMonthKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// Phase 6 — voice transaction entry. Extract a transaction from natural speech.
+async function extractTransaction(
+  message: string,
+): Promise<{ amount: number; type: "income" | "expense"; description: string; category: string } | null> {
+  const client = new Anthropic();
+  const msg = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 200,
+    system: `Extrahuj z vety finančnú transakciu. Vráť VÝHRADNE JSON (žiadny iný text):
+{"amount": číslo, "type": "income"|"expense", "description": "krátky popis", "category": "jedna z: Potraviny, Jedlo & reštaurácie, Predplatné, Doprava, Zdravie, Oblečenie, Zábava & šport, Príjem z projektu, Príjem, Ostatné"}
+amount je vždy kladné číslo. minul/zaplatil/kúpil → expense; dostal/zarobil/prišlo → income.`,
+    messages: [{ role: "user", content: message }],
+  });
+  const text = msg.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try {
+    const j = JSON.parse(m[0]) as { amount?: unknown; type?: unknown; description?: unknown; category?: unknown };
+    const amount = Math.abs(Number(j.amount));
+    if (!Number.isFinite(amount) || amount === 0) return null;
+    return {
+      amount,
+      type: j.type === "income" ? "income" : "expense",
+      description: String(j.description ?? "").trim() || "transakcia",
+      category: String(j.category ?? "").trim() || "Ostatné",
+    };
+  } catch {
+    return null;
+  }
+}
 
 // NOTE: lead status is stored as English codes ("new"/"contacted"/"converted"),
 // the Slovak words are only display labels — so we query the codes here.
@@ -58,6 +103,10 @@ async function buildSystemPrompt(): Promise<string> {
   const topSegments = segments.map((s) => `${s.name} (${s._count.leads})`).join(", ") || "žiadne";
   const recentTitles = recentPosts.map((p) => p.title).filter(Boolean).join(", ") || "žiadne";
 
+  const financeMonth = currentMonthKey();
+  const finance = await getFinanceSummary(financeMonth, "all").catch(() => null);
+  const topSpend = finance?.byCategory?.slice(0, 3).map((c) => `${c.category} ${c.amount}€`).join(", ") || "žiadne dáta";
+
   return `Si Jarvis, osobný AI asistent Samuela Bibeňa, zakladateľa SB Design Agency v Nitre, Slovensko.
 Odpovedáš VŽDY po slovensky. Maximálne 2-3 vety.
 Si priateľský ale stručný a vecný.
@@ -79,11 +128,18 @@ AKTUÁLNE DÁTA (${new Date().toLocaleDateString("sk-SK")}):
 - Posledné články: ${recentTitles}
 - Videí na YouTube: ${videosCount}
 
+FINANCIE (${financeMonth}):
+- Príjmy: ${finance ? `${finance.totalIncome}€` : "žiadne dáta"}
+- Výdavky: ${finance ? `${finance.totalExpenses}€` : "žiadne dáta"}
+- Zostatok: ${finance ? `${finance.balance}€` : "žiadne dáta"}
+- Najväčšie výdavky: ${topSpend}
+
 Samuel sa ťa môže pýtať na tieto dáta alebo na všeobecné biznis rady.
 
 Ak sa Samuel pýta na článok, blog, SEO — odpovedaj na základe blog dát.
 Ak sa pýta na video, YouTube — odpovedaj na základe video dát.
 Ak sa pýta na kampaň, email, lead — odpovedaj na základe lead/email dát.
+Ak sa pýta na financie, príjmy, výdavky, zostatok — odpovedaj na základe finančných dát.
 Ak niečo nevieš alebo nemáš dáta — povedz to priamo, nepridávaj si vlastné čísla.
 Vždy odpovedaj v 2-3 vetách maximum.`;
 }
@@ -101,6 +157,33 @@ export async function POST(req: NextRequest) {
   }
   const message = (body.message ?? "").trim();
   if (!message) return NextResponse.json({ error: "missing_message" }, { status: 400 });
+
+  // Phase 6 — voice transaction entry. If the sentence describes spending/earning,
+  // extract it and record a transaction instead of answering a question.
+  if (/\b(minul|zaplatil|kupil|dostal|zarobil|prislo|utratil)/.test(fold(message))) {
+    try {
+      const tx = await extractTransaction(message);
+      if (tx) {
+        const account = await getOrCreateDefaultAccount();
+        const signed = tx.type === "income" ? Math.abs(tx.amount) : -Math.abs(tx.amount);
+        await prisma.financeTransaction.create({
+          data: {
+            accountId: account.id,
+            date: new Date(),
+            amount: signed,
+            description: tx.description,
+            category: tx.category,
+            type: tx.type,
+            source: "voice",
+          },
+        });
+        const verb = tx.type === "income" ? "príjem" : "výdavok";
+        return NextResponse.json({ response: `Zapísal som ${verb} ${tx.amount}€ za ${tx.description} (${tx.category}).` });
+      }
+    } catch {
+      /* fall through to normal Q&A */
+    }
+  }
 
   try {
     const system = await buildSystemPrompt();
