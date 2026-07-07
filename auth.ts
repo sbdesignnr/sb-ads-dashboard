@@ -38,7 +38,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         let user: AuthUser | null = null;
 
-        // Primary: database lookup.
+        // Database lookup only — no demo/fallback credentials.
         try {
           const dbUser = await prisma.user.findUnique({ where: { email } });
           if (dbUser && (await bcrypt.compare(password, dbUser.passwordHash))) {
@@ -50,21 +50,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             };
           }
         } catch {
-          // Database not ready — fall back to the demo credentials below.
-        }
-
-        // Fallback: env demo credentials (so login works before `db:seed`).
-        if (!user) {
-          const demoEmail = (process.env.DEMO_EMAIL ?? "admin@sbdesign.sk").toLowerCase();
-          const demoPass = process.env.DEMO_PASSWORD ?? "sbdesign2025";
-          if (email === demoEmail && password === demoPass) {
-            user = {
-              id: "demo-admin",
-              email: demoEmail,
-              name: "SB Design Admin",
-              role: "admin",
-            };
-          }
+          // Database unreachable — deny login rather than falling back.
+          return null;
         }
 
         if (!user) return null;

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Lock, Mail, ShieldCheck, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Lock, Mail, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,12 +54,6 @@ export function LoginForm() {
     }
   }
 
-  function fillDemo() {
-    setEmail("admin@sbdesign.sk");
-    setPassword("sbdesign2025");
-    setError(null);
-  }
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -87,7 +81,7 @@ export function LoginForm() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@sbdesign.sk"
+              placeholder="vas@email.sk"
               className="pl-9"
               disabled={loading || locked}
             />
@@ -147,23 +141,6 @@ export function LoginForm() {
           )}
         </Button>
       </form>
-
-      <div className="mt-6 rounded-lg border border-border bg-surface-2/50 p-3">
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <ShieldCheck className="h-4 w-4 text-success" />
-          <span className="flex-1">
-            Demo: <span className="text-foreground">admin@sbdesign.sk</span> /{" "}
-            <span className="text-foreground">sbdesign2025</span>
-          </span>
-          <button
-            type="button"
-            onClick={fillDemo}
-            className="rounded-md bg-surface-2 px-2 py-1 text-xs font-medium text-primary hover:text-primary/80 cursor-pointer"
-          >
-            Vyplniť
-          </button>
-        </div>
-      </div>
     </motion.div>
   );
 }
