@@ -1,13 +1,18 @@
-// Parser for SLSP George transaction CSV/TSV exports (quoted fields).
+// Parser for SLSP George transaction CSV exports (quoted fields).
 //
-// Real George export header (";" or "\t" separated, values in quotes):
-//   "Vlastný názov účtu";"Vlastný IBAN";"Dátum splatnosti";"Suma";"Mena";
-//   "Partner";"IBAN partnera";"BIC/SWIFT kód banky partnera";
-//   "Číslo účtu partnera";"CC kód banky partnera";"Popis transakcie";
-//   "Typ transakcie";"Konštantný symbol";"Špecifický symbol";"Variabilný symbol"
+// Real George export is COMMA-separated with every value quoted — and the
+// amount uses a Slovak decimal comma ("-17,85"), which lives INSIDE the quotes.
+// So the field delimiter and the decimal separator are both ",": the parser
+// MUST be quote-aware, otherwise "-17,85" would split into two columns.
 //
-// Columns are matched by header NAME (not position), so an older layout
-// ("Dátum";"Suma";"Mena";"Zostatok";"Názov protistrany"…) still parses.
+// Header (first row):
+//   "Vlastný názov účtu","Vlastný IBAN","Dátum splatnosti","Suma","Mena",
+//   "Partner","IBAN partnera","BIC/SWIFT kód banky partnera",
+//   "Číslo účtu partnera","CC kód banky partnera","Popis transakcie",
+//   "Typ transakcie","Konštantný symbol","Špecifický symbol","Variabilný symbol"
+//
+// Columns are matched by header NAME (not position), so a semicolon/tab layout
+// or a slightly different order still parses.
 
 export interface ParsedTx {
   date: Date;
@@ -21,8 +26,12 @@ function fold(s: string): string {
   return s.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 }
 
-/** Split one CSV line, honouring "quoted" fields and escaped "" quotes. */
-function parseCsvLine(line: string, delim = ";"): string[] {
+/**
+ * Split one CSV line into fields, honouring "quoted" values and escaped ""
+ * quotes. Commas (or whatever `delim` is) INSIDE quotes are kept verbatim, so a
+ * decimal comma like "-17,85" survives. Outer quotes are stripped.
+ */
+function parseCSVLine(line: string, delim = ","): string[] {
   const out: string[] = [];
   let cur = "";
   let inQuotes = false;
@@ -31,10 +40,10 @@ function parseCsvLine(line: string, delim = ";"): string[] {
     if (inQuotes) {
       if (ch === '"') {
         if (line[i + 1] === '"') {
-          cur += '"';
+          cur += '"'; // escaped "" → literal quote
           i++;
         } else {
-          inQuotes = false;
+          inQuotes = false; // closing quote
         }
       } else {
         cur += ch;
@@ -67,13 +76,35 @@ function findCol(headers: string[], exact: string[], includes: string[] = []): n
   return -1;
 }
 
+/**
+ * Detect the field delimiter from the header line. We can't just count
+ * characters (decimal commas hide inside quotes), so we quote-aware parse the
+ * line with each candidate and keep whichever yields a "Suma" column + the most
+ * fields.
+ */
+function detectDelim(headerLine: string): "," | ";" | "\t" {
+  const candidates: Array<"," | ";" | "\t"> = [",", ";", "\t"];
+  let best: "," | ";" | "\t" = ",";
+  let bestScore = -1;
+  for (const d of candidates) {
+    const cols = parseCSVLine(headerLine, d);
+    const score = (cols.some((c) => /suma/i.test(c)) ? 1000 : 0) + cols.length;
+    if (score > bestScore) {
+      bestScore = score;
+      best = d;
+    }
+  }
+  return best;
+}
+
 function parseAmount(raw: string): number {
   // Strip spaces incl. non-breaking (U+00A0) used as thousands separators.
-  let s = raw.replace(/[\s ]/g, "");
+  let s = raw.replace(/[\s ]/g, "");
   if (s.includes(",") && s.includes(".")) {
     // "1.234,56" → dot = thousands, comma = decimal
     s = s.replace(/\./g, "").replace(",", ".");
   } else {
+    // Slovak format: "-17,85" → "-17.85"
     s = s.replace(",", ".");
   }
   s = s.replace(/[^0-9.\-+]/g, "");
@@ -89,14 +120,7 @@ function parseDate(raw: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Detect the field separator from the header line (";" vs tab). */
-function detectDelim(headerLine: string): string {
-  const semi = (headerLine.match(/;/g) || []).length;
-  const tab = (headerLine.match(/\t/g) || []).length;
-  return tab > semi ? "\t" : ";";
-}
-
-/** Parse a full SLSP George CSV/TSV export into transactions. */
+/** Parse a full SLSP George CSV export into transactions. */
 export function parseSlspCsv(csvContent: string): ParsedTx[] {
   const lines = csvContent
     .replace(/\r\n/g, "\n")
@@ -104,38 +128,30 @@ export function parseSlspCsv(csvContent: string): ParsedTx[] {
     .split("\n")
     .filter((l) => l.trim().length > 0);
 
-  // Skip any leading noise (filename / metadata) — the real header is the
-  // first line that contains a "Suma" column.
-  let headerIdx = -1;
-  let delim = ";";
-  for (let i = 0; i < lines.length; i++) {
-    if (/suma/i.test(lines[i])) {
-      headerIdx = i;
-      delim = detectDelim(lines[i]);
-      break;
-    }
-  }
-
-  if (headerIdx === -1) {
-    console.log("CSV rows found:", 0);
-    console.log("Headers:", "(none — no 'Suma' column detected)");
+  if (!lines.length) {
+    console.log("Row count:", 0);
     return [];
   }
 
-  const headers = parseCsvLine(lines[headerIdx], delim);
+  // Headers are in the first row — no skipping.
+  const delim = detectDelim(lines[0]);
+  const delimName = delim === "," ? "comma" : delim === ";" ? "semicolon" : "tab";
+  console.log("Delimiter detected:", delimName);
+
+  const headers = parseCSVLine(lines[0], delim);
   const rows = lines
-    .slice(headerIdx + 1)
-    .map((l) => parseCsvLine(l, delim))
+    .slice(1)
+    .map((l) => parseCSVLine(l, delim))
     .filter((r) => r.some((c) => c.trim() !== ""));
 
-  console.log("CSV rows found:", rows.length);
-  console.log("First row:", rows[0]);
   console.log("Headers:", headers);
+  console.log("Row count:", rows.length);
+  console.log("Sample row:", rows[0]);
 
   const idxDate = findCol(headers, ["datum splatnosti"], ["datum"]);
   const idxAmount = findCol(headers, ["suma"], ["suma"]);
   const idxCurrency = findCol(headers, ["mena"], ["mena"]);
-  const idxPartner = findCol(headers, ["partner", "nazov protistrany"]); // exact only — avoid "IBAN partnera" etc.
+  const idxPartner = findCol(headers, ["partner", "nazov protistrany"]); // exact — avoid "IBAN partnera" etc.
   const idxPopis = findCol(headers, ["popis transakcie", "poznamka"], ["popis"]);
   const idxType = findCol(headers, ["typ transakcie", "typ"], ["typ"]);
 
@@ -143,7 +159,7 @@ export function parseSlspCsv(csvContent: string): ParsedTx[] {
 
   const out: ParsedTx[] = [];
   for (const r of rows) {
-    // 4. Skip rows where Suma is empty or 0.
+    // Skip rows where Suma is empty or 0.
     const amountRaw = cell(r, idxAmount);
     if (!amountRaw.trim()) continue;
     const amount = parseAmount(amountRaw);
@@ -154,12 +170,12 @@ export function parseSlspCsv(csvContent: string): ParsedTx[] {
 
     const currency = (cell(r, idxCurrency) || "EUR").toUpperCase();
     const partner = cell(r, idxPartner);
-    const popis = cell(r, idxPopis);
+    const popis = cell(r, idxPopis); // "note"
     const type = cell(r, idxType);
 
-    // Description: Partner + Popis transakcie.
-    const description =
-      [partner, popis].filter(Boolean).join(" · ") || partner || popis || type || "Transakcia";
+    // description ← Partner (fallback Typ transakcie); note (Popis) appended.
+    const primary = partner || type || "Transakcia";
+    const description = popis && popis !== primary ? `${primary} · ${popis}` : primary;
     const rawText = [partner, popis, type].filter(Boolean).join(" ");
 
     out.push({ date, amount, currency, description, rawText });
