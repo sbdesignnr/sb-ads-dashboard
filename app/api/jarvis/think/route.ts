@@ -18,18 +18,34 @@ function currentMonthKey(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-// Jarvis speaks via ElevenLabs TTS — strip any Markdown the model still emits so
-// it doesn't read out asterisks/backticks/hashes.
-function stripMarkdown(text: string): string {
-  return text
-    .replace(/\*\*(.*?)\*\*/g, "$1")
-    .replace(/\*(.*?)\*/g, "$1")
-    .replace(/__(.*?)__/g, "$1")
-    .replace(/_(.*?)_/g, "$1")
-    .replace(/#{1,6}\s/g, "")
-    .replace(/`(.*?)`/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .trim();
+// Jarvis speaks via ElevenLabs TTS, so we strip Markdown AND spell amounts the
+// way Slovak TTS should read them (no symbols, "eur a X centov", "mínus").
+function formatForSpeech(text: string): string {
+  return (
+    text
+      // Remove Markdown.
+      .replace(/\*\*(.*?)\*\*/g, "$1")
+      .replace(/\*(.*?)\*/g, "$1")
+      .replace(/__(.*?)__/g, "$1")
+      .replace(/_(.*?)_/g, "$1")
+      .replace(/#{1,6}\s/g, "")
+      .replace(/`(.*?)`/g, "$1")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      // "1 201,25 eur" → "1201 eur a 25 centov".
+      .replace(/(\d[\d\s]*),(\d{2})\s*(eur|€)/gi, (_m: string, euros: string, cents: string) => {
+        const e = euros.replace(/\s/g, "");
+        const c = parseInt(cents, 10);
+        return c === 0 ? `${e} eur` : `${e} eur a ${c} centov`;
+      })
+      // Collapse spaces used as thousands separators ("1 201" → "1201").
+      .replace(/(\d)\s(\d)/g, "$1$2")
+      // Currency symbol → word.
+      .replace(/€/g, "eur")
+      // Leading minus on a number → "mínus", but NOT a hyphen between digits
+      // (so a date like "2026-07-01" or a range "5-10" is left intact).
+      .replace(/(?<!\d)-\s*(\d)/g, "mínus $1")
+      .trim()
+  );
 }
 
 // Phase 6 — voice transaction entry. Extract a transaction from natural speech.
@@ -215,7 +231,7 @@ export async function POST(req: NextRequest) {
       .map((b) => b.text)
       .join("")
       .trim();
-    return NextResponse.json({ response: stripMarkdown(response) });
+    return NextResponse.json({ response: formatForSpeech(response) });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
