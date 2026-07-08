@@ -283,13 +283,29 @@ export default function FinancePage() {
               type="file"
               accept=".csv,text/csv"
               className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) onImport(f);
-                e.target.value = "";
+              onChange={async (e) => {
+                // Capture the element before awaiting — React nulls e.currentTarget
+                // after the handler returns synchronously.
+                const input = e.target;
+                console.log("File input changed", input.files);
+                const file = input.files?.[0];
+                if (!file) {
+                  console.log("No file selected");
+                  return;
+                }
+                console.log("File selected:", file.name, file.size);
+                await onImport(file);
+                input.value = ""; // reset so re-selecting the same file fires onChange again
               }}
             />
-            <Button className="w-full" onClick={() => fileRef.current?.click()} disabled={importing}>
+            <Button
+              className="w-full"
+              onClick={() => {
+                console.log("Import button clicked");
+                fileRef.current?.click();
+              }}
+              disabled={importing}
+            >
               {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
               Importovať CSV (SLSP)
             </Button>
