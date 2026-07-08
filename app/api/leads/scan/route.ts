@@ -17,14 +17,15 @@ async function isAuthorized(req: NextRequest): Promise<boolean> {
 // Manual scan of one segment (from the UI).
 export async function POST(req: NextRequest) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  let body: { segmentId?: string } = {};
+  let body: { segmentId?: string; region?: "SK" | "CZ" | "both" } = {};
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
   if (!body.segmentId) return NextResponse.json({ error: "missing_segmentId" }, { status: 400 });
-  const result = await scanSegment(body.segmentId);
+  const region = body.region === "SK" || body.region === "CZ" ? body.region : "both";
+  const result = await scanSegment(body.segmentId, { region });
   return NextResponse.json(result);
 }
 
