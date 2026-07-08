@@ -184,6 +184,20 @@ CTA PODĽA SEGMENTU:
 - Reštaurácie / kaviarne: "Ak vás zaujíma ako by to vyzeralo — odpíšte. Návrh pripravím do 24 hodín."
 - Ostatné: "Ak vás to zaujíma — stačí odpovedať. Rád ukážem konkrétny návrh."
 
+ZAKÁZANÉ TÉMY A PRERÁMOVANIE PODĽA SEGMENTU (dodrž prísne):
+- Architekti / dizajnéri: NESPOMÍNAJ chýbajúci kontaktný formulár. Web má reprezentovať kvalitu ich portfólia.
+- Advokáti / účtovníci: NESPOMÍNAJ "online prítomnosť". Hovor o dôveryhodnosti a prvom dojme klienta.
+- Lekári / fyzioterapeuti / psychológovia: NESPOMÍNAJ "moderný dizajn". Hovor o DÔVERYHODNOSTI a PRVOM DOJME PACIENTA.
+- Stavebné firmy / remeselníci: NESPOMÍNAJ "branding". Hovor o VIAC DOPYTOCH a GOOGLE VIDITEĽNOSTI.
+- Reštaurácie / kaviarne: NESPOMÍNAJ "web dizajn". Hovor o REZERVÁCIÁCH ONLINE a GOOGLE MAPS HODNOTENIACH.
+
+VZOROVÉ ÚVODY PODĽA HLAVNÉHO PROBLÉMU (inšpiruj sa, neopisuj doslova, doplň názov webu/firmy):
+- Pomalé načítanie: "Skúsil som otvoriť [web] na mobile a načítanie chvíľu trvalo — väčšina návštevníkov odíde po pár sekundách..."
+- Zastaraný dizajn: "Pri pohľade na [web] som si uvedomil, že web nevytvára taký dojem, aký [firma] v skutočnosti má..."
+- Nie responzívny: "Na mobile sa [web] zobrazuje ako zmenšená verzia desktopu — a dnes prichádza väčšina návštevníkov práve z mobilu..."
+
+DÔLEŽITÉ: NIKDY neuvádzaj konkrétne skóre, čísla z analýzy ani technické termíny (PageSpeed, viewport, "responzívnosť" ako pojem). Každý problém prelož do ľudského dopadu na biznis.
+
 FOLLOWUP 1 (po 3 dňoch) — kratší, priateľský:
 Dĺžka: 50-70 slov
 Tón: "len sa pripomínam, chápem že ste zaneprázdnení"
@@ -231,13 +245,28 @@ export async function generateOutreachEmail(input: {
   previousBody?: string | null;
 }): Promise<OutreachEmail> {
   const { lead, segmentName, type } = input;
-  const facts = `DÁTA O FIRME (použi konkrétne, nevymýšľaj):
+
+  // Pick the single strongest angle so the email leads with the right example
+  // intro. The model gets this as a hint — it must NOT quote the raw numbers.
+  const mainProblem =
+    lead.pageSpeedMobile != null && lead.pageSpeedMobile < 50
+      ? "pomalé načítanie na mobile"
+      : lead.isMobileFriendly === false
+        ? "web nie je responzívny (zle sa zobrazuje na mobile)"
+        : (lead.visualScore ?? 0) >= 35
+          ? "zastaraný vizuálny dizajn"
+          : "celkovo zastaraný web";
+
+  const facts = `DÁTA O FIRME (použi konkrétne, nevymýšľaj; čísla NEcituj v emaile):
 Firma: ${lead.companyName}
 Segment (odvetvie): ${segmentName}
 Web: ${lead.websiteUrl ?? "—"}
 Mesto: ${lead.companyCity ?? "—"}
 Konateľ/kontakt: ${lead.ownerName ?? "neznámy"}${lead.ownerPosition ? ` (${lead.ownerPosition})` : ""}
-Konkrétne nedostatky webu: ${(lead.websiteIssues ?? []).slice(0, 5).join("; ") || "—"}
+Hlavný problém webu (použi ako uhol emailu): ${mainProblem}
+Vizuálny dojem (AI): ${lead.aiVisualReason ?? "—"}
+Hlavné vizuálne problémy: ${(lead.visualIssues ?? []).slice(0, 4).join("; ") || "—"}
+Ďalšie nedostatky webu: ${(lead.websiteIssues ?? []).slice(0, 5).join("; ") || "—"}
 Pain point: ${lead.aiPainPoint ?? "—"}
 Príležitosť (čo vieme spraviť): ${lead.aiOpportunity ?? "—"}
 Zhrnutie stavu webu: ${lead.aiSummary ?? "—"}`;
