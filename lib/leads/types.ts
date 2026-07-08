@@ -16,14 +16,22 @@ export interface LeadDTO {
   companyName: string;
   ico: string | null;
   websiteUrl: string | null;
-  websiteScore: number | null;
+  websiteScore: number | null; // total 0-100 (higher = more outdated)
+  technicalScore: number | null; // 0-40
+  visualScore: number | null; // 0-60
   websiteAge: number | null;
+  copyrightYear: number | null;
   websiteTechnology: string | null;
+  hasModernFramework: boolean | null;
   pageSpeedMobile: number | null;
   pageSpeedDesktop: number | null;
   hasSsl: boolean | null;
   isMobileFriendly: boolean | null;
   websiteIssues: string[];
+  visualIssues: string[];
+  screenshotUrl: string | null;
+  aiVisualReason: string | null;
+  disqualifyReason: string | null;
   aiSummary: string | null;
   aiPainPoint: string | null;
   aiOpportunity: string | null;

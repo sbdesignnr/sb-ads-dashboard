@@ -24,9 +24,11 @@ import {
   Clock,
   Compass,
   Ban,
+  ExternalLink,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ScoreGauge } from "@/components/ai/ScoreGauge";
 import { copyToClipboard } from "@/lib/export";
 import { cn } from "@/lib/utils";
 import { type LeadDTO, type LeadStatus, LEAD_STATUS_LABEL } from "@/lib/leads/types";
@@ -220,6 +222,59 @@ export function LeadDetail({ id }: { id: string }) {
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {/* Data */}
         <div className="space-y-5">
+          {/* Web Quality Score gauge */}
+          <Card>
+            <CardContent className="flex flex-col items-center gap-3 pt-6">
+              <ScoreGauge score={lead.websiteScore ?? 0} size={160} label="Web Quality" />
+              <p className="text-center text-xs text-muted">
+                Vyššie skóre = zastaralejší web (lepší lead). Prah kvalifikácie 65.
+              </p>
+              <div className="flex w-full justify-center gap-8 text-sm">
+                <div className="text-center">
+                  <div className="font-semibold tabular-nums text-foreground">
+                    {lead.technicalScore ?? "—"}
+                    <span className="text-muted">/40</span>
+                  </div>
+                  <div className="text-xs text-muted">Technické</div>
+                </div>
+                <div className="text-center">
+                  <div className="font-semibold tabular-nums text-foreground">
+                    {lead.visualScore ?? "—"}
+                    <span className="text-muted">/60</span>
+                  </div>
+                  <div className="text-xs text-muted">Vizuálne</div>
+                </div>
+              </div>
+              {lead.disqualifyReason && (
+                <div className="flex w-full items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+                  <Ban className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>{lead.disqualifyReason}</span>
+                </div>
+              )}
+              {lead.websiteUrl && (
+                <div className="flex w-full gap-2">
+                  <a href={lead.websiteUrl} target="_blank" rel="noreferrer" className="flex-1">
+                    <Button variant="outline" size="sm" className="w-full">
+                      <ExternalLink className="h-4 w-4" />
+                      Otvoriť web
+                    </Button>
+                  </a>
+                  <a
+                    href={`https://www.responsinator.com/?url=${encodeURIComponent(lead.websiteUrl)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1"
+                  >
+                    <Button variant="outline" size="sm" className="w-full">
+                      <Smartphone className="h-4 w-4" />
+                      Na mobile
+                    </Button>
+                  </a>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Web & analýza</CardTitle>
@@ -232,7 +287,10 @@ export function LeadDetail({ id }: { id: string }) {
                   </a>
                 </Row>
               )}
-              <Row icon={Layers} label="Technológia">{lead.websiteTechnology ?? "neznáma"}</Row>
+              <Row icon={Layers} label="Technológia">
+                {lead.websiteTechnology ?? "neznáma"}
+                {lead.hasModernFramework ? " · moderný framework" : ""}
+              </Row>
               <Row icon={Gauge} label="PageSpeed">
                 mobile {lead.pageSpeedMobile ?? "—"}/100 · desktop {lead.pageSpeedDesktop ?? "—"}/100
               </Row>
@@ -247,6 +305,31 @@ export function LeadDetail({ id }: { id: string }) {
               )}
             </CardContent>
           </Card>
+
+          {(lead.aiVisualReason || lead.visualIssues.length > 0) && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Vizuálne hodnotenie (AI)</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {lead.aiVisualReason && (
+                  <p className="text-sm leading-relaxed text-foreground">{lead.aiVisualReason}</p>
+                )}
+                {lead.visualIssues.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {lead.visualIssues.map((v, i) => (
+                      <span
+                        key={i}
+                        className="rounded-full border border-warning/30 bg-warning/10 px-2.5 py-1 text-xs text-warning"
+                      >
+                        {v}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {issues.length > 0 && (
             <Card>
