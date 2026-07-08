@@ -120,6 +120,47 @@ function parseDate(raw: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function stripBom(s: string): string {
+  return s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
+}
+
+/**
+ * Decode raw CSV bytes into text, tolerating the encodings SLSP George uses:
+ * UTF-8, UTF-8+BOM, UTF-16 LE/BE, or Windows-1250. We detect by BOM, then a
+ * UTF-16LE-without-BOM heuristic (interleaved NUL bytes), then fall back to
+ * *strict* UTF-8 — Windows-1250 is only used when the bytes fail fatal UTF-8
+ * decoding, so a genuine UTF-8 file (the common case) is never turned into
+ * mojibake. Any leading BOM is stripped so the first header cell matches.
+ */
+export function decodeCsv(buffer: ArrayBuffer): { text: string; encoding: string } {
+  const u8 = new Uint8Array(buffer);
+
+  if (u8[0] === 0xff && u8[1] === 0xfe)
+    return { text: stripBom(new TextDecoder("utf-16le").decode(buffer)), encoding: "utf-16le" };
+  if (u8[0] === 0xfe && u8[1] === 0xff)
+    return { text: stripBom(new TextDecoder("utf-16be").decode(buffer)), encoding: "utf-16be" };
+  if (u8[0] === 0xef && u8[1] === 0xbb && u8[2] === 0xbf)
+    return { text: stripBom(new TextDecoder("utf-8").decode(buffer)), encoding: "utf-8-bom" };
+
+  // UTF-16 LE without BOM: ASCII bytes are interleaved with 0x00 ("S\0K\0…").
+  const sample = u8.subarray(0, Math.min(u8.length, 400));
+  let oddNuls = 0;
+  for (let i = 1; i < sample.length; i += 2) if (sample[i] === 0x00) oddNuls++;
+  if (sample.length > 8 && oddNuls > sample.length / 4)
+    return { text: stripBom(new TextDecoder("utf-16le").decode(buffer)), encoding: "utf-16le-nobom" };
+
+  // Trust valid UTF-8; only drop to Windows-1250 when strict UTF-8 rejects it.
+  try {
+    return { text: new TextDecoder("utf-8", { fatal: true }).decode(buffer), encoding: "utf-8" };
+  } catch {
+    try {
+      return { text: new TextDecoder("windows-1250").decode(buffer), encoding: "windows-1250" };
+    } catch {
+      return { text: new TextDecoder("utf-8").decode(buffer), encoding: "utf-8-lossy" };
+    }
+  }
+}
+
 /** Parse a full SLSP George CSV export into transactions. */
 export function parseSlspCsv(csvContent: string): ParsedTx[] {
   const lines = csvContent
