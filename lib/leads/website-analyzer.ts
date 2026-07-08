@@ -439,22 +439,29 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
   if (fw.modern) technical -= 20; // a modern stack pulls the technical score down
   const technicalScore = Math.max(0, Math.min(40, technical));
 
-  // ---- Visual score (0-60): AI judgement of how dated the design looks ----
-  const visual = site.reachable
-    ? await analyzeVisual(url, pageText)
-    : { score: null, reason: null, mainIssues: [], screenshotUrl: null };
-  const visualScore = visual.score;
-
-  const totalScore = Math.max(0, Math.min(100, technicalScore + (visualScore ?? 0)));
-
-  // ---- Disqualification (lead is filtered out, not added to the pipeline) ----
+  // ---- Cheap disqualifiers FIRST, so we skip the expensive visual AI
+  // (screenshot + Claude) on sites we'd reject anyway: modern stack, broken,
+  // parked, or a social profile. Critical for scanning large volumes. ----
   let disqualifyReason: string | null = null;
   if (isSocialUrl(url)) disqualifyReason = "Odkaz je profil na sociálnej sieti, nie vlastný web.";
   else if (!site.reachable) disqualifyReason = "Web sa nenačítal (404/500 alebo nedostupný).";
   else if (isParkedDomain(site.html)) disqualifyReason = "Parkovaná / nepoužívaná doména.";
   else if (fw.modern) disqualifyReason = `Web už beží na modernom nástroji (${fw.name}).`;
-  else if (totalScore < 40) disqualifyReason = `Web je dostatočne dobrý (skóre ${totalScore}/100).`;
-  else if (totalScore < QUALIFY_AT) disqualifyReason = `Skóre ${totalScore}/100 – pod prahom ${QUALIFY_AT}.`;
+
+  // ---- Visual score (0-60): only spent on real candidates ----
+  const visual =
+    !disqualifyReason && site.reachable
+      ? await analyzeVisual(url, pageText)
+      : { score: null, reason: null, mainIssues: [], screenshotUrl: null };
+  const visualScore = visual.score;
+
+  const totalScore = Math.max(0, Math.min(100, technicalScore + (visualScore ?? 0)));
+
+  // ---- Score-based disqualifiers (only if not already disqualified) ----
+  if (!disqualifyReason) {
+    if (totalScore < 40) disqualifyReason = `Web je dostatočne dobrý (skóre ${totalScore}/100).`;
+    else if (totalScore < QUALIFY_AT) disqualifyReason = `Skóre ${totalScore}/100 – pod prahom ${QUALIFY_AT}.`;
+  }
 
   const qualified = !disqualifyReason && totalScore >= QUALIFY_AT;
 

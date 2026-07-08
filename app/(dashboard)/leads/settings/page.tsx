@@ -31,6 +31,7 @@ interface JobRow {
   status: string;
   foundTotal: number;
   foundQualified: number;
+  foundRejected: number;
   startedAt: string | null;
   completedAt: string | null;
   errorMessage: string | null;
@@ -288,7 +289,10 @@ export default function LeadsSettingsPage() {
       });
       const j = await res.json();
       if (res.ok && j.status !== "failed") {
-        toast.success(`Scan hotový — ${j.foundQualified ?? 0} nových leadov`, { id: "scan" });
+        toast.success(
+          `Skenovanie dokončené — skontrolovaných ${j.foundTotal ?? 0}, kvalifikovaných ${j.foundQualified ?? 0}, odmietnutých ${j.foundRejected ?? 0}`,
+          { id: "scan", duration: 6000 },
+        );
       } else {
         toast.error(j.errorMessage || j.error || "Scan zlyhal", { id: "scan" });
       }
@@ -382,7 +386,9 @@ export default function LeadsSettingsPage() {
             <span className="text-foreground">Skenovanie beží…</span>
             {runningJob && (
               <span className="text-muted">
-                nájdených {runningJob.foundTotal} · kvalifikovaných {runningJob.foundQualified}
+                Skenované: {runningJob.foundQualified + runningJob.foundRejected}/{runningJob.foundTotal || "?"} ·
+                Kvalifikovaných: <span className="text-success">{runningJob.foundQualified}</span> ·
+                Odmietnutých: <span className="text-muted">{runningJob.foundRejected}</span>
               </span>
             )}
           </div>
@@ -432,7 +438,8 @@ export default function LeadsSettingsPage() {
                     <Badge variant={st.variant}>{st.label}</Badge>
                     <span className="font-medium text-foreground">{j.segmentName}</span>
                     <span className="text-muted">
-                      {j.foundQualified}/{j.foundTotal} kvalifikovaných
+                      <span className="text-success">{j.foundQualified}</span> kvalifik. ·{" "}
+                      {j.foundRejected} odmiet. · {j.foundTotal} spolu
                     </span>
                     <span className="ml-auto text-xs text-muted">{fmt(j.completedAt ?? j.createdAt)}</span>
                     {j.errorMessage && (

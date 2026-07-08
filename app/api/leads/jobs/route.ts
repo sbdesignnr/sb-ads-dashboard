@@ -19,6 +19,7 @@ export async function GET() {
       status: j.status,
       foundTotal: j.foundTotal,
       foundQualified: j.foundQualified,
+      foundRejected: j.foundRejected,
       startedAt: j.startedAt?.toISOString() ?? null,
       completedAt: j.completedAt?.toISOString() ?? null,
       errorMessage: j.errorMessage,

@@ -16,9 +16,17 @@ export async function GET(req: NextRequest) {
   const segment = sp.get("segment"); // segmentId | "all" | "none"
   const status = sp.get("status"); // status | "all"
 
-  const where: Prisma.LeadWhereInput = {};
+  const where: Prisma.LeadWhereInput = {
+    // Hide discovered-but-unanalyzed leftovers (no score AND never scanned).
+    // Legitimately analyzed leads always have a score or a lastScannedAt.
+    NOT: { websiteScore: null, lastScannedAt: null },
+  };
   if (segment && segment !== "all") where.segmentId = segment === "none" ? null : segment;
-  if (status && status !== "all" && STATUSES.includes(status)) where.status = status;
+  if (status && status !== "all" && STATUSES.includes(status)) {
+    where.status = status; // explicit tab (incl. "rejected") shows that status
+  } else {
+    where.status = { not: "rejected" }; // default / "Všetky" hides rejected leads
+  }
 
   const leads = await prisma.lead.findMany({
     where,

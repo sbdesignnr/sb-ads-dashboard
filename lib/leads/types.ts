@@ -58,6 +58,7 @@ export interface ScanJobDTO {
   status: string;
   foundTotal: number;
   foundQualified: number;
+  foundRejected: number;
   startedAt: string | null;
   completedAt: string | null;
   errorMessage: string | null;

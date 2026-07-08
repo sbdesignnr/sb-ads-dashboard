@@ -15,8 +15,9 @@ function isCzLead(lead: Pick<Lead, "source" | "companyCity" | "companyAddress">)
 
 export interface ScanSummary {
   jobId: string;
-  foundTotal: number;
+  foundTotal: number; // discovered + analyzed
   foundQualified: number;
+  foundRejected: number;
   error?: string;
 }
 
@@ -54,7 +55,22 @@ export async function enrichLead(
   const lead = await prisma.lead.findUnique({ where: { id: leadId } });
   if (!lead?.websiteUrl) return null;
 
-  const analysis = await analyzeWebsite(lead.websiteUrl);
+  let analysis;
+  try {
+    analysis = await analyzeWebsite(lead.websiteUrl);
+  } catch {
+    // Analysis failed (network/timeout) — treat as rejected so it never lingers
+    // as an unanalyzed, score-less lead in the list.
+    await prisma.lead.update({
+      where: { id: leadId },
+      data: {
+        disqualifyReason: "Analýza webu zlyhala.",
+        ...(lead.status === "new" ? { status: "rejected" } : {}),
+        lastScannedAt: new Date(),
+      },
+    });
+    return { qualified: false, active: null };
+  }
 
   // The website-analysis fields written for every enriched lead (qualified or not).
   const analysisData = {
@@ -162,13 +178,14 @@ export async function enrichLead(
  */
 export async function scanSegment(
   segmentId: string,
-  opts: { maxDiscover?: number; enrichBatch?: number; region?: Region | "both" } = {},
+  opts: { maxDiscover?: number; region?: Region | "both" } = {},
 ): Promise<ScanSummary> {
-  const maxDiscover = opts.maxDiscover ?? 60;
-  const enrichBatch = opts.enrichBatch ?? 12;
+  // Every discovered business is fully analyzed in this run, so the cap is bound
+  // by the serverless time budget (screenshots + AI per candidate site).
+  const maxDiscover = opts.maxDiscover ?? 24;
   const region = opts.region ?? "both";
   const segment = await prisma.leadSegment.findUnique({ where: { id: segmentId } });
-  if (!segment) return { jobId: "", foundTotal: 0, foundQualified: 0, error: "segment_not_found" };
+  if (!segment) return { jobId: "", foundTotal: 0, foundQualified: 0, foundRejected: 0, error: "segment_not_found" };
 
   const job = await prisma.leadScanJob.create({ data: { segmentId, status: "running", startedAt: new Date() } });
 
@@ -177,18 +194,20 @@ export async function scanSegment(
       where: { id: job.id },
       data: { status: "failed", errorMessage: "GOOGLE_PLACES_API_KEY nie je nastavený.", completedAt: new Date() },
     });
-    return { jobId: job.id, foundTotal: 0, foundQualified: 0, error: "places_not_configured" };
+    return { jobId: job.id, foundTotal: 0, foundQualified: 0, foundRejected: 0, error: "places_not_configured" };
   }
 
   try {
-    // Phase 1 — broad discovery across cities, saved with basic info right away.
+    // Discover businesses, upsert each and collect its lead id — EVERY one is
+    // analyzed below, so nothing is left in the list as an unanalyzed lead.
     const keywords = segment.keywords.length ? segment.keywords : [segment.name];
     const discovered = await discoverBusinesses(keywords, { cap: maxDiscover, region });
+    const leadIds: string[] = [];
     for (const b of discovered) {
       if (!b.website) continue;
       const norm = normalizeWebsite(b.website);
       const source = b.country === "CZ" ? "google-places-cz" : "google-places-sk";
-      await prisma.lead.upsert({
+      const lead = await prisma.lead.upsert({
         where: { websiteUrl: norm },
         update: { segmentId, source },
         create: {
@@ -202,40 +221,41 @@ export async function scanSegment(
           source,
         },
       });
+      leadIds.push(lead.id);
     }
-    await prisma.leadScanJob.update({ where: { id: job.id }, data: { foundTotal: discovered.length } });
+    await prisma.leadScanJob.update({ where: { id: job.id }, data: { foundTotal: leadIds.length } });
 
-    // Phase 2 — deep-enrich a batch, never-scanned first.
-    const toEnrich: Lead[] = await prisma.lead.findMany({
-      where: { segmentId, websiteUrl: { not: null } },
-      orderBy: [{ lastScannedAt: { sort: "asc", nulls: "first" } }],
-      take: enrichBatch,
-    });
-
+    // Analyze every discovered lead now (technical + visual → qualify or reject).
+    // Counts are written live so the UI progress bar updates in real time.
     let qualified = 0;
-    await mapPool(toEnrich, 4, async (lead) => {
-      try {
-        const r = await enrichLead(lead.id, segment);
-        if (r?.qualified) {
-          qualified++;
-          await prisma.leadScanJob.update({ where: { id: job.id }, data: { foundQualified: qualified } });
-        }
-      } catch {
-        /* skip this lead, keep going */
-      }
+    let rejected = 0;
+    await mapPool(leadIds, 4, async (leadId) => {
+      const r = await enrichLead(leadId, segment).catch(() => ({ qualified: false, active: null }));
+      if (r?.qualified) qualified++;
+      else rejected++;
+      await prisma.leadScanJob.update({
+        where: { id: job.id },
+        data: { foundQualified: qualified, foundRejected: rejected },
+      });
     });
 
     await prisma.leadScanJob.update({
       where: { id: job.id },
-      data: { status: "completed", foundTotal: discovered.length, foundQualified: qualified, completedAt: new Date() },
+      data: {
+        status: "completed",
+        foundTotal: leadIds.length,
+        foundQualified: qualified,
+        foundRejected: rejected,
+        completedAt: new Date(),
+      },
     });
-    return { jobId: job.id, foundTotal: discovered.length, foundQualified: qualified };
+    return { jobId: job.id, foundTotal: leadIds.length, foundQualified: qualified, foundRejected: rejected };
   } catch (e) {
     await prisma.leadScanJob.update({
       where: { id: job.id },
       data: { status: "failed", errorMessage: (e as Error).message.slice(0, 300), completedAt: new Date() },
     });
-    return { jobId: job.id, foundTotal: 0, foundQualified: 0, error: (e as Error).message };
+    return { jobId: job.id, foundTotal: 0, foundQualified: 0, foundRejected: 0, error: (e as Error).message };
   }
 }
 
@@ -247,7 +267,7 @@ export async function scanSegment(
 export async function scanAllSources(
   segmentId: string,
   region: Region | "both" = "both",
-  opts: { maxDiscover?: number; enrichBatch?: number } = {},
+  opts: { maxDiscover?: number } = {},
 ): Promise<ScanSummary> {
   return scanSegment(segmentId, { ...opts, region });
 }
@@ -262,7 +282,9 @@ export async function scanDaily(
   opts: { targetNew?: number; segmentsPerRun?: number } = {},
 ): Promise<{ scanned: number; addedQualified: number; newLeads: number; skipped: boolean }> {
   const target = opts.targetNew ?? 200;
-  const perRun = opts.segmentsPerRun ?? 3;
+  // Each run fully analyzes every discovered site, so keep the daily footprint
+  // small enough to finish within the cron time budget.
+  const perRun = opts.segmentsPerRun ?? 2;
 
   const before = await prisma.lead.count({ where: { status: "new" } });
   if (before >= target) {
@@ -282,23 +304,22 @@ export async function scanDaily(
 
   let addedQualified = 0;
   for (const s of todays) {
-    const r = await scanSegment(s.id, { maxDiscover: 40, enrichBatch: 5, region: "both" });
+    const r = await scanSegment(s.id, { maxDiscover: 12, region: "both" });
     addedQualified += r.foundQualified;
   }
   const newLeads = await prisma.lead.count({ where: { status: "new" } });
   return { scanned: todays.length, addedQualified, newLeads, skipped: false };
 }
 
-/** Cron helper: scans every segment with a small per-segment enrich cap. */
+/** Utility: scan every segment (heavy — analyzes all discovered sites). */
 export async function scanAllSegments(
-  opts: { maxDiscover?: number; enrichBatch?: number; region?: Region | "both" } = {},
+  opts: { maxDiscover?: number; region?: Region | "both" } = {},
 ): Promise<{ segments: number; totalQualified: number }> {
   const segments = await prisma.leadSegment.findMany();
   let totalQualified = 0;
   for (const s of segments) {
     const r = await scanSegment(s.id, {
-      maxDiscover: opts.maxDiscover ?? 40,
-      enrichBatch: opts.enrichBatch ?? 5,
+      maxDiscover: opts.maxDiscover ?? 12,
       region: opts.region ?? "both",
     });
     totalQualified += r.foundQualified;

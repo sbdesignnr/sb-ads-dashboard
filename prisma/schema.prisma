@@ -187,8 +187,9 @@ model LeadScanJob {
   segmentId      String?      @map("segment_id")
   segment        LeadSegment? @relation(fields: [segmentId], references: [id], onDelete: SetNull)
   status         String       @default("pending") // pending | running | completed | failed
-  foundTotal     Int          @default(0) @map("found_total")
+  foundTotal     Int          @default(0) @map("found_total") // discovered + analyzed
   foundQualified Int          @default(0) @map("found_qualified")
+  foundRejected  Int          @default(0) @map("found_rejected")
   startedAt      DateTime?    @map("started_at")
   completedAt    DateTime?    @map("completed_at")
   errorMessage   String?      @map("error_message")
