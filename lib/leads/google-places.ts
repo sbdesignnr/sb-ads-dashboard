@@ -19,6 +19,8 @@ function key(): string {
   return k;
 }
 
+export type Region = "SK" | "CZ";
+
 export interface PlaceBusiness {
   placeId: string;
   name: string;
@@ -27,6 +29,7 @@ export interface PlaceBusiness {
   address: string | null;
   city: string | null;
   rating: number | null;
+  country: Region | null; // which region's search returned it (routes ORSR vs ARES)
 }
 
 interface PlaceResult {
@@ -67,6 +70,7 @@ export function mapPlace(p: PlaceResult): PlaceBusiness {
     address: p.formattedAddress ?? null,
     city: cityOf(p),
     rating: typeof p.rating === "number" ? p.rating : null,
+    country: null,
   };
 }
 
@@ -77,18 +81,19 @@ export function mapPlace(p: PlaceResult): PlaceBusiness {
  */
 export async function searchBusinesses(
   query: string,
-  opts: { maxPages?: number } = {},
+  opts: { maxPages?: number; region?: Region } = {},
 ): Promise<PlaceBusiness[]> {
   const apiKey = key();
   const maxPages = Math.max(1, Math.min(3, opts.maxPages ?? 1));
+  const region: Region = opts.region ?? "SK";
   const out: PlaceBusiness[] = [];
   let pageToken: string | undefined;
 
   for (let page = 0; page < maxPages; page++) {
     const body: Record<string, unknown> = {
       textQuery: query,
-      regionCode: "SK",
-      languageCode: "sk",
+      regionCode: region,
+      languageCode: region === "CZ" ? "cs" : "sk",
       pageSize: 20,
     };
     if (pageToken) body.pageToken = pageToken;
@@ -114,7 +119,7 @@ export async function searchBusinesses(
     for (const p of data.places ?? []) {
       if (!p.websiteUri) continue; // only companies with a website
       const b = mapPlace(p);
-      if (b.name && !out.find((x) => x.placeId === b.placeId)) out.push(b);
+      if (b.name && !out.find((x) => x.placeId === b.placeId)) out.push({ ...b, country: region });
     }
     pageToken = data.nextPageToken;
     if (!pageToken) break;
@@ -130,6 +135,14 @@ export const SK_CITIES = [
   "Trnava", "Trenčín", "Martin", "Poprad", "Prievidza", "Zvolen",
   "Považská Bystrica", "Nové Zámky", "Michalovce", "Spišská Nová Ves",
   "Komárno", "Levice", "Humenné", "Bardejov", "Liptovský Mikuláš", "Ružomberok",
+];
+
+// Biggest Czech population centres, roughly largest-first.
+export const CZ_CITIES = [
+  "Praha", "Brno", "Ostrava", "Plzeň", "Liberec", "Olomouc",
+  "České Budějovice", "Hradec Králové", "Ústí nad Labem", "Pardubice",
+  "Zlín", "Havířov", "Kladno", "Most", "Karviná", "Opava",
+  "Frýdek-Místek", "Jihlava", "Teplice", "Karlovy Vary", "Děčín", "Chomutov",
 ];
 
 function normWebsite(url: string): string {
@@ -149,12 +162,13 @@ function normWebsite(url: string): string {
  */
 export async function discoverBusinesses(
   keywords: string[],
-  opts: { cap?: number; cities?: string[]; maxPagesPerQuery?: number } = {},
+  opts: { cap?: number; region?: Region | "both"; maxPagesPerQuery?: number } = {},
 ): Promise<PlaceBusiness[]> {
   const cap = opts.cap ?? 80;
-  const cities = opts.cities ?? SK_CITIES;
+  const region = opts.region ?? "both";
   const maxPages = opts.maxPagesPerQuery ?? 1;
   const kws = keywords.length ? keywords : ["firma"];
+  const regions: Region[] = region === "both" ? ["SK", "CZ"] : [region];
 
   const seen = new Set<string>();
   const out: PlaceBusiness[] = [];
@@ -162,7 +176,7 @@ export async function discoverBusinesses(
     for (const b of list) {
       if (!b.website) continue;
       const host = normWebsite(b.website);
-      if (seen.has(host)) continue;
+      if (seen.has(host)) continue; // dedupe by domain, across SK + CZ
       seen.add(host);
       out.push({ ...b });
       if (out.length >= cap) return true;
@@ -170,15 +184,19 @@ export async function discoverBusinesses(
     return false;
   };
 
-  // Nationwide pass first (cheap, catches the obvious ones), then city sweep.
-  for (const kw of kws) {
-    if (out.length >= cap) return out;
-    if (add(await searchBusinesses(`${kw} Slovensko`, { maxPages }))) return out;
-  }
-  for (const city of cities) {
+  for (const reg of regions) {
+    const cities = reg === "CZ" ? CZ_CITIES : SK_CITIES;
+    const nationwide = reg === "CZ" ? "Česko" : "Slovensko";
+    // Nationwide pass first (cheap, catches the obvious ones), then city sweep.
     for (const kw of kws) {
       if (out.length >= cap) return out;
-      if (add(await searchBusinesses(`${kw} ${city}`, { maxPages }))) return out;
+      if (add(await searchBusinesses(`${kw} ${nationwide}`, { maxPages, region: reg }))) return out;
+    }
+    for (const city of cities) {
+      for (const kw of kws) {
+        if (out.length >= cap) return out;
+        if (add(await searchBusinesses(`${kw} ${city}`, { maxPages, region: reg }))) return out;
+      }
     }
   }
   return out;

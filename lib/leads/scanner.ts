@@ -1,9 +1,17 @@
 import { prisma } from "@/lib/prisma";
 import type { Lead, LeadSegment } from "@prisma/client";
-import { discoverBusinesses, placesConfigured } from "./google-places";
+import { discoverBusinesses, placesConfigured, CZ_CITIES, type Region } from "./google-places";
 import { analyzeWebsite } from "./website-analyzer";
 import { enrichCompany } from "./orsr";
+import { enrichCompanyAres } from "./ares";
 import { generateDossier } from "./ai";
+
+/** Guess whether a lead is a Czech company (routes ARES vs ORSR enrichment). */
+function isCzLead(lead: Pick<Lead, "source" | "companyCity" | "companyAddress">): boolean {
+  if (lead.source?.endsWith("-cz")) return true;
+  if (lead.companyCity && CZ_CITIES.includes(lead.companyCity)) return true;
+  return /(česk|czech|\bpraha\b|\bbrno\b|,\s*CZ\b)/i.test(lead.companyAddress ?? "");
+}
 
 export interface ScanSummary {
   jobId: string;
@@ -83,9 +91,12 @@ export async function enrichLead(
     return { qualified: false, active: null };
   }
 
-  // Qualified — enrich fully. Prefer an IČO scraped from the site (exact ORSR match).
+  // Qualified — enrich fully. Prefer an IČO scraped from the site (exact match).
+  // CZ companies → ARES, SK companies → ORSR (both return the same shape).
   const ico = lead.ico ?? analysis.extractedIco;
-  const orsr = await enrichCompany({ ico, name: lead.companyName }).catch(() => null);
+  const registry = isCzLead(lead)
+    ? await enrichCompanyAres({ ico, name: lead.companyName }).catch(() => null)
+    : await enrichCompany({ ico, name: lead.companyName }).catch(() => null);
 
   const dossier = process.env.ANTHROPIC_API_KEY
     ? await generateDossier({
@@ -93,12 +104,12 @@ export async function enrichLead(
         segmentName: segment.name,
         communicationStyle: segment.communicationStyle,
         websiteUrl: lead.websiteUrl,
-        companyCity: lead.companyCity ?? orsr?.city ?? null,
-        ico: orsr?.ico ?? ico ?? null,
-        companyActive: orsr?.active ?? null,
-        orsrStatusNote: orsr?.statusNote ?? null,
-        orsrOwnerName: orsr?.ownerName ?? null,
-        orsrOwnerPosition: orsr?.ownerPosition ?? null,
+        companyCity: lead.companyCity ?? registry?.city ?? null,
+        ico: registry?.ico ?? ico ?? null,
+        companyActive: registry?.active ?? null,
+        orsrStatusNote: registry?.statusNote ?? null,
+        orsrOwnerName: registry?.ownerName ?? null,
+        orsrOwnerPosition: registry?.ownerPosition ?? null,
         placesPhone: lead.companyPhone,
         extractedEmails: analysis.extractedEmails,
         extractedPhones: analysis.extractedPhones,
@@ -119,13 +130,13 @@ export async function enrichLead(
     data: {
       ...analysisData,
       disqualifyReason: null, // clear any stale reason from a previous scan
-      ico: orsr?.ico ?? ico ?? undefined,
-      companyActive: orsr?.active ?? undefined,
-      companyAddress: lead.companyAddress ?? orsr?.address ?? undefined,
-      companyCity: lead.companyCity ?? orsr?.city ?? undefined,
+      ico: registry?.ico ?? ico ?? undefined,
+      companyActive: registry?.active ?? undefined,
+      companyAddress: lead.companyAddress ?? registry?.address ?? undefined,
+      companyCity: lead.companyCity ?? registry?.city ?? undefined,
       // Prefer real contact data the AI pulled from the site, then extractor, then ORSR.
-      ownerName: dossier?.ownerName ?? orsr?.ownerName ?? lead.ownerName ?? undefined,
-      ownerPosition: dossier?.ownerRole ?? orsr?.ownerPosition ?? lead.ownerPosition ?? undefined,
+      ownerName: dossier?.ownerName ?? registry?.ownerName ?? lead.ownerName ?? undefined,
+      ownerPosition: dossier?.ownerRole ?? registry?.ownerPosition ?? lead.ownerPosition ?? undefined,
       companyEmail: dossier?.email ?? analysis.extractedEmails[0] ?? lead.companyEmail ?? undefined,
       companyPhone: dossier?.phone ?? lead.companyPhone ?? analysis.extractedPhones[0] ?? undefined,
       ...(dossier
@@ -141,7 +152,7 @@ export async function enrichLead(
     },
   });
 
-  return { qualified: true, active: orsr?.active ?? null };
+  return { qualified: true, active: registry?.active ?? null };
 }
 
 /**
@@ -151,10 +162,11 @@ export async function enrichLead(
  */
 export async function scanSegment(
   segmentId: string,
-  opts: { maxDiscover?: number; enrichBatch?: number } = {},
+  opts: { maxDiscover?: number; enrichBatch?: number; region?: Region | "both" } = {},
 ): Promise<ScanSummary> {
   const maxDiscover = opts.maxDiscover ?? 60;
   const enrichBatch = opts.enrichBatch ?? 12;
+  const region = opts.region ?? "both";
   const segment = await prisma.leadSegment.findUnique({ where: { id: segmentId } });
   if (!segment) return { jobId: "", foundTotal: 0, foundQualified: 0, error: "segment_not_found" };
 
@@ -171,13 +183,14 @@ export async function scanSegment(
   try {
     // Phase 1 — broad discovery across cities, saved with basic info right away.
     const keywords = segment.keywords.length ? segment.keywords : [segment.name];
-    const discovered = await discoverBusinesses(keywords, { cap: maxDiscover });
+    const discovered = await discoverBusinesses(keywords, { cap: maxDiscover, region });
     for (const b of discovered) {
       if (!b.website) continue;
       const norm = normalizeWebsite(b.website);
+      const source = b.country === "CZ" ? "google-places-cz" : "google-places-sk";
       await prisma.lead.upsert({
         where: { websiteUrl: norm },
-        update: { segmentId },
+        update: { segmentId, source },
         create: {
           segmentId,
           companyName: b.name,
@@ -186,7 +199,7 @@ export async function scanSegment(
           companyAddress: b.address,
           companyCity: b.city,
           status: "new",
-          source: "google-places",
+          source,
         },
       });
     }
@@ -226,14 +239,31 @@ export async function scanSegment(
   }
 }
 
+/**
+ * Scan one segment across all discovery sources (Google Places SK+CZ, deduped by
+ * domain) for the chosen region. ARES/ORSR enrichment is picked per lead by
+ * country. Thin wrapper over scanSegment kept as the named entry point.
+ */
+export async function scanAllSources(
+  segmentId: string,
+  region: Region | "both" = "both",
+  opts: { maxDiscover?: number; enrichBatch?: number } = {},
+): Promise<ScanSummary> {
+  return scanSegment(segmentId, { ...opts, region });
+}
+
 /** Cron helper: scans every segment with a small per-segment enrich cap. */
 export async function scanAllSegments(
-  opts: { maxDiscover?: number; enrichBatch?: number } = {},
+  opts: { maxDiscover?: number; enrichBatch?: number; region?: Region | "both" } = {},
 ): Promise<{ segments: number; totalQualified: number }> {
   const segments = await prisma.leadSegment.findMany();
   let totalQualified = 0;
   for (const s of segments) {
-    const r = await scanSegment(s.id, { maxDiscover: opts.maxDiscover ?? 40, enrichBatch: opts.enrichBatch ?? 5 });
+    const r = await scanSegment(s.id, {
+      maxDiscover: opts.maxDiscover ?? 40,
+      enrichBatch: opts.enrichBatch ?? 5,
+      region: opts.region ?? "both",
+    });
     totalQualified += r.foundQualified;
   }
   return { segments: segments.length, totalQualified };
