@@ -19,6 +19,9 @@ export async function POST(req: NextRequest) {
   const file = form.get("file");
   if (!(file instanceof Blob)) return NextResponse.json({ error: "missing_file" }, { status: 400 });
 
+  const fileName = file instanceof File ? file.name : "upload.csv";
+  console.log("File received:", fileName, file.size);
+
   let accountId = (form.get("account_id") as string) || "";
   if (!accountId) accountId = (await getOrCreateDefaultAccount()).id;
   else {
@@ -28,6 +31,7 @@ export async function POST(req: NextRequest) {
 
   const text = await file.text();
   const parsed = parseSlspCsv(text);
+  console.log("Parse result:", parsed.length);
   if (!parsed.length) return NextResponse.json({ imported: 0, skipped: 0 });
 
   // Build a de-dupe set from existing rows in the imported date range.

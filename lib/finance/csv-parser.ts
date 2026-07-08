@@ -1,7 +1,13 @@
-// Parser for SLSP George transaction CSV exports (semicolon-separated, quoted).
-// Header: "Dátum";"Suma";"Mena";"Zostatok";"Názov protistrany";"IBAN protistrany";
-//         "Konštantný symbol";"Variabilný symbol";"Špecifický symbol";"Referencia";
-//         "Poznámka";"Typ"
+// Parser for SLSP George transaction CSV/TSV exports (quoted fields).
+//
+// Real George export header (";" or "\t" separated, values in quotes):
+//   "Vlastný názov účtu";"Vlastný IBAN";"Dátum splatnosti";"Suma";"Mena";
+//   "Partner";"IBAN partnera";"BIC/SWIFT kód banky partnera";
+//   "Číslo účtu partnera";"CC kód banky partnera";"Popis transakcie";
+//   "Typ transakcie";"Konštantný symbol";"Špecifický symbol";"Variabilný symbol"
+//
+// Columns are matched by header NAME (not position), so an older layout
+// ("Dátum";"Suma";"Mena";"Zostatok";"Názov protistrany"…) still parses.
 
 export interface ParsedTx {
   date: Date;
@@ -12,7 +18,7 @@ export interface ParsedTx {
 }
 
 function fold(s: string): string {
-  return s.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  return s.toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 }
 
 /** Split one CSV line, honouring "quoted" fields and escaped "" quotes. */
@@ -46,8 +52,24 @@ function parseCsvLine(line: string, delim = ";"): string[] {
   return out.map((s) => s.trim());
 }
 
+/** Pick a column index by header name — exact match first, then substring. */
+function findCol(headers: string[], exact: string[], includes: string[] = []): number {
+  const folded = headers.map(fold);
+  for (const e of exact) {
+    const i = folded.indexOf(fold(e));
+    if (i !== -1) return i;
+  }
+  for (const inc of includes) {
+    const needle = fold(inc);
+    const i = folded.findIndex((h) => h.includes(needle));
+    if (i !== -1) return i;
+  }
+  return -1;
+}
+
 function parseAmount(raw: string): number {
-  let s = raw.replace(/[\s ]/g, ""); // strip spaces (thousands separators)
+  // Strip spaces incl. non-breaking (U+00A0) used as thousands separators.
+  let s = raw.replace(/[\s ]/g, "");
   if (s.includes(",") && s.includes(".")) {
     // "1.234,56" → dot = thousands, comma = decimal
     s = s.replace(/\./g, "").replace(",", ".");
@@ -67,31 +89,78 @@ function parseDate(raw: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Parse a full SLSP George CSV export into transactions. */
+/** Detect the field separator from the header line (";" vs tab). */
+function detectDelim(headerLine: string): string {
+  const semi = (headerLine.match(/;/g) || []).length;
+  const tab = (headerLine.match(/\t/g) || []).length;
+  return tab > semi ? "\t" : ";";
+}
+
+/** Parse a full SLSP George CSV/TSV export into transactions. */
 export function parseSlspCsv(csvContent: string): ParsedTx[] {
   const lines = csvContent
     .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
     .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
+    .filter((l) => l.trim().length > 0);
+
+  // Skip any leading noise (filename / metadata) — the real header is the
+  // first line that contains a "Suma" column.
+  let headerIdx = -1;
+  let delim = ";";
+  for (let i = 0; i < lines.length; i++) {
+    if (/suma/i.test(lines[i])) {
+      headerIdx = i;
+      delim = detectDelim(lines[i]);
+      break;
+    }
+  }
+
+  if (headerIdx === -1) {
+    console.log("CSV rows found:", 0);
+    console.log("Headers:", "(none — no 'Suma' column detected)");
+    return [];
+  }
+
+  const headers = parseCsvLine(lines[headerIdx], delim);
+  const rows = lines
+    .slice(headerIdx + 1)
+    .map((l) => parseCsvLine(l, delim))
+    .filter((r) => r.some((c) => c.trim() !== ""));
+
+  console.log("CSV rows found:", rows.length);
+  console.log("First row:", rows[0]);
+  console.log("Headers:", headers);
+
+  const idxDate = findCol(headers, ["datum splatnosti"], ["datum"]);
+  const idxAmount = findCol(headers, ["suma"], ["suma"]);
+  const idxCurrency = findCol(headers, ["mena"], ["mena"]);
+  const idxPartner = findCol(headers, ["partner", "nazov protistrany"]); // exact only — avoid "IBAN partnera" etc.
+  const idxPopis = findCol(headers, ["popis transakcie", "poznamka"], ["popis"]);
+  const idxType = findCol(headers, ["typ transakcie", "typ"], ["typ"]);
+
+  const cell = (r: string[], i: number) => (i >= 0 ? (r[i] ?? "") : "");
 
   const out: ParsedTx[] = [];
-  for (const line of lines) {
-    // Skip the header row.
-    if (/d[áa]tum/i.test(line) && /suma/i.test(line)) continue;
-    const f = parseCsvLine(line);
-    if (f.length < 3) continue;
+  for (const r of rows) {
+    // 4. Skip rows where Suma is empty or 0.
+    const amountRaw = cell(r, idxAmount);
+    if (!amountRaw.trim()) continue;
+    const amount = parseAmount(amountRaw);
+    if (amount === 0) continue;
 
-    const date = parseDate(f[0]);
+    const date = parseDate(cell(r, idxDate));
     if (!date) continue; // not a data row
-    const amount = parseAmount(f[1]);
-    const currency = (f[2] || "EUR").toUpperCase();
-    const counterparty = f[4] ?? "";
-    const note = f[10] ?? "";
-    const type = f[11] ?? "";
 
-    const description = [counterparty, note].filter(Boolean).join(" · ") || note || type || "Transakcia";
-    const rawText = [counterparty, note, type, f[9] ?? ""].filter(Boolean).join(" ");
+    const currency = (cell(r, idxCurrency) || "EUR").toUpperCase();
+    const partner = cell(r, idxPartner);
+    const popis = cell(r, idxPopis);
+    const type = cell(r, idxType);
+
+    // Description: Partner + Popis transakcie.
+    const description =
+      [partner, popis].filter(Boolean).join(" · ") || partner || popis || type || "Transakcia";
+    const rawText = [partner, popis, type].filter(Boolean).join(" ");
 
     out.push({ date, amount, currency, description, rawText });
   }
