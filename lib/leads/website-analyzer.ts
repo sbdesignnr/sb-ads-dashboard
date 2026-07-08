@@ -1,18 +1,41 @@
 // Website "outdatedness" analyzer. A HIGHER websiteScore means a more outdated
-// site — i.e. a better lead for us. Scoring is graduated so the score works as a
-// ranking; `qualified` (score >= QUALIFY_AT) is only a soft badge.
+// site — i.e. a better lead for us. The score splits into a technical part
+// (0-40, measurable signals) and a visual part (0-60, AI judgement of how dated
+// the design looks), totalling 0-100. A lead qualifies at total >= QUALIFY_AT.
+// Modern-framework / broken / parked / social sites are disqualified outright.
 
-const QUALIFY_AT = 30;
+import Anthropic from "@anthropic-ai/sdk";
+import { captureScreenshot } from "./screenshot";
+
+const QUALIFY_AT = 65;
 
 export interface WebsiteAnalysis {
-  websiteScore: number; // 0-100, higher = more outdated
-  qualified: boolean; // score >= QUALIFY_AT
+  // Total 0-100, higher = more outdated. websiteScore is kept as the canonical
+  // name the rest of the app already reads; totalScore is an explicit alias.
+  websiteScore: number;
+  totalScore: number;
+  qualified: boolean; // !disqualified && total >= QUALIFY_AT
+  isQualified: boolean; // alias of qualified
+  disqualifyReason: string | null; // why the lead was filtered out (null if kept)
+
+  technicalScore: number; // 0-40
+  visualScore: number | null; // 0-60 (null if the AI could not judge it)
+
   pageSpeedMobile: number | null;
   pageSpeedDesktop: number | null;
   hasSsl: boolean;
   isMobileFriendly: boolean; // has meta viewport
+  isResponsive: boolean; // alias of isMobileFriendly
   websiteTechnology: string | null;
+  hasModernFramework: boolean; // Next/React/Vue/Webflow/Framer/Squarespace/Wix…
   websiteAge: number | null; // years since footer copyright
+  copyrightYear: number | null;
+
+  // AI visual judgement.
+  aiVisualReason: string | null;
+  visualIssues: string[]; // main visual problems, e.g. ["malé písmo", "table layout"]
+  screenshotUrl: string | null;
+
   reasons: string[];
   // Concrete business gaps we can turn into pain points / opportunities.
   issues: string[];
@@ -222,6 +245,133 @@ async function loadContactPages(origin: string): Promise<string> {
   return combined;
 }
 
+/**
+ * Detect a modern site builder / JS framework. These sites are already modern,
+ * so per our philosophy (we sell rebuilds of OLD sites) they're disqualified.
+ */
+function detectModernFramework(html: string, headers: Headers): { modern: boolean; name: string | null } {
+  const lower = html.toLowerCase();
+  const generator = /<meta[^>]+name=["']generator["'][^>]+content=["']([^"']+)["']/i.exec(html)?.[1]?.toLowerCase() ?? "";
+
+  if (/__next_data__|\/_next\/static/i.test(html)) return { modern: true, name: "Next.js" };
+  if (/data-reactroot|data-reactid|react-dom|_reactlisten/i.test(html)) return { modern: true, name: "React" };
+  if (/__nuxt__|id=["']__nuxt["']|data-v-[0-9a-f]{8}|vue\.runtime/i.test(html)) return { modern: true, name: "Vue/Nuxt" };
+  if (/webflow/i.test(lower) || /\bwf-|data-wf-(page|site)/i.test(html) || /webflow/i.test(generator))
+    return { modern: true, name: "Webflow" };
+  if (/framerusercontent|__framer|framer\.(com|website)/i.test(lower)) return { modern: true, name: "Framer" };
+  if (/squarespace/i.test(lower) || /squarespace/i.test(generator)) return { modern: true, name: "Squarespace" };
+  if (/wixstatic\.com|_wixcssingredients|wix\.com\/website|X-Wix/i.test(html) || headers.get("x-wix-request-id"))
+    return { modern: true, name: "Wix" };
+  if (/cdn\.shopify\.com|shopify\.com/i.test(lower)) return { modern: true, name: "Shopify" };
+  if (/astro-island|data-astro-cid/i.test(html)) return { modern: true, name: "Astro" };
+  if (/__gatsby|id=["']___gatsby["']/i.test(html)) return { modern: true, name: "Gatsby" };
+  if (/__sveltekit|svelte-announcer/i.test(html)) return { modern: true, name: "SvelteKit" };
+  return { modern: false, name: null };
+}
+
+/** A parked / for-sale domain has essentially no real content — not a lead. */
+function isParkedDomain(html: string): boolean {
+  const t = visibleText(html).toLowerCase();
+  return /(this domain is for sale|domain is parked|buy this domain|dom[eé]na (je )?na predaj|parkovan[aá] dom[eé]na|sedoparking|hugedomains|dan\.com|afternic|godaddy.*parking)/i.test(
+    t,
+  );
+}
+
+/** Places sometimes returns a Facebook/Instagram profile instead of a real site. */
+function isSocialUrl(url: string): boolean {
+  try {
+    const h = new URL(url).host.replace(/^www\./, "").toLowerCase();
+    return /(facebook\.com|instagram\.com|linkedin\.com|tiktok\.com|twitter\.com|x\.com|youtube\.com|wa\.me)$/.test(h);
+  } catch {
+    return false;
+  }
+}
+
+const VISUAL_SYSTEM = `Si expert na web dizajn. Ohodnoť vizuálnu zastaralosť webu na škále 0-60, kde 60 = extrémne zastaralý dizajn z 90-tych/2000-tych rokov, 0 = moderný profesionálny web.
+
+Kritériá hodnotenia:
+- Typografia: malé písmo, Comic Sans, Times New Roman, Arial pod 14px = zastaralé (+10)
+- Layout: table-based, fixed width, úzky vycentrovaný obsah = zastaralé (+15)
+- Farby: príliš veľa farieb, neónové farby, nevhodný kontrast = (+10)
+- Obrázky: nízka kvalita, štvorhranné bez zaoblenia, staré stock fotky = (+10)
+- Celkový dojem: pôsobila by firma na prvý pohľad profesionálne? (+15)
+
+Odpovedz VÝHRADNE v JSON (žiadny iný text):
+{"score": číslo 0-60, "reason": "stručný dôvod po slovensky, max 2 vety", "mainIssues": ["problém1","problém2","problém3"]}`;
+
+interface VisualResult {
+  score: number | null;
+  reason: string | null;
+  mainIssues: string[];
+  screenshotUrl: string | null;
+}
+
+function parseVisualJson(text: string): { score: number; reason: string; mainIssues: string[] } | null {
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try {
+    const j = JSON.parse(m[0]) as { score?: unknown; reason?: unknown; mainIssues?: unknown };
+    const score = Math.max(0, Math.min(60, Math.round(Number(j.score))));
+    if (!Number.isFinite(score)) return null;
+    return {
+      score,
+      reason: String(j.reason ?? "").trim() || "Vizuál pôsobí zastaralo.",
+      mainIssues: Array.isArray(j.mainIssues) ? j.mainIssues.map(String).slice(0, 5) : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Score the visual outdatedness 0-60. Prefers a real screenshot + Claude vision
+ * (needs SCREENSHOT_API_KEY); falls back to judging the page's HTML/text when no
+ * screenshot service is configured, so scanning still works. Returns nulls only
+ * when there is no ANTHROPIC_API_KEY at all.
+ */
+async function analyzeVisual(url: string, pageText: string): Promise<VisualResult> {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return { score: null, reason: null, mainIssues: [], screenshotUrl: null };
+  }
+
+  const client = new Anthropic();
+  const shot = await captureScreenshot(url).catch(() => null);
+
+  try {
+    const content: Anthropic.MessageParam["content"] = shot
+      ? [
+          { type: "image", source: { type: "base64", media_type: shot.mediaType, data: shot.base64 } },
+          { type: "text", text: "Ohodnoť vizuálnu zastaralosť tohto webu podľa kritérií." },
+        ]
+      : [
+          {
+            type: "text",
+            text: `Nemám screenshot, hodnoť z HTML/textového obsahu webu (${url}). Ak je obsah príliš chudobný, odhadni konzervatívne.\n\nOBSAH:\n${pageText.slice(0, 4000)}`,
+          },
+        ];
+
+    const msg = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 400,
+      system: VISUAL_SYSTEM,
+      messages: [{ role: "user", content }],
+    });
+
+    const text = msg.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("");
+    const parsed = parseVisualJson(text);
+    if (!parsed) return { score: null, reason: null, mainIssues: [], screenshotUrl: null };
+    // Note: screenshotUrl stays null — the screenshot bytes are used transiently
+    // for the AI only (the key must never be persisted in a URL). Persisting a
+    // viewable screenshot via Supabase storage is a later enhancement.
+    return { score: parsed.score, reason: parsed.reason, mainIssues: parsed.mainIssues, screenshotUrl: null };
+  } catch {
+    return { score: null, reason: null, mainIssues: [], screenshotUrl: null };
+  }
+}
+
 export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
   const url = normalizeUrl(rawUrl);
   const [site, psMobile, psDesktop] = await Promise.all([
@@ -247,87 +397,99 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
 
   const platform = detectPlatform(site.html, site.headers);
   const jqOld = jqueryOld(site.html);
-  const isOldTech = platform.isOld || jqOld;
+  const fw = detectModernFramework(site.html, site.headers);
   const hasViewport = site.reachable && /<meta[^>]+name=["']viewport["']/i.test(site.html);
+  const isResponsive = hasViewport;
   const cy = copyrightYear(site.html);
   const currentYear = new Date().getFullYear();
 
-  let score = 0;
+  // ---- Technical score (0-40): measurable signals ----
+  let technical = 0;
   const reasons: string[] = [];
 
-  // PageSpeed mobile — strongest signal, graduated by how slow the site is.
   if (psMobile !== null) {
     if (psMobile < 30) {
-      score += 35;
+      technical += 20;
       reasons.push(`Veľmi pomalý na mobile (PageSpeed ${psMobile}/100)`);
     } else if (psMobile < 50) {
-      score += 25;
+      technical += 15;
       reasons.push(`Pomalý na mobile (PageSpeed ${psMobile}/100)`);
     } else if (psMobile < 70) {
-      score += 12;
+      technical += 8;
       reasons.push(`Podpriemerná rýchlosť na mobile (PageSpeed ${psMobile}/100)`);
     }
   }
-
-  // PageSpeed desktop — secondary signal.
-  if (psDesktop !== null && psDesktop < 60) {
-    score += 8;
-    reasons.push(`Podpriemerná rýchlosť na desktope (PageSpeed ${psDesktop}/100)`);
+  if (site.reachable && !isResponsive) {
+    technical += 12;
+    reasons.push("Nie je responzívny (chýba meta viewport)");
   }
-
-  if (isOldTech) {
-    score += 20;
-    reasons.push(`Zastaraná technológia (${platform.technology ?? (jqOld ? "staré jQuery <3" : "neznáma")})`);
-  }
-
-  if (!site.reachable) {
-    // A site we can't even load is itself a strong signal (dead / broken / blocks bots).
-    score += 15;
-    reasons.push("Web sa nepodarilo načítať (možno nefunkčný)");
-  } else {
-    if (!site.hasSsl) {
-      score += 20;
-      reasons.push("Chýba SSL certifikát (HTTPS)");
-    }
-    if (!hasViewport) {
-      score += 15;
-      reasons.push("Nie je mobilne responzívny (chýba meta viewport)");
+  if (cy !== null) {
+    if (cy < 2018) {
+      technical += 8;
+      reasons.push(`Veľmi zastaraný copyright (${cy})`);
+    } else if (cy <= 2020) {
+      technical += 4;
+      reasons.push(`Zastaraný copyright (${cy})`);
     }
   }
-
-  // Copyright age in the footer — graduated.
-  if (cy) {
-    const age = currentYear - cy;
-    if (age >= 4) {
-      score += 18;
-      reasons.push(`Veľmi zastaraný copyright v pätičke (${cy})`);
-    } else if (age >= 2) {
-      score += 10;
-      reasons.push(`Zastaraný copyright v pätičke (${cy})`);
-    }
+  if (site.reachable && !site.hasSsl) {
+    technical += 6;
+    reasons.push("Chýba HTTPS/SSL");
   }
+  if (fw.modern) technical -= 20; // a modern stack pulls the technical score down
+  const technicalScore = Math.max(0, Math.min(40, technical));
 
-  score = Math.min(100, score);
+  // ---- Visual score (0-60): AI judgement of how dated the design looks ----
+  const visual = site.reachable
+    ? await analyzeVisual(url, pageText)
+    : { score: null, reason: null, mainIssues: [], screenshotUrl: null };
+  const visualScore = visual.score;
+
+  const totalScore = Math.max(0, Math.min(100, technicalScore + (visualScore ?? 0)));
+
+  // ---- Disqualification (lead is filtered out, not added to the pipeline) ----
+  let disqualifyReason: string | null = null;
+  if (isSocialUrl(url)) disqualifyReason = "Odkaz je profil na sociálnej sieti, nie vlastný web.";
+  else if (!site.reachable) disqualifyReason = "Web sa nenačítal (404/500 alebo nedostupný).";
+  else if (isParkedDomain(site.html)) disqualifyReason = "Parkovaná / nepoužívaná doména.";
+  else if (fw.modern) disqualifyReason = `Web už beží na modernom nástroji (${fw.name}).`;
+  else if (totalScore < 40) disqualifyReason = `Web je dostatočne dobrý (skóre ${totalScore}/100).`;
+  else if (totalScore < QUALIFY_AT) disqualifyReason = `Skóre ${totalScore}/100 – pod prahom ${QUALIFY_AT}.`;
+
+  const qualified = !disqualifyReason && totalScore >= QUALIFY_AT;
 
   // The concrete findings the AI turns into pain points: scoring reasons plus
   // the business gaps (only when the page actually loaded).
   const issues = [...reasons];
   if (site.reachable) issues.push(...detectBusinessGaps(site.html));
 
+  const technology = fw.name ?? platform.technology ?? (jqOld ? "jQuery <3" : null);
+
   return {
-    websiteScore: score,
-    qualified: score >= QUALIFY_AT,
+    websiteScore: totalScore,
+    totalScore,
+    qualified,
+    isQualified: qualified,
+    disqualifyReason,
+    technicalScore,
+    visualScore,
     pageSpeedMobile: psMobile,
     pageSpeedDesktop: psDesktop,
     hasSsl: site.hasSsl,
     isMobileFriendly: hasViewport,
+    isResponsive,
+    websiteTechnology: technology,
+    hasModernFramework: fw.modern,
+    websiteAge: cy ? Math.max(0, currentYear - cy) : null,
+    copyrightYear: cy,
+    aiVisualReason: visual.reason,
+    visualIssues: visual.mainIssues,
+    screenshotUrl: visual.screenshotUrl,
+    reasons,
     issues,
     extractedEmails,
     extractedPhones,
     extractedIco,
     pageText,
-    websiteTechnology: platform.technology ?? (jqOld ? "jQuery <3" : null),
-    websiteAge: cy ? Math.max(0, currentYear - cy) : null,
-    reasons,
   };
 }

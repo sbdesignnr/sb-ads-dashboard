@@ -47,7 +47,43 @@ export async function enrichLead(
   if (!lead?.websiteUrl) return null;
 
   const analysis = await analyzeWebsite(lead.websiteUrl);
-  // Prefer an IČO scraped from the site — it gives an exact ORSR match (owner + activity).
+
+  // The website-analysis fields written for every enriched lead (qualified or not).
+  const analysisData = {
+    segmentId: segment.id || undefined,
+    websiteScore: analysis.websiteScore,
+    technicalScore: analysis.technicalScore,
+    visualScore: analysis.visualScore,
+    websiteTechnology: analysis.websiteTechnology,
+    hasModernFramework: analysis.hasModernFramework,
+    websiteAge: analysis.websiteAge,
+    copyrightYear: analysis.copyrightYear,
+    pageSpeedMobile: analysis.pageSpeedMobile,
+    pageSpeedDesktop: analysis.pageSpeedDesktop,
+    hasSsl: analysis.hasSsl,
+    isMobileFriendly: analysis.isMobileFriendly,
+    websiteIssues: analysis.issues,
+    visualIssues: analysis.visualIssues,
+    screenshotUrl: analysis.screenshotUrl ?? undefined,
+    aiVisualReason: analysis.aiVisualReason,
+  };
+
+  // Disqualified site → record why, drop from the active pipeline (only if we
+  // haven't already engaged it), and skip the expensive ORSR + AI dossier work.
+  if (!analysis.qualified) {
+    await prisma.lead.update({
+      where: { id: leadId },
+      data: {
+        ...analysisData,
+        disqualifyReason: analysis.disqualifyReason,
+        ...(lead.status === "new" ? { status: "rejected" } : {}),
+        lastScannedAt: new Date(),
+      },
+    });
+    return { qualified: false, active: null };
+  }
+
+  // Qualified — enrich fully. Prefer an IČO scraped from the site (exact ORSR match).
   const ico = lead.ico ?? analysis.extractedIco;
   const orsr = await enrichCompany({ ico, name: lead.companyName }).catch(() => null);
 
@@ -81,15 +117,8 @@ export async function enrichLead(
   await prisma.lead.update({
     where: { id: leadId },
     data: {
-      segmentId: segment.id || undefined,
-      websiteScore: analysis.websiteScore,
-      websiteTechnology: analysis.websiteTechnology,
-      websiteAge: analysis.websiteAge,
-      pageSpeedMobile: analysis.pageSpeedMobile,
-      pageSpeedDesktop: analysis.pageSpeedDesktop,
-      hasSsl: analysis.hasSsl,
-      isMobileFriendly: analysis.isMobileFriendly,
-      websiteIssues: analysis.issues,
+      ...analysisData,
+      disqualifyReason: null, // clear any stale reason from a previous scan
       ico: orsr?.ico ?? ico ?? undefined,
       companyActive: orsr?.active ?? undefined,
       companyAddress: lead.companyAddress ?? orsr?.address ?? undefined,
@@ -112,7 +141,7 @@ export async function enrichLead(
     },
   });
 
-  return { qualified: analysis.qualified, active: orsr?.active ?? null };
+  return { qualified: true, active: orsr?.active ?? null };
 }
 
 /**

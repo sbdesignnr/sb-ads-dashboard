@@ -103,14 +103,22 @@ model Lead {
   companyName       String       @map("company_name")
   ico               String?
   websiteUrl        String?      @unique @map("website_url")
-  websiteScore      Int?         @map("website_score")
+  websiteScore      Int?         @map("website_score") // total 0-100, higher = worse (better lead)
+  technicalScore    Int?         @map("technical_score") // 0-40
+  visualScore       Int?         @map("visual_score") // 0-60 (AI visual outdatedness)
   websiteAge        Int?         @map("website_age")
+  copyrightYear     Int?         @map("copyright_year")
   websiteTechnology String?      @map("website_technology")
+  hasModernFramework Boolean?    @map("has_modern_framework")
   pageSpeedMobile   Int?         @map("page_speed_mobile")
   pageSpeedDesktop  Int?         @map("page_speed_desktop")
   hasSsl            Boolean?     @map("has_ssl")
   isMobileFriendly  Boolean?     @map("is_mobile_friendly")
   websiteIssues     String[]     @map("website_issues")
+  visualIssues      String[]     @default([]) @map("visual_issues") // AI-detected visual problems
+  screenshotUrl     String?      @map("screenshot_url")
+  aiVisualReason    String?      @map("ai_visual_reason") // why the design looks outdated
+  disqualifyReason  String?      @map("disqualify_reason") // set when a lead is filtered out
   aiSummary         String?      @map("ai_summary")
   aiPainPoint       String?      @map("ai_pain_point")
   aiOpportunity     String?      @map("ai_opportunity")
