@@ -23,12 +23,12 @@ export async function GET(req: NextRequest) {
   const segmentWhere: Prisma.LeadWhereInput = {};
   if (segment && segment !== "all") segmentWhere.segmentId = segment === "none" ? null : segment;
 
-  // A lead is worth showing if it's newly qualified (score >= 65) OR a legacy
-  // lead with no score yet (created before the rebuild). Low-score analyzed
-  // leads (0-64) are noise and stay hidden.
+  // Show newly qualified leads (score >= 65) OR any legacy lead created before
+  // the rebuild — the whole old pipeline is kept regardless of its score; the
+  // strict 65 bar applies only to leads scanned under the new system.
   const qualifiedOr: Prisma.LeadWhereInput[] = [
     { websiteScore: { gte: 65 } },
-    { websiteScore: null, createdAt: { lt: IMPL_DATE } },
+    { createdAt: { lt: IMPL_DATE } },
   ];
 
   const where: Prisma.LeadWhereInput = { ...segmentWhere };
