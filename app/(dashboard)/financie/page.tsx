@@ -133,12 +133,25 @@ export default function FinancePage() {
     setImporting(true);
     toast.loading("Importujem…", { id: "imp" });
     try {
+      // Empty string is intentional — the server falls back to the default
+      // account when no account is selected, so it never rejects on this.
+      const accountId = account !== "all" ? account : "";
       const fd = new FormData();
       fd.append("file", file);
-      fd.append("account_id", account !== "all" ? account : "");
-      const j = await fetch("/api/finance/import", { method: "POST", body: fd }).then((r) => r.json());
-      if (j.error) toast.error(j.error, { id: "imp" });
-      else toast.success(`Importované: ${j.imported}${j.skipped ? ` · ${j.skipped} duplicít` : ""}`, { id: "imp" });
+      fd.append("account_id", accountId);
+
+      console.log("Uploading file:", file.name, file.size);
+      console.log("Account ID:", accountId);
+      console.log("FormData entries:", [...fd.entries()].map((e) => e[0]));
+
+      // No Content-Type header on purpose — the browser sets the multipart
+      // boundary itself; setting it manually would break the upload.
+      const res = await fetch("/api/finance/import", { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      console.log("Import response:", res.status, data);
+
+      if (data.error) toast.error(data.error, { id: "imp" });
+      else toast.success(`Importované: ${data.imported}${data.skipped ? ` · ${data.skipped} duplicít` : ""}`, { id: "imp" });
       loadMeta();
       loadSummary();
       loadTxs();
