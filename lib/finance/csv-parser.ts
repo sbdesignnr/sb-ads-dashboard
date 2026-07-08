@@ -226,14 +226,33 @@ export function parseSlspCsv(csvContent: string): ParsedTx[] {
   return out;
 }
 
+// First matching rule wins, so order matters where keywords could overlap:
+// specific brands/entities first, risky short tokens (BAR, CLUB) last, and the
+// food rules before "Zábava & šport" so a "cafe bar" lands in food.
 const RULES: { category: string; keywords: string[] }[] = [
+  // AI tools + dev infra subscriptions ("ELEVEN" already covers "ELEVENLABS").
+  {
+    category: "Predplatné",
+    keywords: [
+      "OPENAI", "ANTHROPIC", "CLAUDE",
+      "ELEVENLABS", "ELEVEN",
+      "HIGGSFIELD", "KLING", "MYIMAGE", "MIDJOURNEY", "RUNWAY",
+      "VERCEL", "SUPABASE", "GITHUB", "NETLIFY", "BREVO",
+    ],
+  },
+  // Ad platforms — note GOOGLE resolves here (Google Ads), not to Predplatné.
+  { category: "Reklama", keywords: ["GOOGLE", "META", "FACEBOOK"] },
+  { category: "Zdravotné poistenie", keywords: ["DOVERA", "ZDRAVOTN", "POISTOV"] },
+  { category: "Doprava", keywords: ["SHELL", "OMV", "MOL", "BENZÍN", "NAFTA", "PARKOVN", "BOLT", "UBER", "TAXIK"] },
   { category: "Potraviny", keywords: ["BILLA", "TESCO", "LIDL", "KAUFLAND", "COOP"] },
   { category: "Jedlo & reštaurácie", keywords: ["REŠTAURÁCIA", "PIZZ", "BURGER", "CAFE", "KAVIAREŇ", "BISTRO", "KEBAB"] },
-  { category: "Predplatné", keywords: ["CLAUDE", "VERCEL", "SUPABASE", "OPENAI", "ELEVEN", "BREVO", "GOOGLE", "ANTHROPIC"] },
-  { category: "Doprava", keywords: ["SHELL", "OMV", "MOL", "BENZÍN", "NAFTA", "PARKOVN"] },
   { category: "Zdravie", keywords: ["LEKÁR", "LEKÁREŇ", "DOKTOR", "NEMOCNICA"] },
   { category: "Oblečenie", keywords: ["ADIDAS", "NIKE", "ZARA", "HM", "MALL", "ALZA"] },
-  { category: "Zábava & šport", keywords: ["FUTBAL", "GYM", "FITNESS", "SPORT"] },
+  // Known people → personal transfers; wins over the generic income fallback.
+  { category: "Osobný prevod", keywords: ["HUPKA", "FILIP", "SAMUEL", "BIBEN"] },
+  { category: "Biznis výdavok", keywords: ["MALASTOV", "LUCIA"] },
+  // Risky short tokens (BAR, CLUB) last so more specific rules match first.
+  { category: "Zábava & šport", keywords: ["FUTBAL", "GYM", "FITNESS", "SPORT", "MOONCLUB", "LOUNGE", "BAR", "CLUB"] },
 ];
 
 export function categorizeTransaction(
@@ -246,7 +265,10 @@ export function categorizeTransaction(
       return { category: r.category, type: amount >= 0 ? "income" : "expense" };
     }
   }
-  if (amount > 0 && (d.includes("PLATBA") || d.includes("PREVOD PRIJATY"))) {
+  // Positive amount that looks like an incoming payment → project income.
+  // (fold() strips diacritics, so "Prijatá platba" → "PRIJATA PLATBA".)
+  const incomeHints = ["PLATBA PRIJATA", "PRIJATA PLATBA", "PLATBA", "PREVOD PRIJATY"];
+  if (amount > 0 && incomeHints.some((h) => d.includes(h))) {
     return { category: "Príjem z projektu", type: "income" };
   }
   return { category: amount >= 0 ? "Príjem" : "Ostatné", type: amount >= 0 ? "income" : "expense" };
