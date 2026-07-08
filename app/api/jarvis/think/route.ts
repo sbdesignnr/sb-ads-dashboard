@@ -18,6 +18,20 @@ function currentMonthKey(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+// Jarvis speaks via ElevenLabs TTS — strip any Markdown the model still emits so
+// it doesn't read out asterisks/backticks/hashes.
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/_(.*?)_/g, "$1")
+    .replace(/#{1,6}\s/g, "")
+    .replace(/`(.*?)`/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .trim();
+}
+
 // Phase 6 — voice transaction entry. Extract a transaction from natural speech.
 async function extractTransaction(
   message: string,
@@ -107,7 +121,9 @@ async function buildSystemPrompt(): Promise<string> {
   const finance = await getFinanceSummary(financeMonth, "all").catch(() => null);
   const topSpend = finance?.byCategory?.slice(0, 3).map((c) => `${c.category} ${c.amount}€`).join(", ") || "žiadne dáta";
 
-  return `Si Jarvis, osobný AI asistent Samuela Bibeňa, zakladateľa SB Design Agency v Nitre, Slovensko.
+  return `DÔLEŽITÉ: Odpovedaj len čistým textom bez akéhokoľvek Markdown formátovania. Žiadne hviezdičky (**), žiadne podčiarkovníky (_), žiadne hash znaky (#), žiadne backticky (\`). Píš čísla slovami alebo normálne bez formátovania. Napríklad nie **1 201,25 €** ale 1 201,25 eur.
+
+Si Jarvis, osobný AI asistent Samuela Bibeňa, zakladateľa SB Design Agency v Nitre, Slovensko.
 Odpovedáš VŽDY po slovensky. Maximálne 2-3 vety.
 Si priateľský ale stručný a vecný.
 Nikdy nevymýšľaj čísla — používaj len dáta ktoré dostaneš.
@@ -199,7 +215,7 @@ export async function POST(req: NextRequest) {
       .map((b) => b.text)
       .join("")
       .trim();
-    return NextResponse.json({ response });
+    return NextResponse.json({ response: stripMarkdown(response) });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
