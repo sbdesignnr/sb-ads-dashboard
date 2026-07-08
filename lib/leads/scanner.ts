@@ -252,6 +252,43 @@ export async function scanAllSources(
   return scanSegment(segmentId, { ...opts, region });
 }
 
+/**
+ * Daily maintenance scan: keeps the pipeline topped up to `targetNew` fresh
+ * ("new") leads. Skips entirely when we already have enough. Otherwise scans a
+ * rotating window of segments (so all get covered over ~days and each cron run
+ * stays within the serverless budget).
+ */
+export async function scanDaily(
+  opts: { targetNew?: number; segmentsPerRun?: number } = {},
+): Promise<{ scanned: number; addedQualified: number; newLeads: number; skipped: boolean }> {
+  const target = opts.targetNew ?? 200;
+  const perRun = opts.segmentsPerRun ?? 3;
+
+  const before = await prisma.lead.count({ where: { status: "new" } });
+  if (before >= target) {
+    return { scanned: 0, addedQualified: 0, newLeads: before, skipped: true };
+  }
+
+  const segments = await prisma.leadSegment.findMany({ orderBy: { createdAt: "asc" } });
+  if (!segments.length) return { scanned: 0, addedQualified: 0, newLeads: before, skipped: false };
+
+  // Rotate which segments we scan each day so coverage spreads across all of them.
+  const dayIndex = Math.floor(Date.now() / 86_400_000);
+  const offset = ((dayIndex * perRun) % segments.length + segments.length) % segments.length;
+  const todays = Array.from(
+    { length: Math.min(perRun, segments.length) },
+    (_, i) => segments[(offset + i) % segments.length],
+  );
+
+  let addedQualified = 0;
+  for (const s of todays) {
+    const r = await scanSegment(s.id, { maxDiscover: 40, enrichBatch: 5, region: "both" });
+    addedQualified += r.foundQualified;
+  }
+  const newLeads = await prisma.lead.count({ where: { status: "new" } });
+  return { scanned: todays.length, addedQualified, newLeads, skipped: false };
+}
+
 /** Cron helper: scans every segment with a small per-segment enrich cap. */
 export async function scanAllSegments(
   opts: { maxDiscover?: number; enrichBatch?: number; region?: Region | "both" } = {},
