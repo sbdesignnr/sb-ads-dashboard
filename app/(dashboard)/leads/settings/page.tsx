@@ -207,6 +207,7 @@ export default function LeadsSettingsPage() {
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [scanningId, setScanningId] = useState<string | null>(null);
+  const [region, setRegion] = useState<"SK" | "CZ" | "both">("both");
 
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState(PALETTE[0]);
@@ -235,6 +236,16 @@ export default function LeadsSettingsPage() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  // While a scan is running the API request is still in flight — poll the job
+  // log so the found/qualified counts update live.
+  useEffect(() => {
+    if (!scanningId) return;
+    const t = setInterval(loadJobs, 3000);
+    return () => clearInterval(t);
+  }, [scanningId, loadJobs]);
+
+  const runningJob = jobs.find((j) => j.status === "running");
 
   const create = async () => {
     if (!newName.trim()) return;
@@ -273,7 +284,7 @@ export default function LeadsSettingsPage() {
       const res = await fetch("/api/leads/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ segmentId }),
+        body: JSON.stringify({ segmentId, region }),
       });
       const j = await res.json();
       if (res.ok && j.status !== "failed") {
@@ -346,7 +357,37 @@ export default function LeadsSettingsPage() {
 
       {/* Segments */}
       <div className="space-y-2">
-        <h2 className="text-sm font-medium text-muted">Segmenty</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-medium text-muted">Segmenty</h2>
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-0.5">
+            {(["both", "SK", "CZ"] as const).map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setRegion(r)}
+                className={cn(
+                  "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                  region === r ? "bg-primary text-white" : "text-muted hover:text-foreground",
+                )}
+              >
+                {r === "both" ? "SK + CZ" : r}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {scanningId && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            <span className="text-foreground">Skenovanie beží…</span>
+            {runningJob && (
+              <span className="text-muted">
+                nájdených {runningJob.foundTotal} · kvalifikovaných {runningJob.foundQualified}
+              </span>
+            )}
+          </div>
+        )}
+
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted">
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
