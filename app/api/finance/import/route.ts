@@ -11,6 +11,42 @@ export const maxDuration = 120;
 const dedupKey = (dateISO: string, amount: number, desc: string) =>
   `${dateISO.slice(0, 10)}|${amount.toFixed(2)}|${desc.slice(0, 50)}`;
 
+/**
+ * Read the raw bytes of an uploaded file, robust across runtimes. Some Vercel
+ * builds have returned empty/garbled ArrayBuffers for binary (UTF-16) uploads,
+ * so we try Blob.bytes() first, then arrayBuffer(), then drain the stream —
+ * all server-side APIs (no browser-only FileReader). We never fall back to
+ * file.text(): that decodes as UTF-8 and would destroy UTF-16/Windows-1250
+ * bytes before decodeCsv can detect the real encoding.
+ */
+async function readBytes(file: Blob): Promise<Uint8Array> {
+  const withBytes = file as Blob & { bytes?: () => Promise<Uint8Array> };
+  if (typeof withBytes.bytes === "function") {
+    const b = await withBytes.bytes();
+    if (b.byteLength > 0) return b;
+  }
+
+  const ab = await file.arrayBuffer();
+  if (ab.byteLength > 0) return new Uint8Array(ab);
+
+  // Last resort: concatenate the stream chunks.
+  const chunks: Uint8Array[] = [];
+  const reader = file.stream().getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) chunks.push(value);
+  }
+  const total = chunks.reduce((n, c) => n + c.byteLength, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.byteLength;
+  }
+  return out;
+}
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -22,8 +58,14 @@ export async function POST(req: NextRequest) {
 
   console.log("File received:", file.name, file.size, file.type);
 
-  const buffer = await file.arrayBuffer();
-  const { text, encoding } = decodeCsv(buffer);
+  const bytes = await readBytes(file);
+  console.log("Buffer size:", bytes.byteLength);
+  console.log(
+    "First 4 bytes:",
+    Array.from(bytes.subarray(0, 4)).map((b) => b.toString(16).padStart(2, "0")).join(" "),
+  );
+
+  const { text, encoding } = decodeCsv(bytes);
   console.log("Encoding detected:", encoding, "· first 100 chars:", text.substring(0, 100));
   console.log("First line clean:", text.split("\n")[0]);
   console.log("File text length:", text.length);

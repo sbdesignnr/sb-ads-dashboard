@@ -14,9 +14,8 @@ if (!filePath) {
 }
 
 const nodeBuf = fs.readFileSync(filePath);
+// A Node Buffer IS a Uint8Array view; decodeCsv respects its offset/length.
 const uint8 = new Uint8Array(nodeBuf);
-// Slice out just this file's bytes — a Node Buffer may share a larger pool.
-const arrayBuffer = nodeBuf.buffer.slice(nodeBuf.byteOffset, nodeBuf.byteOffset + nodeBuf.byteLength);
 
 console.log("File size:", nodeBuf.length);
 console.log(
@@ -28,7 +27,7 @@ console.log(
 
 // Same decoding logic as the server (BOM + UTF-16 heuristic + strict-UTF-8 →
 // Windows-1250 fallback), so results here mirror a real upload.
-const { text, encoding } = decodeCsv(arrayBuffer);
+const { text, encoding } = decodeCsv(uint8);
 console.log("Encoding detected:", encoding);
 console.log("First 200 chars:", text.substring(0, 200));
 console.log("First line:", text.split("\n")[0]);
