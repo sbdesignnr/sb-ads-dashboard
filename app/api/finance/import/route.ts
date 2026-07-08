@@ -16,11 +16,16 @@ export async function POST(req: NextRequest) {
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const form = await req.formData();
-  const file = form.get("file");
+  // UI sends the file under the field name "file" (financie/page.tsx → fd.append("file", …)).
+  const file = form.get("file") as File | null;
   if (!(file instanceof Blob)) return NextResponse.json({ error: "missing_file" }, { status: 400 });
 
-  const fileName = file instanceof File ? file.name : "upload.csv";
-  console.log("File received:", fileName, file.size);
+  console.log("File received:", file.name, file.size, file.type);
+
+  const text = await file.text();
+  console.log("File text length:", text.length);
+  console.log("First 200 chars:", text.substring(0, 200));
+  console.log("First line:", text.split("\n")[0]);
 
   let accountId = (form.get("account_id") as string) || "";
   if (!accountId) accountId = (await getOrCreateDefaultAccount()).id;
@@ -29,9 +34,14 @@ export async function POST(req: NextRequest) {
     if (!acc) accountId = (await getOrCreateDefaultAccount()).id;
   }
 
-  const text = await file.text();
-  const parsed = parseSlspCsv(text);
-  console.log("Parse result:", parsed.length);
+  let parsed: ReturnType<typeof parseSlspCsv>;
+  try {
+    parsed = parseSlspCsv(text);
+    console.log("Parse result:", parsed.length);
+  } catch (err) {
+    console.error("Parse error:", err);
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
   if (!parsed.length) return NextResponse.json({ imported: 0, skipped: 0 });
 
   // Build a de-dupe set from existing rows in the imported date range.
