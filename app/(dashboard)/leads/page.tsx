@@ -55,6 +55,7 @@ function host(url: string | null): string {
 export default function LeadsPage() {
   const [segments, setSegments] = useState<SegmentDTO[]>([]);
   const [leads, setLeads] = useState<LeadDTO[]>([]);
+  const [total, setTotal] = useState(0);
   const [segment, setSegment] = useState("all");
   const [status, setStatus] = useState<StatusFilter>("new");
   const [loading, setLoading] = useState(true);
@@ -72,8 +73,10 @@ export default function LeadsPage() {
       const res = await fetch(`/api/leads?segment=${encodeURIComponent(segment)}&status=${status}`);
       const j = await res.json();
       setLeads(j.leads ?? []);
+      setTotal(j.total ?? 0);
     } catch {
       setLeads([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -169,6 +172,12 @@ export default function LeadsPage() {
               </button>
             ))}
           </div>
+
+          {!loading && (
+            <p className="mb-3 text-xs text-muted">
+              Zobrazených <span className="text-foreground">{leads.length}</span> z {total} leadov
+            </p>
+          )}
 
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
