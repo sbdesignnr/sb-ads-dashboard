@@ -89,7 +89,6 @@ export async function enrichLead(
     isMobileFriendly: analysis.isMobileFriendly,
     websiteIssues: analysis.issues,
     visualIssues: analysis.visualIssues,
-    screenshotUrl: analysis.screenshotUrl ?? undefined,
     aiVisualReason: analysis.aiVisualReason,
   };
 

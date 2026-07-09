@@ -5,7 +5,6 @@
 // Modern-framework / broken / parked / social sites are disqualified outright.
 
 import Anthropic from "@anthropic-ai/sdk";
-import { captureScreenshot, uploadScreenshot } from "./screenshot";
 
 const QUALIFY_AT = 65;
 
@@ -31,10 +30,9 @@ export interface WebsiteAnalysis {
   websiteAge: number | null; // years since footer copyright
   copyrightYear: number | null;
 
-  // AI visual judgement.
+  // AI visual judgement (from the page's HTML/text).
   aiVisualReason: string | null;
   visualIssues: string[]; // main visual problems, e.g. ["malé písmo", "table layout"]
-  screenshotUrl: string | null;
 
   reasons: string[];
   // Concrete business gaps we can turn into pain points / opportunities.
@@ -313,7 +311,6 @@ interface VisualResult {
   score: number | null;
   reason: string | null;
   mainIssues: string[];
-  screenshotUrl: string | null;
 }
 
 function parseVisualJson(text: string): { score: number; reason: string; mainIssues: string[] } | null {
@@ -334,42 +331,26 @@ function parseVisualJson(text: string): { score: number; reason: string; mainIss
 }
 
 /**
- * Score the visual outdatedness 0-60. Prefers a real screenshot + Claude vision
- * (needs SCREENSHOT_API_KEY); falls back to judging the page's HTML/text when no
- * screenshot service is configured, so scanning still works. Returns nulls only
- * when there is no ANTHROPIC_API_KEY at all.
+ * Score the visual outdatedness 0-60 from the page's HTML/text via Claude.
+ * Returns nulls when there is no ANTHROPIC_API_KEY or on any failure.
  */
 async function analyzeVisual(url: string, pageText: string): Promise<VisualResult> {
-  // Capture once, then persist to storage so the detail page can show it. The
-  // screenshot is useful even if the AI scoring later fails, so we keep the URL
-  // across all return paths.
-  const shot = await captureScreenshot(url).catch(() => null);
-  const screenshotUrl = shot ? await uploadScreenshot(shot.bytes, shot.mediaType).catch(() => null) : null;
-
   if (!process.env.ANTHROPIC_API_KEY) {
-    return { score: null, reason: null, mainIssues: [], screenshotUrl };
+    return { score: null, reason: null, mainIssues: [] };
   }
 
   const client = new Anthropic();
-
   try {
-    const content: Anthropic.MessageParam["content"] = shot
-      ? [
-          { type: "image", source: { type: "base64", media_type: shot.mediaType, data: shot.base64 } },
-          { type: "text", text: "Ohodnoť vizuálnu zastaralosť tohto webu podľa kritérií." },
-        ]
-      : [
-          {
-            type: "text",
-            text: `Nemám screenshot, hodnoť z HTML/textového obsahu webu (${url}). Ak je obsah príliš chudobný, odhadni konzervatívne.\n\nOBSAH:\n${pageText.slice(0, 4000)}`,
-          },
-        ];
-
     const msg = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 400,
       system: VISUAL_SYSTEM,
-      messages: [{ role: "user", content }],
+      messages: [
+        {
+          role: "user",
+          content: `Hodnoť vizuálnu zastaralosť webu (${url}) z jeho HTML/textového obsahu. Ak je obsah príliš chudobný, odhadni konzervatívne.\n\nOBSAH:\n${pageText.slice(0, 4000)}`,
+        },
+      ],
     });
 
     const text = msg.content
@@ -377,10 +358,10 @@ async function analyzeVisual(url: string, pageText: string): Promise<VisualResul
       .map((b) => b.text)
       .join("");
     const parsed = parseVisualJson(text);
-    if (!parsed) return { score: null, reason: null, mainIssues: [], screenshotUrl };
-    return { score: parsed.score, reason: parsed.reason, mainIssues: parsed.mainIssues, screenshotUrl };
+    if (!parsed) return { score: null, reason: null, mainIssues: [] };
+    return { score: parsed.score, reason: parsed.reason, mainIssues: parsed.mainIssues };
   } catch {
-    return { score: null, reason: null, mainIssues: [], screenshotUrl };
+    return { score: null, reason: null, mainIssues: [] };
   }
 }
 
@@ -453,9 +434,9 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
   else if (fw.kind === "soft") technical -= 10;
   const technicalScore = Math.max(0, Math.min(40, technical));
 
-  // ---- Cheap disqualifiers FIRST, so we skip the expensive visual AI
-  // (screenshot + Claude) on sites we'd reject anyway: modern stack, broken,
-  // parked, or a social profile. Critical for scanning large volumes. ----
+  // ---- Cheap disqualifiers FIRST, so we skip the expensive visual AI (Claude)
+  // on sites we'd reject anyway: modern stack, broken, parked, or a social
+  // profile. Critical for scanning large volumes. ----
   let disqualifyReason: string | null = null;
   if (isSocialUrl(url)) disqualifyReason = "Odkaz je profil na sociálnej sieti, nie vlastný web.";
   else if (!site.reachable) disqualifyReason = "Web sa nenačítal (404/500 alebo nedostupný).";
@@ -466,7 +447,7 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
   const visual =
     !disqualifyReason && site.reachable
       ? await analyzeVisual(url, pageText)
-      : { score: null, reason: null, mainIssues: [], screenshotUrl: null };
+      : { score: null, reason: null, mainIssues: [] };
   const visualScore = visual.score;
 
   const totalScore = Math.max(0, Math.min(100, technicalScore + (visualScore ?? 0)));
@@ -505,7 +486,6 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
     copyrightYear: cy,
     aiVisualReason: visual.reason,
     visualIssues: visual.mainIssues,
-    screenshotUrl: visual.screenshotUrl,
     reasons,
     issues,
     extractedEmails,

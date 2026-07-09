@@ -29,7 +29,6 @@ export interface LeadDTO {
   isMobileFriendly: boolean | null;
   websiteIssues: string[];
   visualIssues: string[];
-  screenshotUrl: string | null;
   aiVisualReason: string | null;
   disqualifyReason: string | null;
   aiSummary: string | null;

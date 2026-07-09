@@ -116,7 +116,6 @@ model Lead {
   isMobileFriendly  Boolean?     @map("is_mobile_friendly")
   websiteIssues     String[]     @map("website_issues")
   visualIssues      String[]     @default([]) @map("visual_issues") // AI-detected visual problems
-  screenshotUrl     String?      @map("screenshot_url")
   aiVisualReason    String?      @map("ai_visual_reason") // why the design looks outdated
   disqualifyReason  String?      @map("disqualify_reason") // set when a lead is filtered out
   aiSummary         String?      @map("ai_summary")

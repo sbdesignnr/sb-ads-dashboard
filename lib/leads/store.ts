@@ -21,7 +21,6 @@ export function serializeLead(l: Lead): LeadDTO {
     isMobileFriendly: l.isMobileFriendly,
     websiteIssues: l.websiteIssues ?? [],
     visualIssues: l.visualIssues ?? [],
-    screenshotUrl: l.screenshotUrl,
     aiVisualReason: l.aiVisualReason,
     disqualifyReason: l.disqualifyReason,
     aiSummary: l.aiSummary,

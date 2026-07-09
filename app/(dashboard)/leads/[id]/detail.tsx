@@ -438,35 +438,6 @@ export function LeadDetail({ id }: { id: string }) {
             </CardContent>
           </Card>
 
-          {/* Screenshot */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Screenshot webu</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {lead.screenshotUrl ? (
-                <a
-                  href={lead.websiteUrl ?? lead.screenshotUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block overflow-hidden rounded-lg border border-border"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={lead.screenshotUrl}
-                    alt={`Screenshot webu ${lead.companyName}`}
-                    className="w-full"
-                    loading="lazy"
-                  />
-                </a>
-              ) : (
-                <div className="flex items-center justify-center rounded-lg border border-dashed border-border bg-surface-2/40 py-12 text-sm text-muted">
-                  Screenshot nie je dostupný
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           {(lead.aiVisualReason || lead.visualIssues.length > 0) && (
             <Card>
               <CardHeader>
