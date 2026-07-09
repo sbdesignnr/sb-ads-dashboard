@@ -88,6 +88,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     generated,
     skipped: skippedSegment + missingEmail,
+    missingEmail, // leads skipped specifically for a missing e-mail (for the finder button)
     failed,
     details: details.slice(0, 50),
   });

@@ -65,7 +65,7 @@ export default function CampaignsPage() {
   const [isActive, setIsActive] = useState(false);
   const [savingCampaign, setSavingCampaign] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [lastGen, setLastGen] = useState<{ generated: number; skipped: number } | null>(null);
+  const [lastGen, setLastGen] = useState<{ generated: number; missingEmail: number } | null>(null);
   const [findingEmails, setFindingEmails] = useState(false);
 
   const [queue, setQueue] = useState<LeadEmailDTO[]>([]);
@@ -197,7 +197,7 @@ export default function CampaignsPage() {
       if (j.error) {
         toast.error(j.error, { id: "gen" });
       } else {
-        setLastGen({ generated: j.generated ?? 0, skipped: j.skipped ?? 0 });
+        setLastGen({ generated: j.generated ?? 0, missingEmail: j.missingEmail ?? 0 });
         toast.success(
           `Vygenerovaných ${j.generated}${j.skipped ? ` · ${j.skipped} preskočených` : ""}${j.failed ? ` · ${j.failed} zlyhaných` : ""}`,
           { id: "gen" },
@@ -226,10 +226,11 @@ export default function CampaignsPage() {
       if (j.error) {
         toast.error(j.error, { id: "find" });
       } else {
-        toast.success(`Nájdených ${j.found} emailov z ${j.processed} leadov`, { id: "find", duration: 6000 });
+        toast.success(`Nájdených ${j.found} emailov z ${j.processed} leadov`, { id: "find", duration: 5000 });
         setLastGen(null); // hide the button
-        loadQueues();
         loadCampaigns();
+        // Now that leads have e-mails, generate drafts for them automatically.
+        await generateBatch();
       }
     } catch {
       toast.error("Hľadanie zlyhalo", { id: "find" });
@@ -415,10 +416,10 @@ export default function CampaignsPage() {
                 {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 Načítať emaily na schválenie
               </Button>
-              {lastGen && lastGen.generated === 0 && lastGen.skipped > 0 && (
+              {lastGen && lastGen.generated === 0 && lastGen.missingEmail > 0 && (
                 <Button size="sm" variant="secondary" onClick={findMissingEmails} disabled={findingEmails}>
                   {findingEmails ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                  {findingEmails ? "Hľadám emaily…" : "Hľadať chýbajúce emaily"}
+                  {findingEmails ? "Hľadám emaily…" : `Hľadať chýbajúce emaily (${lastGen.missingEmail})`}
                 </Button>
               )}
             </div>

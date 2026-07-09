@@ -16,6 +16,7 @@ export interface WebsiteAnalysis {
   qualified: boolean; // !disqualified && total >= QUALIFY_AT
   isQualified: boolean; // alias of qualified
   disqualifyReason: string | null; // why the lead was filtered out (null if kept)
+  hardDisqualified: boolean; // broken / parked / social / modern framework — NOT a low score
 
   technicalScore: number; // 0-40
   visualScore: number | null; // 0-60 (null if the AI could not judge it)
@@ -443,6 +444,10 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
   else if (isParkedDomain(site.html)) disqualifyReason = "Parkovaná / nepoužívaná doména.";
   else if (fw.kind === "hard") disqualifyReason = `Web už beží na modernom nástroji (${fw.name}).`;
 
+  // Only the cheap pre-checks above are "hard" disqualifiers (not-a-lead). A low
+  // score alone must NOT reject a lead — the score is just a quality indicator.
+  const hardDisqualified = disqualifyReason !== null;
+
   // ---- Visual score (0-60): only spent on real candidates ----
   const visual =
     !disqualifyReason && site.reachable
@@ -473,6 +478,7 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
     qualified,
     isQualified: qualified,
     disqualifyReason,
+    hardDisqualified,
     technicalScore,
     visualScore,
     pageSpeedMobile: psMobile,

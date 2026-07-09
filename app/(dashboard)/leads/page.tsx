@@ -60,6 +60,13 @@ export default function LeadsPage() {
   const [status, setStatus] = useState<StatusFilter>("new");
   const [loading, setLoading] = useState(true);
 
+  // Restore the segment filter from the URL (?segment=) so returning from a lead
+  // detail lands back on the same segment.
+  useEffect(() => {
+    const s = new URLSearchParams(window.location.search).get("segment");
+    if (s) setSegment(s);
+  }, []);
+
   useEffect(() => {
     fetch("/api/leads/segments")
       .then((r) => r.json())
@@ -208,7 +215,7 @@ export default function LeadsPage() {
               {leads.map((l) => (
                 <Link
                   key={l.id}
-                  href={`/leads/${l.id}`}
+                  href={`/leads/${l.id}?segment=${encodeURIComponent(segment)}`}
                   className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4 transition-colors hover:border-primary/40"
                 >
                   <div className="flex items-start justify-between gap-3">

@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       ...(segmentId ? { segmentId } : {}),
     },
     select: { id: true, companyName: true, websiteUrl: true },
-    take: 50,
+    take: 30,
   });
 
   let found = 0;

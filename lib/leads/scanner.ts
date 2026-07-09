@@ -60,15 +60,11 @@ export async function enrichLead(
   try {
     analysis = await analyzeWebsite(lead.websiteUrl);
   } catch {
-    // Analysis failed (network/timeout) — treat as rejected so it never lingers
-    // as an unanalyzed, score-less lead in the list.
+    // Analysis failed (network/timeout) — keep the lead visible (score is only an
+    // indicator), just note it; the next scan will retry.
     await prisma.lead.update({
       where: { id: leadId },
-      data: {
-        disqualifyReason: "Analýza webu zlyhala.",
-        ...(lead.status === "new" ? { status: "rejected" } : {}),
-        lastScannedAt: new Date(),
-      },
+      data: { disqualifyReason: "Analýza webu zlyhala.", lastScannedAt: new Date() },
     });
     return { qualified: false, active: null };
   }
@@ -92,15 +88,17 @@ export async function enrichLead(
     aiVisualReason: analysis.aiVisualReason,
   };
 
-  // Disqualified site → record why, drop from the active pipeline (only if we
-  // haven't already engaged it), and skip the expensive ORSR + AI dossier work.
+  // Not qualified (score < 65) → store the analysis but KEEP the lead visible.
+  // Only a hard disqualifier (broken / parked / social / modern framework) drops
+  // it to "rejected"; a low score alone is just an indicator, not a filter. Skip
+  // the expensive ORSR + AI dossier for these.
   if (!analysis.qualified) {
     await prisma.lead.update({
       where: { id: leadId },
       data: {
         ...analysisData,
         disqualifyReason: analysis.disqualifyReason,
-        ...(lead.status === "new" ? { status: "rejected" } : {}),
+        ...(analysis.hardDisqualified && lead.status === "new" ? { status: "rejected" } : {}),
         lastScannedAt: new Date(),
       },
     });

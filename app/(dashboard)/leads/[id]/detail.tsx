@@ -145,6 +145,7 @@ export function LeadDetail({ id }: { id: string }) {
   const router = useRouter();
   const [lead, setLead] = useState<LeadDTO | null>(null);
   const [emails, setEmails] = useState<LeadEmailDTO[]>([]);
+  const [backHref, setBackHref] = useState("/leads");
   const [segmentName, setSegmentName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState("");
@@ -179,6 +180,12 @@ export function LeadDetail({ id }: { id: string }) {
       })
       .finally(() => setLoading(false));
   }, [id]);
+
+  // "Späť" returns to the segment the user came from (?segment= in the URL).
+  useEffect(() => {
+    const s = new URLSearchParams(window.location.search).get("segment");
+    setBackHref(s ? `/leads?segment=${encodeURIComponent(s)}` : "/leads");
+  }, []);
 
   const setStatus = async (status: LeadStatus) => {
     if (!lead) return;
@@ -289,7 +296,7 @@ export function LeadDetail({ id }: { id: string }) {
     return (
       <div className="py-20 text-center text-sm text-muted">
         Lead nenájdený.{" "}
-        <Link href="/leads" className="text-primary hover:underline">
+        <Link href={backHref} className="text-primary hover:underline">
           Späť na leady
         </Link>
       </div>
@@ -299,7 +306,7 @@ export function LeadDetail({ id }: { id: string }) {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
-        <Link href="/leads" className="inline-flex items-center gap-1 text-sm text-muted hover:text-foreground">
+        <Link href={backHref} className="inline-flex items-center gap-1 text-sm text-muted hover:text-foreground">
           <ArrowLeft className="h-4 w-4" />
           Späť
         </Link>
