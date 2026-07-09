@@ -15,6 +15,7 @@ import {
   Clock,
   Inbox,
   CheckCheck,
+  Search,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -64,6 +65,8 @@ export default function CampaignsPage() {
   const [isActive, setIsActive] = useState(false);
   const [savingCampaign, setSavingCampaign] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [lastGen, setLastGen] = useState<{ generated: number; skipped: number } | null>(null);
+  const [findingEmails, setFindingEmails] = useState(false);
 
   const [queue, setQueue] = useState<LeadEmailDTO[]>([]);
   const [followups, setFollowups] = useState<LeadEmailDTO[]>([]);
@@ -191,18 +194,47 @@ export default function CampaignsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ segmentId, limit: dailyLimit }),
       }).then((r) => r.json());
-      if (j.error) toast.error(j.error, { id: "gen" });
-      else
+      if (j.error) {
+        toast.error(j.error, { id: "gen" });
+      } else {
+        setLastGen({ generated: j.generated ?? 0, skipped: j.skipped ?? 0 });
         toast.success(
           `Vygenerovaných ${j.generated}${j.skipped ? ` · ${j.skipped} preskočených` : ""}${j.failed ? ` · ${j.failed} zlyhaných` : ""}`,
           { id: "gen" },
         );
+      }
       loadQueues();
       loadCampaigns();
     } catch {
       toast.error("Generovanie zlyhalo", { id: "gen" });
     } finally {
       setGenerating(false);
+    }
+  };
+
+  // Bulk-find contact emails for leads in this segment that have none, then let
+  // the user re-generate. (The request is a single call — no live X/Y progress.)
+  const findMissingEmails = async () => {
+    setFindingEmails(true);
+    toast.loading("Hľadám chýbajúce emaily…", { id: "find" });
+    try {
+      const j = await fetch("/api/leads/find-emails-bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ segmentId }),
+      }).then((r) => r.json());
+      if (j.error) {
+        toast.error(j.error, { id: "find" });
+      } else {
+        toast.success(`Nájdených ${j.found} emailov z ${j.processed} leadov`, { id: "find", duration: 6000 });
+        setLastGen(null); // hide the button
+        loadQueues();
+        loadCampaigns();
+      }
+    } catch {
+      toast.error("Hľadanie zlyhalo", { id: "find" });
+    } finally {
+      setFindingEmails(false);
     }
   };
 
@@ -374,7 +406,7 @@ export default function CampaignsPage() {
               <Switch checked={isActive} onCheckedChange={toggleActive} />
               Kampaň aktívna
             </label>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button variant="secondary" size="sm" onClick={() => saveCampaign()} disabled={savingCampaign}>
                 {savingCampaign ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                 Uložiť
@@ -383,6 +415,12 @@ export default function CampaignsPage() {
                 {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 Načítať emaily na schválenie
               </Button>
+              {lastGen && lastGen.generated === 0 && lastGen.skipped > 0 && (
+                <Button size="sm" variant="secondary" onClick={findMissingEmails} disabled={findingEmails}>
+                  {findingEmails ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  {findingEmails ? "Hľadám emaily…" : "Hľadať chýbajúce emaily"}
+                </Button>
+              )}
             </div>
           </div>
 
