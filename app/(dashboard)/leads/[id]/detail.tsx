@@ -260,7 +260,7 @@ export function LeadDetail({ id }: { id: string }) {
                     </Button>
                   </a>
                   <a
-                    href={`https://search.google.com/test/mobile-friendly?url=${encodeURIComponent(lead.websiteUrl)}`}
+                    href={`https://pagespeed.web.dev/analysis?url=${encodeURIComponent(lead.websiteUrl)}&form_factor=mobile`}
                     target="_blank"
                     rel="noreferrer"
                     className="flex-1"
