@@ -1,31 +1,46 @@
+import nodemailer from "nodemailer";
 import { prisma } from "@/lib/prisma";
 
-// All outreach is sent from Samuel's address via Brevo's transactional REST API.
-// (The @getbrevo/brevo v6 SDK dropped the classic TransactionalEmailsApi, so we
-// call the stable REST endpoint directly — no SDK/version coupling.)
-const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
+// Outreach is sent from Samuel's own address. Primary path: Gmail / Google
+// Workspace SMTP via Nodemailer — it looks like a personal email (no
+// List-Unsubscribe header, no "marketing" footprint), so it lands in the inbox.
+// Brevo's transactional REST API stays as a fallback if Gmail isn't configured
+// or a send fails.
 const SENDER = { name: "Samuel Bibeň", email: "biben@sbdesign.sk" };
+const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
 
 export function brevoConfigured(): boolean {
   return Boolean(process.env.BREVO_API_KEY?.trim());
+}
+
+export function gmailConfigured(): boolean {
+  return Boolean(process.env.GMAIL_USER?.trim() && process.env.GMAIL_APP_PASSWORD?.trim());
 }
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// Em/en dashes read as "AI-written" and render inconsistently — use a plain hyphen.
-function normalizeDashes(s: string): string {
-  return s.replace(/[—–]/g, "-");
+/**
+ * Clean the plain-text body before sending: em/en dashes read as "AI-written"
+ * and render inconsistently, so use a plain hyphen; also strip any stray bold or
+ * italic markdown asterisks.
+ */
+function sanitizeEmailText(text: string): string {
+  return text
+    .replace(/—/g, "-") // em dash → hyphen
+    .replace(/–/g, "-") // en dash → hyphen
+    .replace(/\*\*(.*?)\*\*/g, "$1") // strip bold
+    .replace(/\*(.*?)\*/g, "$1") // strip italic
+    .trim();
 }
 
-// HTML email: the body followed by Samuel's signature card. Body is escaped and
-// its line breaks converted to <br>.
+// HTML email: the (sanitised, escaped) body followed by Samuel's signature card.
 function toHtml(body: string): string {
-  const safeBody = escapeHtml(normalizeDashes(body)).replace(/\n/g, "<br>");
+  const safeBody = escapeHtml(sanitizeEmailText(body)).replace(/\n/g, "<br>");
   return `
 <div style="font-family: Arial, sans-serif; font-size: 14px; color: #000000; max-width: 600px;">
-  <div style="white-space: pre-wrap;">${safeBody}</div>
+  <div style="white-space: pre-wrap; line-height: 1.6;">${safeBody}</div>
   <br><br>
   <table cellpadding="0" cellspacing="0" style="border-left: 3px solid #4A90D9; padding-left: 12px; margin-top: 8px;">
     <tr>
@@ -50,15 +65,89 @@ function toHtml(body: string): string {
 </div>`;
 }
 
+let transporter: nodemailer.Transporter | null = null;
+function gmailTransporter(): nodemailer.Transporter | null {
+  if (!gmailConfigured()) return null;
+  if (!transporter) {
+    transporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false, // STARTTLS on 587
+      auth: {
+        user: process.env.GMAIL_USER!.trim(),
+        pass: process.env.GMAIL_APP_PASSWORD!.trim(),
+      },
+    });
+  }
+  return transporter;
+}
+
+interface SendArgs {
+  to: string;
+  toName: string;
+  subject: string;
+  html: string;
+  text: string;
+  emailType: string;
+}
+type Delivery = { ok: boolean; messageId?: string | null; error?: string };
+
+async function sendViaGmail(a: SendArgs): Promise<Delivery> {
+  const t = gmailTransporter();
+  if (!t) return { ok: false, error: "gmail_not_configured" };
+  try {
+    const info = await t.sendMail({
+      from: `"${SENDER.name}" <${SENDER.email}>`,
+      to: a.to,
+      replyTo: SENDER.email,
+      subject: a.subject,
+      html: a.html,
+      text: a.text, // plain-text fallback
+    });
+    return { ok: true, messageId: info.messageId ?? null };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+async function sendViaBrevo(a: SendArgs): Promise<Delivery> {
+  const apiKey = process.env.BREVO_API_KEY?.trim();
+  if (!apiKey) return { ok: false, error: "BREVO_API_KEY nie je nastavený." };
+  // Transactional endpoint — Brevo does NOT add List-Unsubscribe / marketing
+  // headers here (that's only for marketing campaigns).
+  const payload = {
+    sender: SENDER,
+    to: [{ email: a.to, name: a.toName }],
+    replyTo: SENDER,
+    subject: a.subject,
+    htmlContent: a.html,
+    textContent: a.text,
+    tags: ["outreach", a.emailType],
+  };
+  try {
+    const res = await fetch(BREVO_ENDPOINT, {
+      method: "POST",
+      headers: { "api-key": apiKey, "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(20000),
+    });
+    const data = (await res.json().catch(() => ({}))) as { messageId?: string; message?: string };
+    if (!res.ok) return { ok: false, error: data.message || `Brevo HTTP ${res.status}` };
+    return { ok: true, messageId: data.messageId ?? null };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
 export interface SendResult {
   success: boolean;
   error?: string;
 }
 
 /**
- * Send one lead_email via Brevo. Persists the Brevo message id + sent timestamp,
- * flips the email to "sent" and the lead to "contacted". If the lead has no
- * e-mail, marks the email "failed" and notes it on the lead.
+ * Send one lead_email. Tries Gmail SMTP first, falls back to Brevo. Persists the
+ * message id + sent timestamp, flips the email to "sent" and the lead to
+ * "contacted". If the lead has no e-mail, marks the email "failed" and notes it.
  */
 export async function sendLeadEmail(leadEmailId: string): Promise<SendResult> {
   const email = await prisma.leadEmail.findUnique({ where: { id: leadEmailId }, include: { lead: true } });
@@ -74,45 +163,37 @@ export async function sendLeadEmail(leadEmailId: string): Promise<SendResult> {
     return { success: false, error: "missing_email" };
   }
 
-  const apiKey = process.env.BREVO_API_KEY?.trim();
-  if (!apiKey) return { success: false, error: "BREVO_API_KEY nie je nastavený." };
-
-  const payload = {
-    sender: SENDER,
-    to: [{ email: lead.companyEmail.trim(), name: lead.companyName }],
-    replyTo: SENDER,
-    subject: normalizeDashes(email.subject),
-    htmlContent: toHtml(email.body),
-    textContent: normalizeDashes(email.body),
-    tags: ["lead-outreach", email.emailType],
+  const args: SendArgs = {
+    to: lead.companyEmail.trim(),
+    toName: lead.companyName,
+    subject: sanitizeEmailText(email.subject),
+    html: toHtml(email.body),
+    text: sanitizeEmailText(email.body),
+    emailType: email.emailType,
   };
 
-  try {
-    const res = await fetch(BREVO_ENDPOINT, {
-      method: "POST",
-      headers: { "api-key": apiKey, "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(20000),
-    });
-    const data = (await res.json().catch(() => ({}))) as { messageId?: string; message?: string };
-    if (!res.ok) {
-      await prisma.leadEmail.update({ where: { id: leadEmailId }, data: { status: "failed" } });
-      return { success: false, error: data.message || `Brevo HTTP ${res.status}` };
-    }
-    const now = new Date();
-    await prisma.leadEmail.update({
-      where: { id: leadEmailId },
-      data: { status: "sent", sentAt: now, brevoMessageId: data.messageId ?? null },
-    });
-    // Advance the lead unless it already replied/converted.
-    if (["new", "contacted"].includes(lead.status)) {
-      await prisma.lead.update({ where: { id: lead.id }, data: { status: "contacted" } });
-    }
-    return { success: true };
-  } catch (e) {
-    await prisma.leadEmail.update({ where: { id: leadEmailId }, data: { status: "failed" } }).catch(() => {});
-    return { success: false, error: (e as Error).message };
+  // Gmail first (personal-looking, no unsubscribe); Brevo as fallback.
+  let delivery = await sendViaGmail(args);
+  if (!delivery.ok && brevoConfigured()) {
+    delivery = await sendViaBrevo(args);
   }
+
+  if (!delivery.ok) {
+    await prisma.leadEmail.update({ where: { id: leadEmailId }, data: { status: "failed" } }).catch(() => {});
+    return { success: false, error: delivery.error };
+  }
+
+  const now = new Date();
+  await prisma.leadEmail.update({
+    where: { id: leadEmailId },
+    // brevoMessageId keeps the provider message id (Gmail or Brevo).
+    data: { status: "sent", sentAt: now, brevoMessageId: delivery.messageId ?? null },
+  });
+  // Advance the lead unless it already replied/converted.
+  if (["new", "contacted"].includes(lead.status)) {
+    await prisma.lead.update({ where: { id: lead.id }, data: { status: "contacted" } });
+  }
+  return { success: true };
 }
 
 /**
