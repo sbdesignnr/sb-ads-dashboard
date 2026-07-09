@@ -17,6 +17,8 @@ interface Config {
   duration: number;
   ownerName: string;
   meetingTitle: string;
+  minNotice: number;
+  firstAvailableDate: string | null;
 }
 
 const WEEKDAYS = ["Po", "Ut", "St", "Št", "Pi", "So", "Ne"];
@@ -34,11 +36,13 @@ function fmtDay(dateStr: string): string {
 function Month({
   monthStart,
   availableDays,
+  minDate,
   selected,
   onPick,
 }: {
   monthStart: Date;
   availableDays: number[];
+  minDate: string | null;
   selected: string | null;
   onPick: (dateStr: string) => void;
 }) {
@@ -62,7 +66,10 @@ function Month({
           const dateStr = format(d, "yyyy-MM-dd");
           const past = isBefore(d, today);
           const working = availableDays.includes(getISODay(d));
-          const enabled = !past && working;
+          // Disable days before the first bookable date (min-notice window), so
+          // the user never lands on an empty day.
+          const beforeMin = minDate ? dateStr < minDate : false;
+          const enabled = !past && working && !beforeMin;
           const isSel = selected === dateStr;
           return (
             <button
@@ -195,10 +202,15 @@ export default function BookingPage() {
           <div className="grid gap-6 md:grid-cols-2">
             {/* Step 1 — date */}
             <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <p className="mb-4 text-sm font-semibold text-gray-500">1. Vyberte dátum</p>
+              <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-2">
+                <p className="text-sm font-semibold text-gray-500">1. Vyberte dátum</p>
+                {config?.firstAvailableDate && (
+                  <p className="text-xs text-gray-400">Najbližší voľný termín: {fmtDay(config.firstAvailableDate)}</p>
+                )}
+              </div>
               <div className="space-y-6">
-                <Month monthStart={thisMonth} availableDays={availableDays} selected={date} onPick={pickDate} />
-                <Month monthStart={addMonths(thisMonth, 1)} availableDays={availableDays} selected={date} onPick={pickDate} />
+                <Month monthStart={thisMonth} availableDays={availableDays} minDate={config?.firstAvailableDate ?? null} selected={date} onPick={pickDate} />
+                <Month monthStart={addMonths(thisMonth, 1)} availableDays={availableDays} minDate={config?.firstAvailableDate ?? null} selected={date} onPick={pickDate} />
               </div>
             </div>
 

@@ -1,3 +1,4 @@
+import { fromZonedTime } from "date-fns-tz";
 import { prisma } from "@/lib/prisma";
 import type { Booking, BookingSetting } from "@prisma/client";
 
@@ -31,12 +32,9 @@ export function isoWeekday(dateStr: string): number {
 }
 
 /** UTC instant for a wall-clock HH:MM on dateStr in the given IANA timezone. */
-function zonedToUtc(dateStr: string, time: string, timeZone: string): Date {
-  const naive = new Date(`${dateStr}T${time}:00Z`);
-  const asUtc = new Date(naive.toLocaleString("en-US", { timeZone: "UTC" }));
-  const asTz = new Date(naive.toLocaleString("en-US", { timeZone }));
-  const offsetMin = (asTz.getTime() - asUtc.getTime()) / 60000;
-  return new Date(naive.getTime() - offsetMin * 60000);
+export function zonedToUtc(dateStr: string, time: string, timeZone: string): Date {
+  // e.g. ("2026-07-13", "09:00", "Europe/Bratislava") → 2026-07-13T07:00:00Z (UTC+2 in summer).
+  return fromZonedTime(`${dateStr}T${time}:00`, timeZone);
 }
 
 /**
@@ -58,6 +56,22 @@ export function generateSlots(dateStr: string, settings: BookingSetting, booked:
     slots.push(time);
   }
   return slots;
+}
+
+/**
+ * Earliest "YYYY-MM-DD" (within `horizonDays`) that still has at least one
+ * bookable slot — accounts for working days + the minimum-notice window, so the
+ * calendar can disable earlier days instead of offering empty ones.
+ */
+export function firstAvailableDate(settings: BookingSetting, now: Date, horizonDays = 60): string | null {
+  const base = new Date(`${now.toISOString().slice(0, 10)}T00:00:00.000Z`);
+  for (let i = 0; i < horizonDays; i++) {
+    const d = new Date(base);
+    d.setUTCDate(d.getUTCDate() + i);
+    const dateStr = d.toISOString().slice(0, 10);
+    if (generateSlots(dateStr, settings, new Set(), now).length > 0) return dateStr;
+  }
+  return null;
 }
 
 export interface BookingDTO {
