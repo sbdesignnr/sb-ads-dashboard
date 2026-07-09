@@ -21,16 +21,34 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { id } = await params;
-  let body: { status?: string; notes?: string; companyEmail?: string } = {};
+  let body: {
+    status?: string;
+    notes?: string;
+    companyEmail?: string;
+    companyPhone?: string;
+    ownerName?: string;
+    ownerPosition?: string;
+  } = {};
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
-  const data: { status?: string; notes?: string; companyEmail?: string } = {};
+  const data: {
+    status?: string;
+    notes?: string;
+    companyEmail?: string | null;
+    companyPhone?: string | null;
+    ownerName?: string | null;
+    ownerPosition?: string | null;
+  } = {};
   if (typeof body.status === "string" && STATUSES.includes(body.status)) data.status = body.status;
   if (typeof body.notes === "string") data.notes = body.notes;
-  if (typeof body.companyEmail === "string") data.companyEmail = body.companyEmail;
+  // Contact fields: trim and treat an empty string as clearing the value (null).
+  if (typeof body.companyEmail === "string") data.companyEmail = body.companyEmail.trim() || null;
+  if (typeof body.companyPhone === "string") data.companyPhone = body.companyPhone.trim() || null;
+  if (typeof body.ownerName === "string") data.ownerName = body.ownerName.trim() || null;
+  if (typeof body.ownerPosition === "string") data.ownerPosition = body.ownerPosition.trim() || null;
   try {
     const lead = await prisma.lead.update({ where: { id }, data });
     return NextResponse.json({ lead: serializeLead(lead) });

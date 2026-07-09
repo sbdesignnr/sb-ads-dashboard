@@ -26,6 +26,8 @@ import {
   Ban,
   ExternalLink,
   Search,
+  Pencil,
+  X,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -43,6 +45,82 @@ function Row({ icon: Icon, label, children }: { icon: typeof Globe; label: strin
       <span className="w-28 shrink-0 text-muted">{label}</span>
       <span className="min-w-0 flex-1 text-foreground">{children}</span>
     </div>
+  );
+}
+
+/** A contact row that flips to an inline input on the pencil, saving via onSave. */
+function EditableRow({
+  icon,
+  label,
+  value,
+  placeholder,
+  onSave,
+  extra,
+}: {
+  icon: typeof Globe;
+  label: string;
+  value: string | null;
+  placeholder?: string;
+  onSave: (v: string) => Promise<void>;
+  extra?: React.ReactNode;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const start = () => {
+    setDraft(value ?? "");
+    setEditing(true);
+  };
+  const cancel = () => {
+    setDraft(value ?? "");
+    setEditing(false);
+  };
+  const save = async () => {
+    setSaving(true);
+    try {
+      await onSave(draft.trim());
+      setEditing(false);
+    } catch {
+      /* keep editing so the user doesn't lose their input */
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Row icon={icon} label={label}>
+      {editing ? (
+        <span className="flex items-center gap-1.5">
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") save();
+              if (e.key === "Escape") cancel();
+            }}
+            placeholder={placeholder}
+            disabled={saving}
+            className="min-w-0 flex-1 rounded-md border border-primary/40 bg-surface px-2 py-1 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+          />
+          <button onClick={save} disabled={saving} aria-label="Uložiť" className="text-success hover:opacity-80">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+          </button>
+          <button onClick={cancel} disabled={saving} aria-label="Zrušiť" className="text-danger hover:opacity-80">
+            <X className="h-4 w-4" />
+          </button>
+        </span>
+      ) : (
+        <span className="flex flex-wrap items-center gap-2">
+          <span className={value ? "" : "text-muted"}>{value || "—"}</span>
+          <button onClick={start} aria-label={`Upraviť ${label}`} className="text-muted hover:text-foreground">
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+          {extra}
+        </span>
+      )}
+    </Row>
   );
 }
 
@@ -161,6 +239,22 @@ export function LeadDetail({ id }: { id: string }) {
       toast.error("Hľadanie zlyhalo");
     } finally {
       setFindingEmail(false);
+    }
+  };
+
+  // Save a single contact field inline (PATCH), then update state without reload.
+  const patchField = async (field: string, value: string) => {
+    const j = await fetch(`/api/leads/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: value }),
+    }).then((r) => r.json());
+    if (j.lead) {
+      setLead(j.lead);
+      toast.success("Uložené");
+    } else {
+      toast.error(j.error || "Uloženie zlyhalo");
+      throw new Error("save_failed");
     }
   };
 
@@ -463,12 +557,21 @@ export function LeadDetail({ id }: { id: string }) {
               <CardTitle>Kontakt</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2.5">
-              <Row icon={Globe} label="Konateľ">
-                {lead.ownerName ? `${lead.ownerName}${lead.ownerPosition ? ` (${lead.ownerPosition})` : ""}` : "neznámy"}
-              </Row>
-              <Row icon={Mail} label="Email">
-                <span className="flex flex-wrap items-center gap-2">
-                  <span className={lead.companyEmail ? "" : "text-muted"}>{lead.companyEmail ?? "—"}</span>
+              <EditableRow
+                icon={Globe}
+                label="Konateľ"
+                value={lead.ownerName}
+                placeholder="Meno konateľa"
+                onSave={(v) => patchField("ownerName", v)}
+                extra={lead.ownerPosition ? <span className="text-xs text-muted">({lead.ownerPosition})</span> : undefined}
+              />
+              <EditableRow
+                icon={Mail}
+                label="Email"
+                value={lead.companyEmail}
+                placeholder="email@firma.sk"
+                onSave={(v) => patchField("companyEmail", v)}
+                extra={
                   <button
                     onClick={findEmail}
                     disabled={findingEmail}
@@ -478,9 +581,15 @@ export function LeadDetail({ id }: { id: string }) {
                     {findingEmail ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
                     {lead.companyEmail ? "Hľadať znova" : "Hľadať email"}
                   </button>
-                </span>
-              </Row>
-              <Row icon={Globe} label="Telefón">{lead.companyPhone ?? "—"}</Row>
+                }
+              />
+              <EditableRow
+                icon={Globe}
+                label="Telefón"
+                value={lead.companyPhone}
+                placeholder="+421…"
+                onSave={(v) => patchField("companyPhone", v)}
+              />
               <Row icon={Globe} label="Adresa">{lead.companyAddress ?? "—"}</Row>
               <Row icon={Globe} label="IČO">{lead.ico ?? "—"}</Row>
               <Row icon={Globe} label="Zdroj">{lead.source ?? "—"}</Row>
