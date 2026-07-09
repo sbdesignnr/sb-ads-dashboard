@@ -17,9 +17,14 @@ export const authConfig = {
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
-      const isOnLogin = nextUrl.pathname.startsWith("/login");
+      const path = nextUrl.pathname;
 
-      // The login page is the only public route under the matcher.
+      // The public booking page requires no login.
+      if (path === "/booking" || path.startsWith("/booking/")) return true;
+
+      const isOnLogin = path.startsWith("/login");
+
+      // The login page is the only other public route under the matcher.
       if (isOnLogin) {
         if (isLoggedIn) {
           return Response.redirect(new URL("/", nextUrl));

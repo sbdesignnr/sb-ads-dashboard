@@ -373,3 +373,40 @@ model FinanceBudget {
 
   @@map("finance_budgets")
 }
+
+// Singleton (id = "primary") holding the public booking availability config.
+model BookingSetting {
+  id            String   @id @default("primary")
+  availableDays Int[]    @default([1, 2, 3, 4, 5]) @map("available_days") // 1=Mon … 7=Sun
+  startTime     String   @default("09:00") @map("start_time")
+  endTime       String   @default("18:00") @map("end_time")
+  duration      Int      @default(30) // minutes per slot
+  bufferTime    Int      @default(30) @map("buffer_time") // minutes between calls
+  minNotice     Int      @default(24) @map("min_notice") // hours before a booking
+  timezone      String   @default("Europe/Bratislava")
+  ownerEmail    String   @default("biben@sbdesign.sk") @map("owner_email")
+  ownerName     String   @default("Samuel Bibeň") @map("owner_name")
+  meetingTitle  String   @default("Online hovor - SB Design") @map("meeting_title")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("booking_settings")
+}
+
+model Booking {
+  id             String   @id @default(cuid())
+  date           DateTime // calendar day (UTC midnight)
+  startTime      String   @map("start_time") // "10:00"
+  endTime        String   @map("end_time") // "10:30"
+  clientName     String   @map("client_name")
+  clientEmail    String   @map("client_email")
+  clientPhone    String?  @map("client_phone")
+  clientCompany  String?  @map("client_company")
+  message        String?
+  status         String   @default("confirmed") // confirmed | cancelled
+  googleMeetLink String?  @map("google_meet_link")
+  reminderSent   Boolean  @default(false) @map("reminder_sent")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([date, status])
+  @@map("bookings")
+}
