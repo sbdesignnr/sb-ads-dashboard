@@ -1,11 +1,10 @@
 import nodemailer from "nodemailer";
 import { prisma } from "@/lib/prisma";
 
-// Outreach is sent from Samuel's own address. Primary path: Gmail / Google
-// Workspace SMTP via Nodemailer — it looks like a personal email (no
-// List-Unsubscribe header, no "marketing" footprint), so it lands in the inbox.
-// Brevo's transactional REST API stays as a fallback if Gmail isn't configured
-// or a send fails.
+// Outreach is sent from Samuel's own address. Primary path: Websupport SMTP via
+// Nodemailer — it looks like a personal email (no List-Unsubscribe header, no
+// "marketing" footprint), so it lands in the inbox. Brevo's transactional REST
+// API stays as a fallback if SMTP isn't configured or a send fails.
 const SENDER = { name: "Samuel Bibeň", email: "biben@sbdesign.sk" };
 const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
 // Absolute base for the open-tracking pixel (must be the deployed app's domain).
@@ -15,8 +14,8 @@ export function brevoConfigured(): boolean {
   return Boolean(process.env.BREVO_API_KEY?.trim());
 }
 
-export function gmailConfigured(): boolean {
-  return Boolean(process.env.GMAIL_USER?.trim() && process.env.GMAIL_APP_PASSWORD?.trim());
+export function smtpConfigured(): boolean {
+  return Boolean(process.env.SMTP_USER?.trim() && process.env.SMTP_PASSWORD?.trim());
 }
 
 function escapeHtml(s: string): string {
@@ -75,21 +74,18 @@ function toHtml(body: string, trackingId?: string): string {
 </div>`;
 }
 
-let transporter: nodemailer.Transporter | null = null;
-function gmailTransporter(): nodemailer.Transporter | null {
-  if (!gmailConfigured()) return null;
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false, // STARTTLS on 587
-      auth: {
-        user: process.env.GMAIL_USER!.trim(),
-        pass: process.env.GMAIL_APP_PASSWORD!.trim(),
-      },
-    });
-  }
-  return transporter;
+function smtpTransporter(): nodemailer.Transporter | null {
+  if (!smtpConfigured()) return null;
+  // Fresh transporter per send — reads SMTP_* from process.env at call time.
+  return nodemailer.createTransport({
+    host: "smtp.m1.websupport.sk",
+    port: 465,
+    secure: true, // SSL/TLS
+    auth: {
+      user: process.env.SMTP_USER!.trim(),
+      pass: process.env.SMTP_PASSWORD!.trim(),
+    },
+  });
 }
 
 interface SendArgs {
@@ -102,9 +98,9 @@ interface SendArgs {
 }
 type Delivery = { ok: boolean; messageId?: string | null; error?: string };
 
-async function sendViaGmail(a: SendArgs): Promise<Delivery> {
-  const t = gmailTransporter();
-  if (!t) return { ok: false, error: "gmail_not_configured" };
+async function sendViaSmtp(a: SendArgs): Promise<Delivery> {
+  const t = smtpTransporter();
+  if (!t) return { ok: false, error: "smtp_not_configured" };
   try {
     const info = await t.sendMail({
       from: `"${SENDER.name}" <${SENDER.email}>`,
@@ -155,7 +151,7 @@ export interface SendResult {
 }
 
 /**
- * Send one lead_email. Tries Gmail SMTP first, falls back to Brevo. Persists the
+ * Send one lead_email. Tries Websupport SMTP first, falls back to Brevo. Persists the
  * message id + sent timestamp, flips the email to "sent" and the lead to
  * "contacted". If the lead has no e-mail, marks the email "failed" and notes it.
  */
@@ -182,8 +178,8 @@ export async function sendLeadEmail(leadEmailId: string): Promise<SendResult> {
     emailType: email.emailType,
   };
 
-  // Gmail first (personal-looking, no unsubscribe); Brevo as fallback.
-  let delivery = await sendViaGmail(args);
+  // SMTP first (personal-looking, no unsubscribe); Brevo as fallback.
+  let delivery = await sendViaSmtp(args);
   if (!delivery.ok && brevoConfigured()) {
     delivery = await sendViaBrevo(args);
   }
@@ -196,7 +192,7 @@ export async function sendLeadEmail(leadEmailId: string): Promise<SendResult> {
   const now = new Date();
   await prisma.leadEmail.update({
     where: { id: leadEmailId },
-    // brevoMessageId keeps the provider message id (Gmail or Brevo).
+    // brevoMessageId keeps the provider message id (SMTP or Brevo).
     data: { status: "sent", sentAt: now, brevoMessageId: delivery.messageId ?? null },
   });
   // Advance the lead unless it already replied/converted.
