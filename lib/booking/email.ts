@@ -96,7 +96,7 @@ function signatureCard(): string {
   <tr>
     <td style="padding-right: 14px; vertical-align: top;">
       <img src="https://mtktuwvwgdnyjduhvsko.supabase.co/storage/v1/object/public/assets/Fotka-nova-2.png"
-      width="72" height="72"
+      width="90" height="90"
       style="border-radius: 50%; object-fit: cover; object-position: top;"
       alt="Samuel Bibeň">
     </td>

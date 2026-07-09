@@ -156,6 +156,9 @@ model LeadEmail {
   lastOpenedAt   DateTime? @map("last_opened_at")
   openCount      Int       @default(0) @map("open_count")
   openLog        Json?     @map("open_log") // [{ts, ip, ua}] capped
+  clickedAt      DateTime? @map("clicked_at") // first click on a tracked link
+  lastClickedAt  DateTime? @map("last_clicked_at")
+  clickCount     Int       @default(0) @map("click_count")
   repliedAt      DateTime? @map("replied_at")
   brevoMessageId String?   @map("brevo_message_id")
   createdAt      DateTime  @default(now()) @map("created_at")

@@ -54,6 +54,12 @@ function toHtml(body: string, trackingId?: string): string {
     );
     pixel = `<img src="${trackingUrl}" width="1" height="1" alt="" style="position:absolute;opacity:0.01;">`;
   }
+  // The signature web link routes through the click tracker. Gmail caches the
+  // open pixel after one load (so opens count once), but a click is a second,
+  // independent engagement signal.
+  const webHref = trackingId
+    ? `${TRACK_BASE}/api/track/click/${trackingId}?url=${encodeURIComponent("https://www.sbdesign.sk")}`
+    : "https://www.sbdesign.sk";
   return `
 <div style="font-family: Arial, sans-serif; font-size: 14px; color: #000000; max-width: 600px;">
   <div style="white-space: pre-wrap; line-height: 1.6;">${safeBody}</div>
@@ -62,7 +68,7 @@ function toHtml(body: string, trackingId?: string): string {
     <tr>
       <td style="padding-right: 14px; vertical-align: top;">
         <img src="https://mtktuwvwgdnyjduhvsko.supabase.co/storage/v1/object/public/assets/Fotka-nova-2.png"
-        width="72" height="72"
+        width="90" height="90"
         style="border-radius: 50%; object-fit: cover; object-position: top;"
         alt="Samuel Bibeň">
       </td>
@@ -72,7 +78,7 @@ function toHtml(body: string, trackingId?: string): string {
         <div style="font-size: 12px; line-height: 1.8; color: #333333;">
           M: +421 911 183 131<br>
           E: <a href="mailto:biben@sbdesign.sk" style="color: #4A90D9; text-decoration: none;">biben@sbdesign.sk</a> |
-          <a href="https://www.sbdesign.sk" style="color: #4A90D9; text-decoration: none;">www.sbdesign.sk</a><br>
+          <a href="${webHref}" style="color: #4A90D9; text-decoration: none;">www.sbdesign.sk</a><br>
           Mostná 42 | 949 01 Nitra
         </div>
       </td>
