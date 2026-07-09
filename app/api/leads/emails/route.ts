@@ -11,6 +11,7 @@ const withLead = { lead: { include: { segment: { select: { name: true } } } } };
 // Queue lists for the campaign page:
 //  ?queue=initial   → initial drafts waiting for approval
 //  ?queue=followup  → due follow-up drafts (scheduled within the next 24h)
+//  ?queue=sent      → already-sent emails (with open tracking), newest first
 //  ?segment=<id>    → only emails whose lead is in that segment (per campaign)
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -20,13 +21,15 @@ export async function GET(req: NextRequest) {
   const segment = sp.get("segment");
 
   const where: Prisma.LeadEmailWhereInput =
-    queue === "followup"
-      ? {
-          status: "draft",
-          emailType: { in: ["followup1", "followup2"] },
-          scheduledAt: { lte: new Date(Date.now() + 24 * 3600 * 1000) },
-        }
-      : { status: "draft", emailType: "initial" };
+    queue === "sent"
+      ? { status: "sent" }
+      : queue === "followup"
+        ? {
+            status: "draft",
+            emailType: { in: ["followup1", "followup2"] },
+            scheduledAt: { lte: new Date(Date.now() + 24 * 3600 * 1000) },
+          }
+        : { status: "draft", emailType: "initial" };
 
   // Scope to one campaign's segment when requested.
   if (segment && segment !== "all") {
@@ -36,8 +39,8 @@ export async function GET(req: NextRequest) {
   const emails = await prisma.leadEmail.findMany({
     where,
     include: withLead,
-    orderBy: { createdAt: "desc" },
-    take: 300,
+    orderBy: queue === "sent" ? { sentAt: "desc" } : { createdAt: "desc" },
+    take: queue === "sent" ? 100 : 300,
   });
   return NextResponse.json({ emails: emails.map(serializeLeadEmail) });
 }

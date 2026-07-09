@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { serializeLead } from "@/lib/leads/store";
+import { serializeLead, serializeLeadEmail } from "@/lib/leads/store";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const lead = await prisma.lead.findUnique({ where: { id } });
   if (!lead) return NextResponse.json({ error: "not_found" }, { status: 404 });
   const segment = lead.segmentId ? await prisma.leadSegment.findUnique({ where: { id: lead.segmentId } }) : null;
-  return NextResponse.json({ lead: serializeLead(lead), segmentName: segment?.name ?? null });
+  const emails = await prisma.leadEmail.findMany({
+    where: { leadId: id },
+    include: { lead: { include: { segment: { select: { name: true } } } } },
+    orderBy: { createdAt: "desc" },
+  });
+  return NextResponse.json({
+    lead: serializeLead(lead),
+    segmentName: segment?.name ?? null,
+    emails: emails.map(serializeLeadEmail),
+  });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

@@ -45,6 +45,11 @@ function StatBox({ label, value }: { label: string; value: number }) {
   );
 }
 
+// Open-tracking badge: red 0×, yellow 1×, green 2×+.
+function OpenBadge({ count }: { count: number }) {
+  return <Badge variant={count >= 2 ? "success" : count === 1 ? "warning" : "danger"}>👁 {count}×</Badge>;
+}
+
 export default function CampaignsPage() {
   const [segments, setSegments] = useState<SegmentDTO[]>([]);
   const [stats, setStats] = useState<Stats>({ sentToday: 0, pendingApproval: 0, totalSent: 0 });
@@ -62,6 +67,7 @@ export default function CampaignsPage() {
 
   const [queue, setQueue] = useState<LeadEmailDTO[]>([]);
   const [followups, setFollowups] = useState<LeadEmailDTO[]>([]);
+  const [sent, setSent] = useState<LeadEmailDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<LeadEmailDTO | null>(null);
@@ -86,12 +92,14 @@ export default function CampaignsPage() {
     setLoading(true);
     try {
       const seg = `&segment=${encodeURIComponent(segmentId)}`;
-      const [a, b] = await Promise.all([
+      const [a, b, c] = await Promise.all([
         fetch(`/api/leads/emails?queue=initial${seg}`).then((r) => r.json()),
         fetch(`/api/leads/emails?queue=followup${seg}`).then((r) => r.json()),
+        fetch(`/api/leads/emails?queue=sent${seg}`).then((r) => r.json()),
       ]);
       setQueue(a.emails ?? []);
       setFollowups(b.emails ?? []);
+      setSent(c.emails ?? []);
     } finally {
       setLoading(false);
     }
@@ -467,6 +475,42 @@ export default function CampaignsPage() {
                   busy={busyId === e.id}
                   showType
                 />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Sent emails with open tracking */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Send className="h-4 w-4 text-muted" />
+            Odoslané emaily ({sent.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {sent.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted">Zatiaľ žiadne odoslané emaily pre tento segment.</p>
+          ) : (
+            <div className="space-y-1">
+              {sent.map((e) => (
+                <div
+                  key={e.id}
+                  className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-medium text-foreground">{e.companyName}</span>
+                      {e.segmentName && <span className="shrink-0 text-xs text-muted">· {e.segmentName}</span>}
+                    </div>
+                    <p className="truncate text-xs text-muted">{e.subject || "—"}</p>
+                  </div>
+                  <span className="shrink-0 text-xs text-muted">
+                    {e.sentAt ? new Date(e.sentAt).toLocaleDateString("sk-SK") : ""}
+                  </span>
+                  <OpenBadge count={e.openCount} />
+                </div>
               ))}
             </div>
           )}

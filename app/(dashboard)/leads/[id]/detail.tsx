@@ -34,7 +34,24 @@ import { Button } from "@/components/ui/button";
 import { ScoreGauge } from "@/components/ai/ScoreGauge";
 import { copyToClipboard } from "@/lib/export";
 import { cn } from "@/lib/utils";
-import { type LeadDTO, type LeadStatus, LEAD_STATUS_LABEL } from "@/lib/leads/types";
+import { type LeadDTO, type LeadEmailDTO, type LeadStatus, LEAD_STATUS_LABEL } from "@/lib/leads/types";
+
+function relTime(iso: string | null): string {
+  if (!iso) return "—";
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "práve teraz";
+  if (m < 60) return `pred ${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `pred ${h} h`;
+  return `pred ${Math.floor(h / 24)} dňami`;
+}
+
+function openColor(count: number): string {
+  if (count >= 2) return "text-success";
+  if (count === 1) return "text-warning";
+  return "text-danger";
+}
 
 const STATUSES: LeadStatus[] = ["new", "contacted", "responded", "converted", "rejected"];
 
@@ -127,6 +144,7 @@ function EditableRow({
 export function LeadDetail({ id }: { id: string }) {
   const router = useRouter();
   const [lead, setLead] = useState<LeadDTO | null>(null);
+  const [emails, setEmails] = useState<LeadEmailDTO[]>([]);
   const [segmentName, setSegmentName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState("");
@@ -146,6 +164,7 @@ export function LeadDetail({ id }: { id: string }) {
       .then((j) => {
         if (j.lead) {
           setLead(j.lead);
+          setEmails(j.emails ?? []);
           setSegmentName(j.segmentName ?? null);
           setNotes(j.lead.notes ?? "");
           setIssues(j.lead.websiteIssues ?? []);
@@ -626,6 +645,37 @@ export function LeadDetail({ id }: { id: string }) {
               )}
             </CardContent>
           </Card>
+
+          {emails.some((e) => e.status === "sent") && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Sledovanie emailov</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {emails
+                  .filter((e) => e.status === "sent")
+                  .map((e) => (
+                    <div key={e.id} className="rounded-lg border border-border bg-surface p-3">
+                      <p className="truncate text-sm font-medium text-foreground">{e.subject || "—"}</p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                        <span className="text-muted">
+                          ✉️ Odoslaný: {e.sentAt ? new Date(e.sentAt).toLocaleDateString("sk-SK") : "—"}
+                        </span>
+                        <span className={openColor(e.openCount)}>👁 Otvorený: {e.openCount}×</span>
+                        {e.openCount > 0 && (
+                          <span className="text-muted">🕐 Naposledy: {relTime(e.lastOpenedAt ?? e.openedAt)}</span>
+                        )}
+                      </div>
+                      {e.openCount >= 2 && (
+                        <div className="mt-2 inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-xs text-warning">
+                          ⚡ Viackrát otvorený — vhodný čas na follow-up
+                        </div>
+                      )}
+                    </div>
+                  ))}
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>

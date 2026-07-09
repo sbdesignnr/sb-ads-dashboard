@@ -8,6 +8,8 @@ import { prisma } from "@/lib/prisma";
 // or a send fails.
 const SENDER = { name: "Samuel Bibeň", email: "biben@sbdesign.sk" };
 const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
+// Absolute base for the open-tracking pixel (must be the deployed app's domain).
+const TRACK_BASE = (process.env.NEXT_PUBLIC_APP_URL || "https://ads.sbdesign.sk").replace(/\/$/, "");
 
 export function brevoConfigured(): boolean {
   return Boolean(process.env.BREVO_API_KEY?.trim());
@@ -35,9 +37,13 @@ function sanitizeEmailText(text: string): string {
     .trim();
 }
 
-// HTML email: the (sanitised, escaped) body followed by Samuel's signature card.
-function toHtml(body: string): string {
+// HTML email: the (sanitised, escaped) body, Samuel's signature card, and an
+// optional 1x1 open-tracking pixel.
+function toHtml(body: string, trackingId?: string): string {
   const safeBody = escapeHtml(sanitizeEmailText(body)).replace(/\n/g, "<br>");
+  const pixel = trackingId
+    ? `<img src="${TRACK_BASE}/api/track/email-open/${trackingId}" width="1" height="1" style="display:none;visibility:hidden;" alt="">`
+    : "";
   return `
 <div style="font-family: Arial, sans-serif; font-size: 14px; color: #000000; max-width: 600px;">
   <div style="white-space: pre-wrap; line-height: 1.6;">${safeBody}</div>
@@ -62,6 +68,7 @@ function toHtml(body: string): string {
       </td>
     </tr>
   </table>
+  ${pixel}
 </div>`;
 }
 
@@ -167,7 +174,7 @@ export async function sendLeadEmail(leadEmailId: string): Promise<SendResult> {
     to: lead.companyEmail.trim(),
     toName: lead.companyName,
     subject: sanitizeEmailText(email.subject),
-    html: toHtml(email.body),
+    html: toHtml(email.body, leadEmailId),
     text: sanitizeEmailText(email.body),
     emailType: email.emailType,
   };

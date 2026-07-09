@@ -153,7 +153,10 @@ model LeadEmail {
   status         String    @default("draft") // draft | approved | sent | failed | rejected
   scheduledAt    DateTime? @map("scheduled_at")
   sentAt         DateTime? @map("sent_at")
-  openedAt       DateTime? @map("opened_at")
+  openedAt       DateTime? @map("opened_at") // first open
+  lastOpenedAt   DateTime? @map("last_opened_at")
+  openCount      Int       @default(0) @map("open_count")
+  openLog        Json?     @map("open_log") // [{ts, ip, ua}] capped
   repliedAt      DateTime? @map("replied_at")
   brevoMessageId String?   @map("brevo_message_id")
   createdAt      DateTime  @default(now()) @map("created_at")
