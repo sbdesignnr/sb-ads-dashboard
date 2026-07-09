@@ -7,6 +7,26 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+// Leads eligible for email discovery: a website, not rejected, no e-mail yet.
+function missingEmailWhere(segmentId?: string) {
+  return {
+    websiteUrl: { not: null },
+    status: { not: "rejected" },
+    OR: [{ companyEmail: null }, { companyEmail: "" }],
+    ...(segmentId ? { segmentId } : {}),
+  };
+}
+
+// Count of leads without an e-mail — powers the "Hľadať emaily…" button.
+export async function GET(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const seg = req.nextUrl.searchParams.get("segment");
+  const segmentId = seg && seg !== "all" ? seg : undefined;
+  const count = await prisma.lead.count({ where: missingEmailWhere(segmentId) });
+  return NextResponse.json({ count });
+}
+
 // Bulk email discovery for existing leads that still have no contact e-mail.
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -22,12 +42,7 @@ export async function POST(req: NextRequest) {
   const segmentId = body.segmentId && body.segmentId !== "all" ? body.segmentId : undefined;
 
   const leads = await prisma.lead.findMany({
-    where: {
-      websiteUrl: { not: null },
-      status: { not: "rejected" },
-      OR: [{ companyEmail: null }, { companyEmail: "" }],
-      ...(segmentId ? { segmentId } : {}),
-    },
+    where: missingEmailWhere(segmentId),
     select: { id: true, companyName: true, websiteUrl: true },
     take: 30,
   });

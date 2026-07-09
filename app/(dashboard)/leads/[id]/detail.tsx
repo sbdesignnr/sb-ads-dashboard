@@ -160,7 +160,7 @@ export function LeadDetail({ id }: { id: string }) {
   const [findingEmail, setFindingEmail] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/leads/${id}`)
+    fetch(`/api/leads/${id}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => {
         if (j.lead) {
@@ -186,6 +186,20 @@ export function LeadDetail({ id }: { id: string }) {
     const s = new URLSearchParams(window.location.search).get("segment");
     setBackHref(s ? `/leads?segment=${encodeURIComponent(s)}` : "/leads");
   }, []);
+
+  // Refresh open-tracking every 30s (no cache) so "Sledovanie emailov" reflects
+  // new opens without a manual reload.
+  useEffect(() => {
+    const t = setInterval(() => {
+      fetch(`/api/leads/${id}`, { cache: "no-store" })
+        .then((r) => r.json())
+        .then((j) => {
+          if (j.emails) setEmails(j.emails);
+        })
+        .catch(() => {});
+    }, 30000);
+    return () => clearInterval(t);
+  }, [id]);
 
   const setStatus = async (status: LeadStatus) => {
     if (!lead) return;

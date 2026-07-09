@@ -65,7 +65,7 @@ export default function CampaignsPage() {
   const [isActive, setIsActive] = useState(false);
   const [savingCampaign, setSavingCampaign] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [lastGen, setLastGen] = useState<{ generated: number; missingEmail: number } | null>(null);
+  const [missingEmailCount, setMissingEmailCount] = useState(0);
   const [findingEmails, setFindingEmails] = useState(false);
 
   const [queue, setQueue] = useState<LeadEmailDTO[]>([]);
@@ -95,14 +95,16 @@ export default function CampaignsPage() {
     setLoading(true);
     try {
       const seg = `&segment=${encodeURIComponent(segmentId)}`;
-      const [a, b, c] = await Promise.all([
+      const [a, b, c, d] = await Promise.all([
         fetch(`/api/leads/emails?queue=initial${seg}`).then((r) => r.json()),
         fetch(`/api/leads/emails?queue=followup${seg}`).then((r) => r.json()),
         fetch(`/api/leads/emails?queue=sent${seg}`).then((r) => r.json()),
+        fetch(`/api/leads/find-emails-bulk?segment=${encodeURIComponent(segmentId)}`).then((r) => r.json()),
       ]);
       setQueue(a.emails ?? []);
       setFollowups(b.emails ?? []);
       setSent(c.emails ?? []);
+      setMissingEmailCount(d.count ?? 0);
     } finally {
       setLoading(false);
     }
@@ -197,7 +199,6 @@ export default function CampaignsPage() {
       if (j.error) {
         toast.error(j.error, { id: "gen" });
       } else {
-        setLastGen({ generated: j.generated ?? 0, missingEmail: j.missingEmail ?? 0 });
         toast.success(
           `Vygenerovaných ${j.generated}${j.skipped ? ` · ${j.skipped} preskočených` : ""}${j.failed ? ` · ${j.failed} zlyhaných` : ""}`,
           { id: "gen" },
@@ -227,9 +228,9 @@ export default function CampaignsPage() {
         toast.error(j.error, { id: "find" });
       } else {
         toast.success(`Nájdených ${j.found} emailov z ${j.processed} leadov`, { id: "find", duration: 5000 });
-        setLastGen(null); // hide the button
         loadCampaigns();
-        // Now that leads have e-mails, generate drafts for them automatically.
+        // generateBatch reloads the queues + refreshes the missing-email count,
+        // and turns the newly-found emails into drafts.
         await generateBatch();
       }
     } catch {
@@ -416,10 +417,10 @@ export default function CampaignsPage() {
                 {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 Načítať emaily na schválenie
               </Button>
-              {lastGen && lastGen.generated === 0 && lastGen.missingEmail > 0 && (
+              {missingEmailCount > 0 && (
                 <Button size="sm" variant="secondary" onClick={findMissingEmails} disabled={findingEmails}>
                   {findingEmails ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                  {findingEmails ? "Hľadám emaily…" : `Hľadať chýbajúce emaily (${lastGen.missingEmail})`}
+                  {findingEmails ? "Hľadám emaily…" : `Hľadať emaily pre leady bez kontaktu (${missingEmailCount})`}
                 </Button>
               )}
             </div>

@@ -30,9 +30,9 @@ interface OpenEntry {
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ emailId: string }> }) {
   const { emailId } = await params;
+  console.log("PIXEL HIT:", emailId, new Date().toISOString());
   const ua = request.headers.get("user-agent") ?? "unknown";
   const ip = (request.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || "unknown";
-  console.log("Pixel hit for email:", emailId, "· UA:", ua.slice(0, 80));
 
   // Record the open. We await the DB write (serverless would otherwise drop an
   // un-awaited promise after the response), but it's a tiny write so the pixel

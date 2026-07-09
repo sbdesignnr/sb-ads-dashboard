@@ -41,8 +41,11 @@ function sanitizeEmailText(text: string): string {
 // optional 1x1 open-tracking pixel.
 function toHtml(body: string, trackingId?: string): string {
   const safeBody = escapeHtml(sanitizeEmailText(body)).replace(/\n/g, "<br>");
+  // NOTE: do NOT use display:none/visibility:hidden — Gmail/Outlook skip loading
+  // hidden images, which breaks open tracking. A plain 1x1 transparent GIF is
+  // already imperceptible.
   const pixel = trackingId
-    ? `<img src="${TRACK_BASE}/api/track/email-open/${trackingId}" width="1" height="1" style="display:none;visibility:hidden;" alt="">`
+    ? `<img src="${TRACK_BASE}/api/track/email-open/${trackingId}" width="1" height="1" alt="" style="width:1px;height:1px;border:0;">`
     : "";
   return `
 <div style="font-family: Arial, sans-serif; font-size: 14px; color: #000000; max-width: 600px;">
