@@ -88,6 +88,8 @@ model LeadSegment {
   icon               String?
   keywords           String[]      @default([])
   communicationStyle String?       @map("communication_style")
+  scanOffset         Int           @default(0) @map("scan_offset") // rotating region-window cursor
+  lastScanRegions    String[]      @default([]) @map("last_scan_regions") // regions covered by the last scan
   createdAt          DateTime      @default(now()) @map("created_at")
   leads              Lead[]
   scanJobs           LeadScanJob[]
@@ -195,6 +197,7 @@ model LeadScanJob {
   foundTotal     Int          @default(0) @map("found_total") // discovered + analyzed
   foundQualified Int          @default(0) @map("found_qualified")
   foundRejected  Int          @default(0) @map("found_rejected")
+  regions        String[]     @default([]) @map("regions") // region names covered by this scan
   startedAt      DateTime?    @map("started_at")
   completedAt    DateTime?    @map("completed_at")
   errorMessage   String?      @map("error_message")

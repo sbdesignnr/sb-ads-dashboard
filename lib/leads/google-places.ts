@@ -145,6 +145,70 @@ export const CZ_CITIES = [
   "Frýdek-Místek", "Jihlava", "Teplice", "Karlovy Vary", "Děčín", "Chomutov",
 ];
 
+// A region (kraj) to sweep, tagged with the country it belongs to (drives the
+// Places regionCode/languageCode and the SK↔CZ keyword variant).
+export interface RegionArea {
+  name: string;
+  country: Region;
+}
+
+// Slovak self-governing regions (8).
+export const SK_REGIONS: RegionArea[] = [
+  "Bratislavský kraj", "Trnavský kraj", "Trenčiansky kraj", "Nitriansky kraj",
+  "Žilinský kraj", "Banskobystrický kraj", "Prešovský kraj", "Košický kraj",
+].map((name) => ({ name, country: "SK" as const }));
+
+// Czech regions (14, incl. Praha).
+export const CZ_REGIONS: RegionArea[] = [
+  "Praha", "Středočeský kraj", "Jihočeský kraj", "Plzeňský kraj", "Karlovarský kraj",
+  "Ústecký kraj", "Liberecký kraj", "Královéhradecký kraj", "Pardubický kraj",
+  "Kraj Vysočina", "Jihomoravský kraj", "Olomoucký kraj", "Zlínský kraj", "Moravskoslezský kraj",
+].map((name) => ({ name, country: "CZ" as const }));
+
+// Combined SK + CZ list (22) — the default rotation for a "both" scan.
+export const ALL_REGIONS: RegionArea[] = [...SK_REGIONS, ...CZ_REGIONS];
+
+/** The region list a scan rotates over, by selected region filter. */
+export function regionsFor(region: Region | "both"): RegionArea[] {
+  return region === "SK" ? SK_REGIONS : region === "CZ" ? CZ_REGIONS : ALL_REGIONS;
+}
+
+// SK keyword → CZ keyword. Many are identical (advokát, hotel, fitness…); only the
+// ones that differ need an entry. Falls back to the SK keyword when unmapped.
+const CZ_KEYWORDS: Record<string, string> = {
+  "reštaurácia": "restaurace",
+  "stavebná firma": "stavební firma",
+  "realitná kancelária": "realitní kancelář",
+  "účtovník": "účetní",
+  "psychológ": "psycholog",
+  "kozmetický salón": "kosmetický salon",
+  "zubár": "zubař",
+  "veterinár": "veterinář",
+  "kvetinárstvo": "květinářství",
+};
+
+/** CZ variant of a (Slovak) keyword for Czech-region queries. */
+export function czKeyword(sk: string): string {
+  return CZ_KEYWORDS[sk.trim().toLowerCase()] ?? sk;
+}
+
+/**
+ * The window of regions to scan this run: `size` regions starting at `offset`
+ * (clamped into range). Returns the slice AND the next offset (0 once the list
+ * has been fully swept) so the caller can persist the rotation cursor.
+ */
+export function regionWindow(
+  regions: RegionArea[],
+  offset: number,
+  size = 3,
+): { window: RegionArea[]; nextOffset: number } {
+  if (regions.length === 0) return { window: [], nextOffset: 0 };
+  const start = ((offset % regions.length) + regions.length) % regions.length;
+  const window = regions.slice(start, start + size);
+  const nextOffset = start + size >= regions.length ? 0 : start + size;
+  return { window, nextOffset };
+}
+
 function normWebsite(url: string): string {
   try {
     const u = new URL(url);
@@ -155,20 +219,18 @@ function normWebsite(url: string): string {
 }
 
 /**
- * Broad discovery across keywords × cities (+ a nationwide query per keyword),
- * deduped by website host. Iterates largest cities first and STOPS as soon as it
- * reaches `cap` — so dense segments finish fast while sparse ones (e.g. stavebné
- * spoločnosti) keep sweeping more cities to gather enough leads.
+ * Discovery across keywords × the given regions (kraje), deduped by website host.
+ * Each Czech region uses the CZ keyword variant + regionCode CZ. Stops as soon as
+ * it reaches `cap`.
  */
-export async function discoverBusinesses(
+export async function discoverBusinessesByRegions(
   keywords: string[],
-  opts: { cap?: number; region?: Region | "both"; maxPagesPerQuery?: number } = {},
+  regions: RegionArea[],
+  opts: { cap?: number; maxPagesPerQuery?: number } = {},
 ): Promise<PlaceBusiness[]> {
   const cap = opts.cap ?? 80;
-  const region = opts.region ?? "both";
   const maxPages = opts.maxPagesPerQuery ?? 1;
   const kws = keywords.length ? keywords : ["firma"];
-  const regions: Region[] = region === "both" ? ["SK", "CZ"] : [region];
 
   const seen = new Set<string>();
   const out: PlaceBusiness[] = [];
@@ -184,19 +246,11 @@ export async function discoverBusinesses(
     return false;
   };
 
-  for (const reg of regions) {
-    const cities = reg === "CZ" ? CZ_CITIES : SK_CITIES;
-    const nationwide = reg === "CZ" ? "Česko" : "Slovensko";
-    // Nationwide pass first (cheap, catches the obvious ones), then city sweep.
+  for (const area of regions) {
     for (const kw of kws) {
       if (out.length >= cap) return out;
-      if (add(await searchBusinesses(`${kw} ${nationwide}`, { maxPages, region: reg }))) return out;
-    }
-    for (const city of cities) {
-      for (const kw of kws) {
-        if (out.length >= cap) return out;
-        if (add(await searchBusinesses(`${kw} ${city}`, { maxPages, region: reg }))) return out;
-      }
+      const q = area.country === "CZ" ? czKeyword(kw) : kw;
+      if (add(await searchBusinesses(`${q} ${area.name}`, { maxPages, region: area.country }))) return out;
     }
   }
   return out;

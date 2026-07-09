@@ -100,5 +100,7 @@ export function serializeSegment(s: LeadSegment & { _count?: { leads: number } }
     keywords: s.keywords,
     communicationStyle: s.communicationStyle,
     leadCount: s._count?.leads ?? 0,
+    scanOffset: s.scanOffset,
+    lastScanRegions: s.lastScanRegions,
   };
 }

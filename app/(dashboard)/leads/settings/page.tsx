@@ -13,6 +13,7 @@ import {
   X,
   Loader2,
   RotateCw,
+  RotateCcw,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,11 +33,15 @@ interface JobRow {
   foundTotal: number;
   foundQualified: number;
   foundRejected: number;
+  regions: string[];
   startedAt: string | null;
   completedAt: string | null;
   errorMessage: string | null;
   createdAt: string;
 }
+
+// Total kraje per region filter (SK 8 + CZ 14 = 22) — for the "(3 z 22)" hint.
+const REGION_TOTALS: Record<"both" | "SK" | "CZ", number> = { both: 22, SK: 8, CZ: 14 };
 
 const JOB_STATUS: Record<string, { label: string; variant: "default" | "info" | "warning" | "success" | "danger" }> = {
   pending: { label: "Čaká", variant: "default" },
@@ -90,6 +95,28 @@ function SegmentRow({
   const [keywords, setKeywords] = useState(seg.keywords.join(", "));
   const [comm, setComm] = useState(seg.communicationStyle ?? "");
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
+  const resetOffset = async () => {
+    if (!confirm(`Resetovať rotáciu krajov pre „${seg.name}"? Ďalší scan začne od prvého kraja.`)) return;
+    setResetting(true);
+    try {
+      const res = await fetch(`/api/leads/segments/${seg.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resetScanOffset: true }),
+      });
+      const j = await res.json();
+      if (res.ok && j.segment) {
+        onSaved(j.segment);
+        toast.success("Rotácia krajov resetovaná");
+      } else {
+        toast.error(j.error || "Reset zlyhal");
+      }
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const save = async () => {
     if (!name.trim()) return;
@@ -186,11 +213,26 @@ function SegmentRow({
             )}
           </div>
         )}
+        <p className="mt-1 text-xs text-muted">
+          {seg.lastScanRegions.length > 0
+            ? `🗺 Naposledy skenované: ${seg.lastScanRegions.join(" · ")}`
+            : "🗺 Zatiaľ neskenované — ďalší scan začne od prvého kraja"}
+        </p>
       </div>
       <div className="flex items-center gap-1.5">
         <Button size="sm" variant="secondary" onClick={() => onScan(seg.id)} disabled={scanning}>
           {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
           Scan teraz
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={resetOffset}
+          disabled={resetting || seg.lastScanRegions.length === 0}
+          aria-label="Resetovať rotáciu krajov"
+          title="Resetovať a začať odznova"
+        >
+          {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
         </Button>
         <Button size="sm" variant="ghost" onClick={() => setEditing(true)} aria-label="Upraviť">
           <Pencil className="h-4 w-4" />
@@ -381,15 +423,23 @@ export default function LeadsSettingsPage() {
         </div>
 
         {scanningId && (
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
-            <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            <span className="text-foreground">Skenovanie beží…</span>
+          <div className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              <span className="text-foreground">Skenovanie beží…</span>
+              {runningJob && runningJob.regions.length > 0 && (
+                <span className="text-muted">
+                  Skenujem: <span className="text-foreground">{runningJob.regions.join(", ")}</span> (
+                  {runningJob.regions.length} z {REGION_TOTALS[region]} krajov)
+                </span>
+              )}
+            </div>
             {runningJob && (
-              <span className="text-muted">
+              <div className="mt-1 text-muted">
                 Skenované: {runningJob.foundQualified + runningJob.foundRejected}/{runningJob.foundTotal || "?"} ·
                 Kvalifikovaných: <span className="text-success">{runningJob.foundQualified}</span> ·
                 Odmietnutých: <span className="text-muted">{runningJob.foundRejected}</span>
-              </span>
+              </div>
             )}
           </div>
         )}
@@ -442,6 +492,9 @@ export default function LeadsSettingsPage() {
                       {j.foundRejected} odmiet. · {j.foundTotal} spolu
                     </span>
                     <span className="ml-auto text-xs text-muted">{fmt(j.completedAt ?? j.createdAt)}</span>
+                    {j.regions.length > 0 && (
+                      <span className="w-full text-xs text-muted">🗺 {j.regions.join(" · ")}</span>
+                    )}
                     {j.errorMessage && (
                       <span className="w-full text-xs text-danger">{j.errorMessage}</span>
                     )}

@@ -8,6 +8,8 @@ export interface SegmentDTO {
   keywords: string[];
   communicationStyle: string | null;
   leadCount: number;
+  scanOffset: number;
+  lastScanRegions: string[];
 }
 
 export interface LeadDTO {
@@ -58,6 +60,7 @@ export interface ScanJobDTO {
   foundTotal: number;
   foundQualified: number;
   foundRejected: number;
+  regions: string[];
   startedAt: string | null;
   completedAt: string | null;
   errorMessage: string | null;

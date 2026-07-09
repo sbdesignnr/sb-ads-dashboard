@@ -20,6 +20,7 @@ export async function GET() {
       foundTotal: j.foundTotal,
       foundQualified: j.foundQualified,
       foundRejected: j.foundRejected,
+      regions: j.regions,
       startedAt: j.startedAt?.toISOString() ?? null,
       completedAt: j.completedAt?.toISOString() ?? null,
       errorMessage: j.errorMessage,

@@ -1,6 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import type { Lead, LeadSegment } from "@prisma/client";
-import { discoverBusinesses, placesConfigured, CZ_CITIES, type Region } from "./google-places";
+import {
+  discoverBusinessesByRegions,
+  regionsFor,
+  regionWindow,
+  placesConfigured,
+  CZ_CITIES,
+  type Region,
+} from "./google-places";
 import { analyzeWebsite } from "./website-analyzer";
 import { enrichCompany } from "./orsr";
 import { enrichCompanyAres } from "./ares";
@@ -192,7 +199,15 @@ export async function scanSegment(
   const segment = await prisma.leadSegment.findUnique({ where: { id: segmentId } });
   if (!segment) return { jobId: "", foundTotal: 0, foundQualified: 0, foundRejected: 0, error: "segment_not_found" };
 
-  const job = await prisma.leadScanJob.create({ data: { segmentId, status: "running", startedAt: new Date() } });
+  // Rotate a window of 3 regions (kraje) per scan so each run stays within the
+  // serverless budget; the cursor is persisted so repeat scans sweep the rest.
+  const allRegions = regionsFor(region);
+  const { window: regionsForThisScan, nextOffset } = regionWindow(allRegions, segment.scanOffset, 3);
+  const regionNames = regionsForThisScan.map((r) => r.name);
+
+  const job = await prisma.leadScanJob.create({
+    data: { segmentId, status: "running", startedAt: new Date(), regions: regionNames },
+  });
 
   if (!placesConfigured()) {
     await prisma.leadScanJob.update({
@@ -203,10 +218,10 @@ export async function scanSegment(
   }
 
   try {
-    // Discover businesses, upsert each and collect its lead id — EVERY one is
-    // analyzed below, so nothing is left in the list as an unanalyzed lead.
+    // Discover businesses in this scan's region window, upsert each and collect its
+    // lead id — EVERY one is analyzed below, so nothing is left unanalyzed.
     const keywords = segment.keywords.length ? segment.keywords : [segment.name];
-    const discovered = await discoverBusinesses(keywords, { cap: maxDiscover, region });
+    const discovered = await discoverBusinessesByRegions(keywords, regionsForThisScan, { cap: maxDiscover });
     const leadIds: string[] = [];
     for (const b of discovered) {
       if (!b.website) continue;
@@ -253,6 +268,11 @@ export async function scanSegment(
         foundRejected: rejected,
         completedAt: new Date(),
       },
+    });
+    // Advance the rotation cursor so the next scan picks up the following regions.
+    await prisma.leadSegment.update({
+      where: { id: segmentId },
+      data: { scanOffset: nextOffset, lastScanRegions: regionNames },
     });
     return { jobId: job.id, foundTotal: leadIds.length, foundQualified: qualified, foundRejected: rejected };
   } catch (e) {
