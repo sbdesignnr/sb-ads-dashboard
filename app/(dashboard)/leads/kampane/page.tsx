@@ -65,7 +65,6 @@ export default function CampaignsPage() {
   const [isActive, setIsActive] = useState(false);
   const [savingCampaign, setSavingCampaign] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [missingEmailCount, setMissingEmailCount] = useState(0);
   const [findingEmails, setFindingEmails] = useState(false);
 
   const [queue, setQueue] = useState<LeadEmailDTO[]>([]);
@@ -95,16 +94,14 @@ export default function CampaignsPage() {
     setLoading(true);
     try {
       const seg = `&segment=${encodeURIComponent(segmentId)}`;
-      const [a, b, c, d] = await Promise.all([
+      const [a, b, c] = await Promise.all([
         fetch(`/api/leads/emails?queue=initial${seg}`).then((r) => r.json()),
         fetch(`/api/leads/emails?queue=followup${seg}`).then((r) => r.json()),
         fetch(`/api/leads/emails?queue=sent${seg}`).then((r) => r.json()),
-        fetch(`/api/leads/find-emails-bulk?segment=${encodeURIComponent(segmentId)}`).then((r) => r.json()),
       ]);
       setQueue(a.emails ?? []);
       setFollowups(b.emails ?? []);
       setSent(c.emails ?? []);
-      setMissingEmailCount(d.count ?? 0);
     } finally {
       setLoading(false);
     }
@@ -417,12 +414,10 @@ export default function CampaignsPage() {
                 {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 Načítať emaily na schválenie
               </Button>
-              {missingEmailCount > 0 && (
-                <Button size="sm" variant="secondary" onClick={findMissingEmails} disabled={findingEmails}>
-                  {findingEmails ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                  {findingEmails ? "Hľadám emaily…" : `Hľadať emaily pre leady bez kontaktu (${missingEmailCount})`}
-                </Button>
-              )}
+              <Button size="sm" variant="secondary" onClick={findMissingEmails} disabled={findingEmails}>
+                {findingEmails ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                {findingEmails ? "Hľadám emaily…" : "Hľadať emaily pre leady bez kontaktu"}
+              </Button>
             </div>
           </div>
 

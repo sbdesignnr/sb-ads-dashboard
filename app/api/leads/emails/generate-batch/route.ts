@@ -24,18 +24,32 @@ export async function POST(req: NextRequest) {
   }
   const limit = Math.min(Math.max(1, Number(body.limit) || 20), 50);
   const segmentId = body.segmentId && body.segmentId !== "all" ? body.segmentId : undefined;
+  const segFilter = segmentId ? { segmentId } : {};
+
+  // Diagnostics for "only 1 generated": how many "new" leads have/lack an email,
+  // and how many already have an initial draft (so they're skipped here).
+  const [leadsWithEmail, leadsWithoutEmail, alreadyHaveInitial] = await Promise.all([
+    prisma.lead.count({ where: { status: "new", ...segFilter, companyEmail: { not: null }, NOT: { companyEmail: "" } } }),
+    prisma.lead.count({ where: { status: "new", ...segFilter, OR: [{ companyEmail: null }, { companyEmail: "" }] } }),
+    prisma.lead.count({
+      where: { status: "new", ...segFilter, companyEmail: { not: null }, emails: { some: { emailType: "initial" } } },
+    }),
+  ]);
+  console.log("Leads with email:", leadsWithEmail, "without:", leadsWithoutEmail, "· already have initial draft:", alreadyHaveInitial);
 
   const leads = await prisma.lead.findMany({
     where: {
       status: "new",
       companyEmail: { not: null },
+      NOT: { companyEmail: "" }, // a lead with an empty e-mail can't be sent to
       ...(segmentId ? { segmentId } : {}),
-      emails: { none: { emailType: "initial" } },
+      emails: { none: { emailType: "initial" } }, // don't regenerate ones already drafted
     },
     include: { segment: true },
     orderBy: { websiteScore: "desc" },
     take: limit,
   });
+  console.log(`Generating for ${leads.length} leads (limit ${limit})`);
 
   // Generate in parallel batches so N leads don't run N sequential Claude calls
   // (which times out — the likely cause of "only 1 generated"). One failure

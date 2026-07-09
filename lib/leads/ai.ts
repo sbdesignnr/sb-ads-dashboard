@@ -149,7 +149,8 @@ export async function generateDossier(f: DossierInput): Promise<LeadDossier> {
 }
 
 const OUTREACH_SYSTEM = `KRITICKÉ PRAVIDLO — HODNOTENIE WEBU:
-NIKDY nepíš, že web "má slušný základ", "vyzerá dobre" alebo "pôsobí príjemne". Kompliment daj na ich PRÁCU/SLUŽBY, nie na web. Namiesto toho použi "pozrel som si [web]" a sústreď sa na to, čo CHÝBA alebo NEFUNGUJE.
+NIKDY nehodnoť web ani fotky/vizuál pozitívne. NIKDY nepoužívaj frázy typu: "solidný záber", "slušný základ", "dobrý web", "pekný koncept", "príjemný web", "vyzerá dobre", "pôsobí príjemne", "má slušný základ", "pekné fotky".
+Kompliment daj VÝHRADNE na ich PRÁCU / SLUŽBY / REALIZÁCIE — nikdy nie na web. O webe píš IBA to, čo CHÝBA alebo NEFUNGUJE. Použi "pozrel som si [web]" a prejdi rovno k problému.
 
 KRITICKÉ PRAVIDLO — VYKANIE V SLOVENČINE:
 Pri vykaní sa používa množné číslo slovies aj zámen. Toto je najvyššia priorita.
