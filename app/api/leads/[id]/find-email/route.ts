@@ -5,7 +5,7 @@ import { findEmailForLead } from "@/lib/leads/email-finder";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 90;
 
 // On-demand email discovery for a single lead (scrapes the site + Jina fallback).
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

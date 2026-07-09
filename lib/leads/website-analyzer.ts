@@ -246,27 +246,37 @@ async function loadContactPages(origin: string): Promise<string> {
 }
 
 /**
- * Detect a modern site builder / JS framework. These sites are already modern,
- * so per our philosophy (we sell rebuilds of OLD sites) they're disqualified.
+ * Detect a modern site builder / JS framework.
+ * - "hard": code frameworks (Next/React/Vue/Nuxt/Gatsby…) + Webflow/Framer — these
+ *   are always modern, so per our philosophy (we sell rebuilds of OLD sites) they
+ *   are disqualified outright.
+ * - "soft": hosted builders (Wix/Squarespace/WordPress/Shopify) — design quality
+ *   varies wildly (a 2015 Wix looks as dated as an old WordPress), so we DON'T
+ *   disqualify; they take a small technical penalty and the score decides.
  */
-function detectModernFramework(html: string, headers: Headers): { modern: boolean; name: string | null } {
+function detectModernFramework(html: string, headers: Headers): { kind: "hard" | "soft" | "none"; name: string | null } {
   const lower = html.toLowerCase();
   const generator = /<meta[^>]+name=["']generator["'][^>]+content=["']([^"']+)["']/i.exec(html)?.[1]?.toLowerCase() ?? "";
 
-  if (/__next_data__|\/_next\/static/i.test(html)) return { modern: true, name: "Next.js" };
-  if (/data-reactroot|data-reactid|react-dom|_reactlisten/i.test(html)) return { modern: true, name: "React" };
-  if (/__nuxt__|id=["']__nuxt["']|data-v-[0-9a-f]{8}|vue\.runtime/i.test(html)) return { modern: true, name: "Vue/Nuxt" };
+  // Hard-modern → disqualify.
+  if (/__next_data__|\/_next\/static/i.test(html)) return { kind: "hard", name: "Next.js" };
+  if (/__nuxt__|id=["']__nuxt["']|data-v-[0-9a-f]{8}|vue\.runtime/i.test(html)) return { kind: "hard", name: "Vue/Nuxt" };
+  if (/__gatsby|id=["']___gatsby["']/i.test(html)) return { kind: "hard", name: "Gatsby" };
+  if (/data-reactroot|data-reactid|react-dom|_reactlisten/i.test(html)) return { kind: "hard", name: "React" };
   if (/webflow/i.test(lower) || /\bwf-|data-wf-(page|site)/i.test(html) || /webflow/i.test(generator))
-    return { modern: true, name: "Webflow" };
-  if (/framerusercontent|__framer|framer\.(com|website)/i.test(lower)) return { modern: true, name: "Framer" };
-  if (/squarespace/i.test(lower) || /squarespace/i.test(generator)) return { modern: true, name: "Squarespace" };
+    return { kind: "hard", name: "Webflow" };
+  if (/framerusercontent|__framer|framer\.(com|website)/i.test(lower)) return { kind: "hard", name: "Framer" };
+  if (/astro-island|data-astro-cid/i.test(html)) return { kind: "hard", name: "Astro" };
+  if (/__sveltekit|svelte-announcer/i.test(html)) return { kind: "hard", name: "SvelteKit" };
+
+  // Soft builders → small penalty, keep the lead if the score still qualifies.
   if (/wixstatic\.com|_wixcssingredients|wix\.com\/website|X-Wix/i.test(html) || headers.get("x-wix-request-id"))
-    return { modern: true, name: "Wix" };
-  if (/cdn\.shopify\.com|shopify\.com/i.test(lower)) return { modern: true, name: "Shopify" };
-  if (/astro-island|data-astro-cid/i.test(html)) return { modern: true, name: "Astro" };
-  if (/__gatsby|id=["']___gatsby["']/i.test(html)) return { modern: true, name: "Gatsby" };
-  if (/__sveltekit|svelte-announcer/i.test(html)) return { modern: true, name: "SvelteKit" };
-  return { modern: false, name: null };
+    return { kind: "soft", name: "Wix" };
+  if (/squarespace/i.test(lower) || /squarespace/i.test(generator)) return { kind: "soft", name: "Squarespace" };
+  if (/wordpress/i.test(generator) || /wp-content|wp-includes/i.test(lower)) return { kind: "soft", name: "WordPress" };
+  if (/cdn\.shopify\.com|shopify\.com/i.test(lower)) return { kind: "soft", name: "Shopify" };
+
+  return { kind: "none", name: null };
 }
 
 /** A parked / for-sale domain has essentially no real content — not a lead. */
@@ -438,7 +448,9 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
     technical += 6;
     reasons.push("Chýba HTTPS/SSL");
   }
-  if (fw.modern) technical -= 20; // a modern stack pulls the technical score down
+  // Hard-modern stacks are disqualified below; soft builders take a small hit.
+  if (fw.kind === "hard") technical -= 20;
+  else if (fw.kind === "soft") technical -= 10;
   const technicalScore = Math.max(0, Math.min(40, technical));
 
   // ---- Cheap disqualifiers FIRST, so we skip the expensive visual AI
@@ -448,7 +460,7 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
   if (isSocialUrl(url)) disqualifyReason = "Odkaz je profil na sociálnej sieti, nie vlastný web.";
   else if (!site.reachable) disqualifyReason = "Web sa nenačítal (404/500 alebo nedostupný).";
   else if (isParkedDomain(site.html)) disqualifyReason = "Parkovaná / nepoužívaná doména.";
-  else if (fw.modern) disqualifyReason = `Web už beží na modernom nástroji (${fw.name}).`;
+  else if (fw.kind === "hard") disqualifyReason = `Web už beží na modernom nástroji (${fw.name}).`;
 
   // ---- Visual score (0-60): only spent on real candidates ----
   const visual =
@@ -488,7 +500,7 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
     isMobileFriendly: hasViewport,
     isResponsive,
     websiteTechnology: technology,
-    hasModernFramework: fw.modern,
+    hasModernFramework: fw.kind === "hard",
     websiteAge: cy ? Math.max(0, currentYear - cy) : null,
     copyrightYear: cy,
     aiVisualReason: visual.reason,
