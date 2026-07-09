@@ -19,7 +19,9 @@ const DropdownMenuContent = React.forwardRef<
       sideOffset={sideOffset}
       className={cn(
         "z-50 min-w-[12rem] overflow-hidden rounded-lg border border-border bg-surface p-1 text-foreground shadow-xl shadow-black/40",
-        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+        // Enter animation only (see SelectContent) — avoids a stuck close animation
+        // leaving a lingering portal / pointer-events lock.
+        "data-[state=open]:animate-in data-[state=open]:fade-in-0",
         className,
       )}
       {...props}

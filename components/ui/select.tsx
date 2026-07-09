@@ -40,7 +40,10 @@ const SelectContent = React.forwardRef<
       ref={ref}
       className={cn(
         "relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-lg border border-border bg-surface text-foreground shadow-xl shadow-black/40",
-        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+        // Enter animation only — a close animation delays Radix's unmount, and if
+        // its animationend never fires on mobile the body pointer-events lock is
+        // never released, freezing the whole page.
+        "data-[state=open]:animate-in data-[state=open]:fade-in-0",
         position === "popper" && "data-[side=bottom]:translate-y-1",
         className,
       )}
