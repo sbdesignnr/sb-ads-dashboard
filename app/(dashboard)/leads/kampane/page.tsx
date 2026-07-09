@@ -51,6 +51,13 @@ function OpenBadge({ count }: { count: number }) {
   return <Badge variant={count >= 2 ? "success" : count === 1 ? "warning" : "danger"}>👁 {count}×</Badge>;
 }
 
+// Clicks are a stronger signal than opens (Gmail caches the open pixel), so only
+// surface the badge when there's at least one.
+function ClickBadge({ count }: { count: number }) {
+  if (count < 1) return null;
+  return <Badge variant="success">👆 {count}×</Badge>;
+}
+
 export default function CampaignsPage() {
   const [segments, setSegments] = useState<SegmentDTO[]>([]);
   const [stats, setStats] = useState<Stats>({ sentToday: 0, pendingApproval: 0, totalSent: 0 });
@@ -549,6 +556,7 @@ export default function CampaignsPage() {
                     {e.sentAt ? new Date(e.sentAt).toLocaleDateString("sk-SK") : ""}
                   </span>
                   <OpenBadge count={e.openCount} />
+                  <ClickBadge count={e.clickCount} />
                 </div>
               ))}
             </div>

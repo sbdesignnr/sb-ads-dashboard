@@ -84,6 +84,9 @@ export interface LeadEmailDTO {
   openedAt: string | null;
   lastOpenedAt: string | null;
   openCount: number;
+  clickedAt: string | null;
+  lastClickedAt: string | null;
+  clickCount: number;
   repliedAt: string | null;
   createdAt: string;
 }

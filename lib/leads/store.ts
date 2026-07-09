@@ -67,6 +67,9 @@ export function serializeLeadEmail(e: LeadEmail & { lead?: LeadLite | null }): L
     openedAt: iso(e.openedAt),
     lastOpenedAt: iso(e.lastOpenedAt),
     openCount: e.openCount,
+    clickedAt: iso(e.clickedAt),
+    lastClickedAt: iso(e.lastClickedAt),
+    clickCount: e.clickCount,
     repliedAt: iso(e.repliedAt),
     createdAt: e.createdAt.toISOString(),
   };

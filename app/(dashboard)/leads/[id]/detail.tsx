@@ -663,12 +663,23 @@ export function LeadDetail({ id }: { id: string }) {
                               ? `👁 Otvorený 1× - ${relTime(e.lastOpenedAt ?? e.openedAt)}`
                               : `👁 Otvorený ${e.openCount}×`}
                         </span>
+                        {e.clickCount > 0 && (
+                          <span className="text-success">
+                            {e.clickCount === 1
+                              ? `👆 Klikol na odkaz - ${relTime(e.lastClickedAt ?? e.clickedAt)}`
+                              : `👆 Klikol ${e.clickCount}×`}
+                          </span>
+                        )}
                       </div>
-                      {e.openCount >= 2 && (
+                      {e.clickCount >= 1 ? (
+                        <div className="mt-2 inline-flex items-center gap-1 rounded-md border border-success/30 bg-success/10 px-2 py-1 text-xs text-success">
+                          🔥 Klikol na odkaz v podpise — silný signál, ideálny čas na follow-up
+                        </div>
+                      ) : e.openCount >= 2 ? (
                         <div className="mt-2 inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-xs text-warning">
                           ⚡ Viackrát otvorený — vhodný čas na follow-up
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   ))}
               </CardContent>
