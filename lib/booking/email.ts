@@ -2,23 +2,77 @@ import nodemailer from "nodemailer";
 import type { Booking } from "@prisma/client";
 
 const SENDER = { name: "Samuel Bibeň", email: "biben@sbdesign.sk" };
+const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
 
-export function bookingEmailConfigured(): boolean {
+function gmailConfigured(): boolean {
   return Boolean(process.env.GMAIL_USER?.trim() && process.env.GMAIL_APP_PASSWORD?.trim());
 }
+function brevoConfigured(): boolean {
+  return Boolean(process.env.BREVO_API_KEY?.trim());
+}
 
-let transporter: nodemailer.Transporter | null = null;
-function gmail(): nodemailer.Transporter | null {
-  if (!bookingEmailConfigured()) return null;
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false,
-      auth: { user: process.env.GMAIL_USER!.trim(), pass: process.env.GMAIL_APP_PASSWORD!.trim() },
+// True if *any* delivery path is available (Gmail SMTP or Brevo REST).
+export function bookingEmailConfigured(): boolean {
+  return gmailConfigured() || brevoConfigured();
+}
+
+// Gmail SMTP — personal-looking (no marketing headers). A fresh transporter per
+// send reads GMAIL_* from process.env at call time (no build-time / cross-invocation cache).
+async function sendViaGmail(to: string, subject: string, html: string, text: string): Promise<boolean> {
+  if (!gmailConfigured()) return false;
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false, // STARTTLS on 587
+    auth: { user: process.env.GMAIL_USER!.trim(), pass: process.env.GMAIL_APP_PASSWORD!.trim() },
+  });
+  try {
+    const info = await transporter.sendMail({
+      from: `"${SENDER.name}" <${SENDER.email}>`,
+      to,
+      replyTo: SENDER.email,
+      subject,
+      html,
+      text,
     });
+    console.log("[booking/email] Gmail sent OK:", subject, "→", to, info.messageId);
+    return true;
+  } catch (e) {
+    console.error("[booking/email] Gmail send error:", subject, "→", (e as Error).message);
+    return false;
   }
-  return transporter;
+}
+
+// Brevo transactional REST — fallback when Gmail isn't configured or fails.
+async function sendViaBrevo(to: string, subject: string, html: string, text: string): Promise<boolean> {
+  const apiKey = process.env.BREVO_API_KEY?.trim();
+  if (!apiKey) return false;
+  try {
+    const res = await fetch(BREVO_ENDPOINT, {
+      method: "POST",
+      headers: { "api-key": apiKey, "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        sender: SENDER,
+        to: [{ email: to }],
+        replyTo: SENDER,
+        subject,
+        htmlContent: html,
+        textContent: text,
+        tags: ["booking"],
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+    const data = (await res.json().catch(() => ({}))) as { messageId?: string; message?: string };
+    if (!res.ok) {
+      console.error("[booking/email] Brevo send error:", subject, `HTTP ${res.status}`, data.message ?? "");
+      return false;
+    }
+    console.log("[booking/email] Brevo sent OK:", subject, "→", to, data.messageId);
+    return true;
+  } catch (e) {
+    console.error("[booking/email] Brevo send error:", subject, "→", (e as Error).message);
+    return false;
+  }
 }
 
 function fmtDate(d: Date): string {
@@ -41,18 +95,23 @@ function wrap(inner: string): string {
 }
 
 async function send(to: string, subject: string, html: string, text: string): Promise<boolean> {
-  const t = gmail();
-  if (!t) {
-    console.log("Booking email skipped (Gmail not configured):", subject);
+  console.log("[booking/email] Sending to:", to, "| subject:", subject);
+  console.log(
+    "[booking/email] Gmail user:",
+    process.env.GMAIL_USER ?? "(unset)",
+    "| Gmail pass exists:",
+    !!process.env.GMAIL_APP_PASSWORD,
+    "| Brevo key exists:",
+    !!process.env.BREVO_API_KEY,
+  );
+  if (!bookingEmailConfigured()) {
+    console.log("[booking/email] skipped — no delivery path configured (Gmail nor Brevo):", subject);
     return false;
   }
-  try {
-    await t.sendMail({ from: `"${SENDER.name}" <${SENDER.email}>`, to, replyTo: SENDER.email, subject, html, text });
-    return true;
-  } catch (e) {
-    console.error("Booking email failed:", subject, e);
-    return false;
-  }
+  // Gmail first (personal-looking); Brevo as fallback if Gmail fails or isn't configured.
+  if (await sendViaGmail(to, subject, html, text)) return true;
+  console.log("[booking/email] Gmail path unavailable/failed → trying Brevo fallback:", subject);
+  return sendViaBrevo(to, subject, html, text);
 }
 
 export async function sendBookingConfirmation(b: Booking): Promise<boolean> {

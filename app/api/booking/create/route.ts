@@ -65,10 +65,18 @@ export async function POST(req: NextRequest) {
   });
 
   // E-mails are best-effort — never fail the booking on a send error.
-  const [confirmationSent] = await Promise.all([
-    sendBookingConfirmation(booking).catch(() => false),
-    sendBookingNotification(booking, settings.ownerEmail).catch(() => false),
+  console.log("[booking/create] booking created:", booking.id, "→ emailing client", booking.clientEmail, "+ owner", settings.ownerEmail);
+  const [confirmationSent, notificationSent] = await Promise.all([
+    sendBookingConfirmation(booking).catch((e) => {
+      console.error("[booking/create] confirmation email error:", e);
+      return false;
+    }),
+    sendBookingNotification(booking, settings.ownerEmail).catch((e) => {
+      console.error("[booking/create] notification email error:", e);
+      return false;
+    }),
   ]);
+  console.log("[booking/create] email results — confirmation:", confirmationSent, "| notification:", notificationSent);
 
   return NextResponse.json({ booking: serializeBooking(booking), confirmationSent });
 }
