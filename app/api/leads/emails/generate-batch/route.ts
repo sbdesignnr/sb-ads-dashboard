@@ -37,28 +37,58 @@ export async function POST(req: NextRequest) {
     take: limit,
   });
 
+  // Generate in parallel batches so N leads don't run N sequential Claude calls
+  // (which times out — the likely cause of "only 1 generated"). One failure
+  // never blocks the rest of its batch.
   let generated = 0;
-  for (const lead of leads) {
-    try {
-      const email = await generateOutreachEmail({
-        lead,
-        segmentName: lead.segment?.name ?? "firma",
-        type: "initial",
-      });
-      if (!email.subject || !email.body) continue;
-      await prisma.leadEmail.create({
-        data: { leadId: lead.id, subject: email.subject, body: email.body, emailType: "initial", status: "draft" },
-      });
-      generated++;
-    } catch {
-      /* skip this lead, continue */
-    }
+  let skippedSegment = 0;
+  let failed = 0;
+  const details: string[] = [];
+  const BATCH_SIZE = 5;
+
+  for (let i = 0; i < leads.length; i += BATCH_SIZE) {
+    const batch = leads.slice(i, i + BATCH_SIZE);
+    console.log(`Generating emails ${i + 1}-${Math.min(i + BATCH_SIZE, leads.length)} / ${leads.length}`);
+    await Promise.all(
+      batch.map(async (lead) => {
+        try {
+          const email = await generateOutreachEmail({
+            lead,
+            segmentName: lead.segment?.name ?? "firma",
+            type: "initial",
+          });
+          if (email.skipReason) {
+            skippedSegment++;
+            details.push(`${lead.companyName}: preskočený (${email.skipReason})`);
+            return;
+          }
+          if (!email.subject || !email.body) {
+            failed++;
+            details.push(`${lead.companyName}: prázdny email`);
+            return;
+          }
+          await prisma.leadEmail.create({
+            data: { leadId: lead.id, subject: email.subject, body: email.body, emailType: "initial", status: "draft" },
+          });
+          generated++;
+        } catch (err) {
+          failed++;
+          details.push(`${lead.companyName}: chyba (${(err as Error).message.slice(0, 80)})`);
+          console.error("Email gen failed for:", lead.companyName, err);
+        }
+      }),
+    );
   }
 
-  // Informational: new leads in scope that were skipped for missing e-mail.
-  const skipped = await prisma.lead.count({
+  // New leads in scope we couldn't queue because they have no e-mail.
+  const missingEmail = await prisma.lead.count({
     where: { status: "new", companyEmail: null, ...(segmentId ? { segmentId } : {}) },
   });
 
-  return NextResponse.json({ generated, skipped });
+  return NextResponse.json({
+    generated,
+    skipped: skippedSegment + missingEmail,
+    failed,
+    details: details.slice(0, 50),
+  });
 }

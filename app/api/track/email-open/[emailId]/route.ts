@@ -32,17 +32,23 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { emailId } = await params;
   const ua = request.headers.get("user-agent") ?? "unknown";
   const ip = (request.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || "unknown";
+  console.log("Pixel hit for email:", emailId, "· UA:", ua.slice(0, 80));
 
   // Record the open. We await the DB write (serverless would otherwise drop an
   // un-awaited promise after the response), but it's a tiny write so the pixel
   // still returns in a few ms. Tracking errors never fail the pixel.
-  if (!BOT_RE.test(ua)) {
+  if (BOT_RE.test(ua)) {
+    console.log("Pixel: bot/scanner skipped for", emailId);
+  } else {
     try {
       const row = await prisma.leadEmail.findUnique({
         where: { id: emailId },
-        select: { openedAt: true, openLog: true },
+        select: { openedAt: true, openCount: true, openLog: true },
       });
-      if (row) {
+      if (!row) {
+        console.log("Pixel: no leadEmail found for", emailId);
+      } else {
+        console.log("Current openCount before update:", row.openCount, "for", emailId);
         const log = (Array.isArray(row.openLog) ? row.openLog : []) as unknown as OpenEntry[];
         const now = new Date();
         log.push({ ts: now.toISOString(), ip, ua: ua.slice(0, 300) });
@@ -56,8 +62,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           },
         });
       }
-    } catch {
-      /* ignore — never break the pixel on a tracking error */
+    } catch (e) {
+      console.error("Pixel tracking error for", emailId, e); // never break the pixel
     }
   }
 

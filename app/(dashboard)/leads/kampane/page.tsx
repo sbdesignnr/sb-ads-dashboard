@@ -192,7 +192,11 @@ export default function CampaignsPage() {
         body: JSON.stringify({ segmentId, limit: dailyLimit }),
       }).then((r) => r.json());
       if (j.error) toast.error(j.error, { id: "gen" });
-      else toast.success(`Vygenerovaných ${j.generated} emailov${j.skipped ? ` · ${j.skipped} bez emailu` : ""}`, { id: "gen" });
+      else
+        toast.success(
+          `Vygenerovaných ${j.generated}${j.skipped ? ` · ${j.skipped} preskočených` : ""}${j.failed ? ` · ${j.failed} zlyhaných` : ""}`,
+          { id: "gen" },
+        );
       loadQueues();
       loadCampaigns();
     } catch {

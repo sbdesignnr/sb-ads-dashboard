@@ -659,12 +659,18 @@ export function LeadDetail({ id }: { id: string }) {
                       <p className="truncate text-sm font-medium text-foreground">{e.subject || "—"}</p>
                       <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                         <span className="text-muted">
-                          ✉️ Odoslaný: {e.sentAt ? new Date(e.sentAt).toLocaleDateString("sk-SK") : "—"}
+                          ✉️ Email odoslaný:{" "}
+                          {e.sentAt
+                            ? new Date(e.sentAt).toLocaleString("sk-SK", { dateStyle: "short", timeStyle: "short" })
+                            : "—"}
                         </span>
-                        <span className={openColor(e.openCount)}>👁 Otvorený: {e.openCount}×</span>
-                        {e.openCount > 0 && (
-                          <span className="text-muted">🕐 Naposledy: {relTime(e.lastOpenedAt ?? e.openedAt)}</span>
-                        )}
+                        <span className={openColor(e.openCount)}>
+                          {e.openCount === 0
+                            ? "👁 Neotvorený"
+                            : e.openCount === 1
+                              ? `👁 Otvorený 1× - ${relTime(e.lastOpenedAt ?? e.openedAt)}`
+                              : `👁 Otvorený ${e.openCount}×`}
+                        </span>
                       </div>
                       {e.openCount >= 2 && (
                         <div className="mt-2 inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-xs text-warning">
