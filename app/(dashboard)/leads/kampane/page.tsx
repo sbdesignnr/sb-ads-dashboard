@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import {
@@ -28,7 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { type LeadEmailDTO, type SegmentDTO, EMAIL_TYPE_LABEL } from "@/lib/leads/types";
+import { type LeadEmailDTO, type SegmentDTO, type CampaignDTO, EMAIL_TYPE_LABEL } from "@/lib/leads/types";
 
 interface Stats {
   sentToday: number;
@@ -49,7 +49,9 @@ export default function CampaignsPage() {
   const [segments, setSegments] = useState<SegmentDTO[]>([]);
   const [stats, setStats] = useState<Stats>({ sentToday: 0, pendingApproval: 0, totalSent: 0 });
 
-  // Campaign settings (single primary campaign).
+  // All campaigns (switchable) + the currently selected one's editable settings.
+  const [campaigns, setCampaigns] = useState<CampaignDTO[]>([]);
+  const initialized = useRef(false);
   const [campaignId, setCampaignId] = useState<string | null>(null);
   const [segmentId, setSegmentId] = useState("all");
   const [dailyLimit, setDailyLimit] = useState(20);
@@ -65,41 +67,73 @@ export default function CampaignsPage() {
   const [editing, setEditing] = useState<LeadEmailDTO | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  const applyCampaign = useCallback((c: CampaignDTO) => {
+    setCampaignId(c.id);
+    setSegmentId(c.segmentId ?? "all");
+    setDailyLimit(c.dailyLimit);
+    setSendTime(c.sendTime);
+    setIsActive(c.isActive);
+  }, []);
+
   const loadCampaigns = useCallback(async () => {
     const j = await fetch("/api/leads/campaigns").then((r) => r.json());
     setStats(j.stats ?? { sentToday: 0, pendingApproval: 0, totalSent: 0 });
-    const c = j.campaigns?.[0];
-    if (c) {
-      setCampaignId(c.id);
-      setSegmentId(c.segmentId ?? "all");
-      setDailyLimit(c.dailyLimit);
-      setSendTime(c.sendTime);
-      setIsActive(c.isActive);
-    }
+    setCampaigns(j.campaigns ?? []);
   }, []);
 
+  // Email queues are scoped to the active campaign's segment.
   const loadQueues = useCallback(async () => {
     setLoading(true);
     try {
+      const seg = `&segment=${encodeURIComponent(segmentId)}`;
       const [a, b] = await Promise.all([
-        fetch("/api/leads/emails?queue=initial").then((r) => r.json()),
-        fetch("/api/leads/emails?queue=followup").then((r) => r.json()),
+        fetch(`/api/leads/emails?queue=initial${seg}`).then((r) => r.json()),
+        fetch(`/api/leads/emails?queue=followup${seg}`).then((r) => r.json()),
       ]);
       setQueue(a.emails ?? []);
       setFollowups(b.emails ?? []);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [segmentId]);
 
+  // Load segments + campaigns once.
   useEffect(() => {
     fetch("/api/leads/segments")
       .then((r) => r.json())
       .then((j) => setSegments(j.segments ?? []))
       .catch(() => {});
     loadCampaigns();
+  }, [loadCampaigns]);
+
+  // Select the first campaign once, on initial load (not when the user picks
+  // "Nová kampaň", which sets campaignId back to null on purpose).
+  useEffect(() => {
+    if (initialized.current || campaigns.length === 0) return;
+    initialized.current = true;
+    applyCampaign(campaigns[0]);
+  }, [campaigns, applyCampaign]);
+
+  // Reload the visible queues whenever the active segment changes.
+  useEffect(() => {
     loadQueues();
-  }, [loadCampaigns, loadQueues]);
+  }, [loadQueues]);
+
+  const selectCampaign = (id: string) => {
+    if (id === "__new__") {
+      setCampaignId(null);
+      setSegmentId("all");
+      setDailyLimit(20);
+      setSendTime("08:30");
+      setIsActive(false);
+      return;
+    }
+    const c = campaigns.find((x) => x.id === id);
+    if (c) applyCampaign(c);
+  };
+
+  const activeSegmentName =
+    segmentId === "all" ? "Všetky segmenty" : segments.find((s) => s.id === segmentId)?.name ?? "—";
 
   const saveCampaign = async (overrides: Partial<{ isActive: boolean }> = {}) => {
     setSavingCampaign(true);
@@ -262,6 +296,28 @@ export default function CampaignsPage() {
           <CardTitle>Nastavenia kampane</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Campaign switcher — pick which campaign (segment) you're managing */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted">Kampaň:</span>
+            <Select value={campaignId ?? "__new__"} onValueChange={selectCampaign}>
+              <SelectTrigger className="h-9 w-auto min-w-[220px]">
+                <SelectValue placeholder="Nová kampaň" />
+              </SelectTrigger>
+              <SelectContent>
+                {campaigns.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                    {c.isActive ? " · aktívna" : ""}
+                  </SelectItem>
+                ))}
+                <SelectItem value="__new__">＋ Nová kampaň</SelectItem>
+              </SelectContent>
+            </Select>
+            {campaignId && (
+              <Badge variant={isActive ? "success" : "default"}>{isActive ? "Aktívna" : "Neaktívna"}</Badge>
+            )}
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="space-y-1">
               <span className="text-xs text-muted">Segment</span>
@@ -325,6 +381,12 @@ export default function CampaignsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* The queues below show ONLY the active campaign's segment. */}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-muted">Zobrazujem emaily pre segment:</span>
+        <Badge variant="info">{activeSegmentName}</Badge>
+      </div>
 
       {/* SEKCIA B — initial queue */}
       <Card>

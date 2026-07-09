@@ -260,7 +260,7 @@ export function LeadDetail({ id }: { id: string }) {
                     </Button>
                   </a>
                   <a
-                    href={`https://www.responsinator.com/?url=${encodeURIComponent(lead.websiteUrl)}`}
+                    href={`https://search.google.com/test/mobile-friendly?url=${encodeURIComponent(lead.websiteUrl)}`}
                     target="_blank"
                     rel="noreferrer"
                     className="flex-1"
@@ -302,6 +302,35 @@ export function LeadDetail({ id }: { id: string }) {
               </Row>
               {lead.websiteAge != null && (
                 <Row icon={Layers} label="Vek webu">~{lead.websiteAge} rokov (podľa copyrightu)</Row>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Screenshot */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Screenshot webu</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {lead.screenshotUrl ? (
+                <a
+                  href={lead.websiteUrl ?? lead.screenshotUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block overflow-hidden rounded-lg border border-border"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={lead.screenshotUrl}
+                    alt={`Screenshot webu ${lead.companyName}`}
+                    className="w-full"
+                    loading="lazy"
+                  />
+                </a>
+              ) : (
+                <div className="flex items-center justify-center rounded-lg border border-dashed border-border bg-surface-2/40 py-12 text-sm text-muted">
+                  Screenshot nie je dostupný
+                </div>
               )}
             </CardContent>
           </Card>

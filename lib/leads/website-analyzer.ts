@@ -5,7 +5,7 @@
 // Modern-framework / broken / parked / social sites are disqualified outright.
 
 import Anthropic from "@anthropic-ai/sdk";
-import { captureScreenshot } from "./screenshot";
+import { captureScreenshot, uploadScreenshot } from "./screenshot";
 
 const QUALIFY_AT = 65;
 
@@ -330,12 +330,17 @@ function parseVisualJson(text: string): { score: number; reason: string; mainIss
  * when there is no ANTHROPIC_API_KEY at all.
  */
 async function analyzeVisual(url: string, pageText: string): Promise<VisualResult> {
+  // Capture once, then persist to storage so the detail page can show it. The
+  // screenshot is useful even if the AI scoring later fails, so we keep the URL
+  // across all return paths.
+  const shot = await captureScreenshot(url).catch(() => null);
+  const screenshotUrl = shot ? await uploadScreenshot(shot.bytes, shot.mediaType).catch(() => null) : null;
+
   if (!process.env.ANTHROPIC_API_KEY) {
-    return { score: null, reason: null, mainIssues: [], screenshotUrl: null };
+    return { score: null, reason: null, mainIssues: [], screenshotUrl };
   }
 
   const client = new Anthropic();
-  const shot = await captureScreenshot(url).catch(() => null);
 
   try {
     const content: Anthropic.MessageParam["content"] = shot
@@ -362,13 +367,10 @@ async function analyzeVisual(url: string, pageText: string): Promise<VisualResul
       .map((b) => b.text)
       .join("");
     const parsed = parseVisualJson(text);
-    if (!parsed) return { score: null, reason: null, mainIssues: [], screenshotUrl: null };
-    // Note: screenshotUrl stays null — the screenshot bytes are used transiently
-    // for the AI only (the key must never be persisted in a URL). Persisting a
-    // viewable screenshot via Supabase storage is a later enhancement.
-    return { score: parsed.score, reason: parsed.reason, mainIssues: parsed.mainIssues, screenshotUrl: null };
+    if (!parsed) return { score: null, reason: null, mainIssues: [], screenshotUrl };
+    return { score: parsed.score, reason: parsed.reason, mainIssues: parsed.mainIssues, screenshotUrl };
   } catch {
-    return { score: null, reason: null, mainIssues: [], screenshotUrl: null };
+    return { score: null, reason: null, mainIssues: [], screenshotUrl };
   }
 }
 

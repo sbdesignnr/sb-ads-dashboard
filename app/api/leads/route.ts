@@ -6,10 +6,7 @@ import { serializeLead } from "@/lib/leads/store";
 
 export const dynamic = "force-dynamic";
 
-// Lead-gen rebuild (new 0-100 scoring, qualify >= 65) went live on 2026-07-08.
-// Leads created before it are "legacy" and grandfathered in so the existing
-// pipeline isn't lost.
-const IMPL_DATE = new Date("2026-07-08T00:00:00.000Z");
+const KNOWN_STATUSES = ["new", "contacted", "responded", "converted", "rejected"];
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -19,30 +16,18 @@ export async function GET(req: NextRequest) {
   const segment = sp.get("segment"); // segmentId | "all" | "none"
   const status = sp.get("status") ?? "all"; // status | "all"
 
-  // Segment scope only — used both for the list and for the "of Y" total count.
   const segmentWhere: Prisma.LeadWhereInput = {};
   if (segment && segment !== "all") segmentWhere.segmentId = segment === "none" ? null : segment;
 
-  // Show newly qualified leads (score >= 65) OR any legacy lead created before
-  // the rebuild — the whole old pipeline is kept regardless of its score; the
-  // strict 65 bar applies only to leads scanned under the new system.
-  const qualifiedOr: Prisma.LeadWhereInput[] = [
-    { websiteScore: { gte: 65 } },
-    { createdAt: { lt: IMPL_DATE } },
-  ];
-
+  // Show every lead in the segment regardless of score — the score is only a
+  // quality indicator on the card, not a display filter. Only leads that are
+  // explicitly rejected are hidden (and only from the default / "Všetky" view;
+  // an explicit "rejected" tab still shows them).
   const where: Prisma.LeadWhereInput = { ...segmentWhere };
-  if (status === "contacted" || status === "converted" || status === "responded" || status === "rejected") {
-    // Curated / engaged tabs (and the rejected tab): show every lead with that
-    // status regardless of score — you never want a worked lead to vanish.
+  if (KNOWN_STATUSES.includes(status)) {
     where.status = status;
-  } else if (status === "new") {
-    where.status = "new";
-    where.OR = qualifiedOr;
   } else {
-    // "all": hide rejected + noise, but keep qualified, legacy and engaged leads.
     where.status = { not: "rejected" };
-    where.OR = [...qualifiedOr, { status: { in: ["contacted", "responded", "converted"] } }];
   }
 
   const [leads, total] = await Promise.all([
@@ -51,7 +36,7 @@ export async function GET(req: NextRequest) {
       orderBy: [{ websiteScore: "desc" }, { createdAt: "desc" }],
       take: 500,
     }),
-    // Total leads that exist in this segment (all statuses) — for "X z Y".
+    // Total leads in this segment (all statuses) — for the "X z Y" counter.
     prisma.lead.count({ where: segmentWhere }),
   ]);
 
