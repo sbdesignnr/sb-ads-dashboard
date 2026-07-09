@@ -25,6 +25,7 @@ import {
   Compass,
   Ban,
   ExternalLink,
+  Search,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,7 @@ export function LeadDetail({ id }: { id: string }) {
   const [email, setEmail] = useState("");
   const [emailing, setEmailing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [findingEmail, setFindingEmail] = useState(false);
 
   useEffect(() => {
     fetch(`/api/leads/${id}`)
@@ -142,6 +144,23 @@ export function LeadDetail({ id }: { id: string }) {
       setCopied(true);
       toast.success("Email skopírovaný");
       setTimeout(() => setCopied(false), 1800);
+    }
+  };
+
+  const findEmail = async () => {
+    setFindingEmail(true);
+    try {
+      const j = await fetch(`/api/leads/${id}/find-email`, { method: "POST" }).then((r) => r.json());
+      if (j.found && j.email) {
+        setLead((prev) => (prev ? { ...prev, companyEmail: j.email } : prev));
+        toast.success(`Email nájdený: ${j.email}`);
+      } else {
+        toast.error("Email sa nenašiel");
+      }
+    } catch {
+      toast.error("Hľadanie zlyhalo");
+    } finally {
+      setFindingEmail(false);
     }
   };
 
@@ -447,7 +466,20 @@ export function LeadDetail({ id }: { id: string }) {
               <Row icon={Globe} label="Konateľ">
                 {lead.ownerName ? `${lead.ownerName}${lead.ownerPosition ? ` (${lead.ownerPosition})` : ""}` : "neznámy"}
               </Row>
-              <Row icon={Mail} label="Email">{lead.companyEmail ?? "—"}</Row>
+              <Row icon={Mail} label="Email">
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className={lead.companyEmail ? "" : "text-muted"}>{lead.companyEmail ?? "—"}</span>
+                  <button
+                    onClick={findEmail}
+                    disabled={findingEmail}
+                    className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-0.5 text-xs text-muted transition-colors hover:text-foreground disabled:opacity-50"
+                    title="Nájsť email scrapovaním webu"
+                  >
+                    {findingEmail ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
+                    {lead.companyEmail ? "Hľadať znova" : "Hľadať email"}
+                  </button>
+                </span>
+              </Row>
               <Row icon={Globe} label="Telefón">{lead.companyPhone ?? "—"}</Row>
               <Row icon={Globe} label="Adresa">{lead.companyAddress ?? "—"}</Row>
               <Row icon={Globe} label="IČO">{lead.ico ?? "—"}</Row>

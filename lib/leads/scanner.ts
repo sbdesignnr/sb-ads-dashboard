@@ -5,6 +5,7 @@ import { analyzeWebsite } from "./website-analyzer";
 import { enrichCompany } from "./orsr";
 import { enrichCompanyAres } from "./ares";
 import { generateDossier } from "./ai";
+import { findEmailForLead } from "./email-finder";
 
 /** Guess whether a lead is a Czech company (routes ARES vs ORSR enrichment). */
 function isCzLead(lead: Pick<Lead, "source" | "companyCity" | "companyAddress">): boolean {
@@ -167,6 +168,13 @@ export async function enrichLead(
       lastScannedAt: new Date(),
     },
   });
+
+  // Still no contact e-mail? Try the dedicated finder (site scrape + Jina).
+  const emailNow = dossier?.email ?? analysis.extractedEmails[0] ?? lead.companyEmail ?? null;
+  if (!emailNow) {
+    const found = await findEmailForLead(lead.websiteUrl, lead.companyName).catch(() => null);
+    if (found) await prisma.lead.update({ where: { id: leadId }, data: { companyEmail: found } });
+  }
 
   return { qualified: true, active: registry?.active ?? null };
 }
