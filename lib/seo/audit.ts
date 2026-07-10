@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import type { SeoSite } from "@prisma/client";
 import { crawlSite } from "./crawler";
-import { runChecks, priorityOf, type Pillar } from "./checks";
+import { runChecks, priorityOf, type Pillar, type GscSignals } from "./checks";
 import { readPsi } from "./metrics";
-import { gscConfigured, gscStatus } from "./gsc";
+import { gscConfigured, gscStatus, searchAnalytics, daysAgo } from "./gsc";
 
 const PILLARS: Pillar[] = ["technical", "onpage", "content", "authority", "local"];
 
@@ -68,7 +68,21 @@ export async function runAudit(siteId?: string): Promise<AuditResult> {
     // One PageSpeed run on the homepage — it's slow (~30 s) but Core Web Vitals
     // are a ranking factor, and a bad LCP outweighs most on-page tweaks.
     const psi = await readPsi(site.url).catch(() => ({ lcp: null, cls: null, performance: null }));
-    const drafts = runChecks(crawl, publishedPosts, { url: site.url, ...psi });
+
+    // Real positions/CTR — the checks that need them simply don't fire without GSC.
+    let gscSignals: GscSignals | null = null;
+    if (gsc?.ok && site.gscProperty) {
+      const window = { siteUrl: site.gscProperty, startDate: daysAgo(31), endDate: daysAgo(3) };
+      const [queries, pages] = await Promise.all([
+        searchAnalytics({ ...window, dimensions: ["query"], rowLimit: 500 }).catch(() => []),
+        searchAnalytics({ ...window, dimensions: ["page"], rowLimit: 500 }).catch(() => []),
+      ]);
+      const map = (rows: typeof queries) =>
+        rows.map((r) => ({ key: r.keys[0], clicks: r.clicks, impressions: r.impressions, ctr: r.ctr, position: r.position }));
+      gscSignals = { queries: map(queries), pages: map(pages) };
+    }
+
+    const drafts = runChecks(crawl, publishedPosts, { url: site.url, ...psi }, gscSignals);
 
     const now = new Date();
     let tasksNew = 0;

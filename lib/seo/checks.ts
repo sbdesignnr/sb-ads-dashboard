@@ -130,6 +130,57 @@ function technicalChecks(c: CrawlResult): TaskDraft[] {
     });
   }
 
+  // The single most destructive canonical mistake: a page declaring some OTHER
+  // page as its canonical. Google then folds it into that page and stops ranking
+  // it independently. Usually caused by `alternates.canonical` set once in the
+  // root layout and inherited by every child route.
+  const norm = (u: string) => u.replace(/\/$/, "").toLowerCase();
+  const wrongCanonical = c.pages.filter((p) => p.ok && p.canonical && norm(p.canonical) !== norm(p.url));
+  if (wrongCanonical.length) {
+    const home = norm(c.origin);
+    const toHome = wrongCanonical.filter((p) => norm(p.canonical!) === home);
+    out.push({
+      checkKey: "technical:canonical-not-self",
+      pillar: "technical",
+      title: `KRITICKÉ: ${wrongCanonical.length} stránok kanonizuje na inú URL`,
+      why:
+        `${wrongCanonical.length} z ${c.pages.length} stránok má canonical ukazujúci inam${toHome.length ? `, z toho ${toHome.length} priamo na homepage` : ""}. ` +
+        `Tým Googlu hovoríš „táto stránka je duplikát, neindexuj ju samostatne“ — signály sa zlejú do cieľovej URL a podstránky prakticky vypadnú z výsledkov. ` +
+        `Postihnuté: ${wrongCanonical.slice(0, 6).map((p) => path(p.url)).join(", ")}${wrongCanonical.length > 6 ? ` a ďalšie` : ""}. ` +
+        `Toto je najčastejšie príčina „web mám, ale organika je nula“.`,
+      steps: [
+        "V app/layout.tsx ODSTRÁŇ `alternates: { canonical: site.url }` z root metadata — deti ho dedia",
+        "Každej stránke daj vlastný self-referencing canonical v jej generateMetadata",
+        "Pre dynamické routy (blog/[slug], projekty/[slug]) zlož canonical zo slugu",
+        "Over: fetchni každú URL a skontroluj, že canonical ukazuje sám na seba",
+        "V Search Console → Kontrola URL over, že „Používateľom vybraná kanonická“ = „Google vybraná kanonická“",
+      ],
+      codeSnippet: `// app/layout.tsx — canonical PREČ z root metadata
+export const metadata: Metadata = {
+  metadataBase: new URL(site.url),
+  // alternates: { canonical: site.url },  ← ZMAZAŤ
+};
+
+// app/sluzby/page.tsx (a každá ďalšia statická stránka)
+export const metadata: Metadata = {
+  title: "Tvorba webstránok na mieru | SB Design Nitra",
+  alternates: { canonical: "/sluzby" },   // metadataBase doplní doménu
+};
+
+// app/projekty/[slug]/page.tsx — dynamicky
+export async function generateMetadata({ params }): Promise<Metadata> {
+  const { slug } = await params;
+  return { alternates: { canonical: \`/projekty/\${slug}\` } };
+}`,
+      effortMin: 60,
+      impact: 5,
+      metric: "gsc_impressions",
+      expectedNote:
+        "Podstránky sa začnú indexovať samostatne. Reindexácia trvá 2–6 týždňov; očakávaj násobný nárast impresií na /sluzby, /projekty a case studies.",
+      verifyAfterDays: 42,
+    });
+  }
+
   const noindex = c.pages.filter((p) => p.ok && /noindex/i.test(p.robotsMeta ?? ""));
   if (noindex.length) {
     out.push({
@@ -563,11 +614,91 @@ function cwvChecks(cwv: CwvInput | null): TaskDraft[] {
   return out;
 }
 
-/** Everything the crawl (+ optional PSI) can prove. GSC checks layer on later. */
-export function runChecks(crawl: CrawlResult, publishedPosts: number, cwv: CwvInput | null = null): TaskDraft[] {
+// ------------------------------------------------------ Search Console
+
+export interface GscSignals {
+  queries: { key: string; clicks: number; impressions: number; ctr: number; position: number }[];
+  pages: { key: string; clicks: number; impressions: number; ctr: number; position: number }[];
+}
+
+function gscChecks(g: GscSignals | null, crawl: CrawlResult): TaskDraft[] {
+  if (!g || (!g.queries.length && !g.pages.length)) return [];
+  const out: TaskDraft[] = [];
+
+  // Striking distance: already on page 1-2, a nudge lands them in the top 3 where
+  // ~90 % of the clicks live. Cheapest ranking gains that exist.
+  const striking = g.queries
+    .filter((q) => q.position >= 4 && q.position <= 15 && q.impressions >= 3)
+    .sort((a, b) => b.impressions - a.impressions)
+    .slice(0, 8);
+  if (striking.length) {
+    out.push({
+      checkKey: "content:striking-distance",
+      pillar: "content",
+      title: `${striking.length} dopytov na dosah top 3 (pozícia 4–15)`,
+      why:
+        `Na tieto dopyty sa už zobrazuješ, len nízko — a pod pozíciou 3 klikne takmer nikto:\n` +
+        striking.map((q) => `• „${q.key}“ — pozícia ${q.position.toFixed(1)}, ${q.impressions} impresií, ${q.clicks} klikov`).join("\n") +
+        `\nPosunúť existujúcu stránku z 8. na 3. miesto je násobne lacnejšie než rankovať nový obsah od nuly.`,
+      steps: [
+        "Pre každý dopyt nájdi stránku, ktorá sa naň zobrazuje (Search Console → Výkonnosť → filter dopytu)",
+        "Použi dopyt doslovne v title, H1 a prvom odseku",
+        "Rozšír obsah tak, aby odpovedal na zámer za dopytom lepšie než top 3 výsledky",
+        "Pridaj 2–3 interné odkazy na túto stránku s dopytom ako anchor textom",
+        "Ak dopyt cieli inam než stránka ponúka, vytvor preň samostatnú stránku",
+      ],
+      effortMin: 120,
+      impact: 5,
+      metric: "gsc_clicks",
+      expectedNote: `Posun do top 3 typicky znásobí kliky 5–10×. Aktuálne z ${striking.reduce((s, q) => s + q.impressions, 0)} impresií máš ${striking.reduce((s, q) => s + q.clicks, 0)} klikov.`,
+      verifyAfterDays: 42,
+    });
+  }
+
+  // Ranking well but nobody clicks → the SERP snippet is the problem, not the page.
+  const crawled = new Set(crawl.pages.map((p) => p.url.replace(/\/$/, "")));
+  const lowCtr = g.pages
+    .filter((p) => crawled.has(p.key.replace(/\/$/, "")) && p.position <= 10 && p.impressions >= 10 && p.ctr < 0.02)
+    .sort((a, b) => b.impressions - a.impressions)
+    .slice(0, 5);
+  if (lowCtr.length) {
+    out.push({
+      checkKey: "onpage:low-ctr-good-position",
+      pillar: "onpage",
+      title: `${lowCtr.length} stránok ranguje v top 10, ale takmer nikto neklikne`,
+      why:
+        lowCtr.map((p) => `• ${path(p.key)} — pozícia ${p.position.toFixed(1)}, ${p.impressions} impresií, CTR ${(p.ctr * 100).toFixed(1)} %`).join("\n") +
+        `\nPri pozícii do 10 sa očakáva CTR 2–10 %. Nižšie číslo znamená, že title a description v SERP nepresvedčia — stránka je v poriadku, útržok nie.`,
+      steps: [
+        "Prepíš title: dopyt na začiatku + konkrétny benefit alebo číslo",
+        "Prepíš description: čo návštevník získa, nie čo predávaš. Skonči výzvou k akcii",
+        "Nesľubuj nič, čo na stránke nie je — vysoký bounce ti pozíciu zhorší",
+        "Zmeraj o 4 týždne: CTR by malo stúpnuť aj bez zmeny pozície",
+      ],
+      targetUrl: lowCtr[0].key,
+      effortMin: 45,
+      impact: 4,
+      metric: "gsc_ctr",
+      metricScope: lowCtr[0].key,
+      expectedNote: "CTR z pod 2 % na 3–6 % bez zmeny pozície.",
+      verifyAfterDays: 28,
+    });
+  }
+
+  return out;
+}
+
+/** Everything the crawl, PSI and Search Console together can prove. */
+export function runChecks(
+  crawl: CrawlResult,
+  publishedPosts: number,
+  cwv: CwvInput | null = null,
+  gsc: GscSignals | null = null,
+): TaskDraft[] {
   return [
     ...technicalChecks(crawl),
     ...cwvChecks(cwv),
+    ...gscChecks(gsc, crawl),
     ...onPageChecks(crawl),
     ...schemaChecks(crawl),
     ...contentChecks(crawl, publishedPosts),
