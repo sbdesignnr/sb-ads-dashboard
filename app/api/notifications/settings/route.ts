@@ -16,6 +16,8 @@ export async function GET() {
       alertConversions: s.alertConversions,
       alertActions: s.alertActions,
       alertBlog: s.alertBlog,
+      blogReminderDay: s.blogReminderDay,
+      blogReminderHour: s.blogReminderHour,
       minConversionValue: s.minConversionValue,
       quietHoursStart: s.quietHoursStart,
       quietHoursEnd: s.quietHoursEnd,
@@ -43,6 +45,11 @@ export async function PUT(req: NextRequest) {
   const hour = (v: unknown) => (v === null ? null : typeof v === "number" && v >= 0 && v <= 23 ? Math.floor(v) : undefined);
   if ("quietHoursStart" in body) { const h = hour(body.quietHoursStart); if (h !== undefined) patch.quietHoursStart = h; }
   if ("quietHoursEnd" in body) { const h = hour(body.quietHoursEnd); if (h !== undefined) patch.quietHoursEnd = h; }
+  // Blog reminder schedule: ISO weekday 1-7, hour 0-23 (Europe/Bratislava).
+  if (typeof body.blogReminderDay === "number" && body.blogReminderDay >= 1 && body.blogReminderDay <= 7)
+    patch.blogReminderDay = Math.floor(body.blogReminderDay);
+  if (typeof body.blogReminderHour === "number" && body.blogReminderHour >= 0 && body.blogReminderHour <= 23)
+    patch.blogReminderHour = Math.floor(body.blogReminderHour);
   const s = await updateNotificationSettings(patch);
   return NextResponse.json({ ok: true, settings: { telegramLinked: Boolean(s.telegramChatId), enabled: s.enabled } });
 }

@@ -15,10 +15,22 @@ interface Settings {
   alertConversions: boolean;
   alertActions: boolean;
   alertBlog: boolean;
+  blogReminderDay: number; // ISO weekday 1=Po … 7=Ne
+  blogReminderHour: number; // 0-23, Europe/Bratislava
   minConversionValue: number | null;
   quietHoursStart: number | null;
   quietHoursEnd: number | null;
 }
+
+const WEEKDAYS = [
+  { value: 1, label: "Pondelok" },
+  { value: 2, label: "Utorok" },
+  { value: 3, label: "Streda" },
+  { value: 4, label: "Štvrtok" },
+  { value: 5, label: "Piatok" },
+  { value: 6, label: "Sobota" },
+  { value: 7, label: "Nedeľa" },
+];
 
 export function MobileNotifications() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -156,14 +168,49 @@ export function MobileNotifications() {
             </div>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-foreground">Nápady na blog (týždenne)</p>
+                <p className="text-sm font-medium text-foreground">Pripomienka na článok (týždenne)</p>
                 <p className="text-xs text-muted">
-                  Raz týždenne AI navrhne tému článku s odôvodnením (sezónnosť, trend, medzera oproti konkurencii) a
-                  SEO potenciálom.
+                  Raz týždenne ti príde výzva napísať konkrétny článok — s témou, odôvodnením (sezónnosť, trend,
+                  medzera oproti konkurencii), kľúčovým slovom, SEO potenciálom a osnovou. Už napísané témy preskakuje.
                 </p>
               </div>
               <Switch checked={settings.alertBlog} onCheckedChange={(v) => patch({ alertBlog: v })} />
             </div>
+            {settings.alertBlog && (
+              <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface-2/40 p-3">
+                <label className="space-y-1">
+                  <span className="block text-xs text-muted">Deň</span>
+                  <select
+                    value={settings.blogReminderDay}
+                    onChange={(e) => patch({ blogReminderDay: Number(e.target.value) })}
+                    className="h-9 rounded-lg border border-border bg-surface px-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+                  >
+                    {WEEKDAYS.map((d) => (
+                      <option key={d.value} value={d.value}>
+                        {d.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1">
+                  <span className="block text-xs text-muted">Hodina</span>
+                  <select
+                    value={settings.blogReminderHour}
+                    onChange={(e) => patch({ blogReminderHour: Number(e.target.value) })}
+                    className="h-9 rounded-lg border border-border bg-surface px-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+                  >
+                    {Array.from({ length: 24 }, (_, h) => (
+                      <option key={h} value={h}>
+                        {String(h).padStart(2, "0")}:00
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="text-xs text-muted">
+                  Príde raz týždenne v tento čas (Bratislava). Tiché hodiny ju nepotlačia.
+                </p>
+              </div>
+            )}
             <div className="flex items-center gap-2 pt-1">
               <Button variant="secondary" size="sm" onClick={test} disabled={busy === "test"}>
                 {busy === "test" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

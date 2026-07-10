@@ -215,6 +215,8 @@ model NotificationSetting {
   alertConversions  Boolean  @default(true) @map("alert_conversions")
   alertActions      Boolean  @default(true) @map("alert_actions")
   alertBlog         Boolean  @default(true) @map("alert_blog")
+  blogReminderDay   Int      @default(1) @map("blog_reminder_day") // ISO weekday 1=Mon…7=Sun
+  blogReminderHour  Int      @default(9) @map("blog_reminder_hour") // 0-23, Europe/Bratislava
   minConversionValue Float?  @map("min_conversion_value")
   quietHoursStart   Int?     @map("quiet_hours_start") // 0-23 local hour, inclusive
   quietHoursEnd     Int?     @map("quiet_hours_end")

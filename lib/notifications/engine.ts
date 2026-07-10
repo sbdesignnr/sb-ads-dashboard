@@ -35,6 +35,60 @@ function isoWeek(now = new Date()): string {
   return `${target.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
 }
 
+/** Current hour (0-23) in Bratislava. */
+function bratislavaHour(now = new Date()): number {
+  return (
+    Number(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hour12: false, timeZone: "Europe/Bratislava" }).format(now)) % 24
+  );
+}
+
+/** ISO weekday in Bratislava: 1=Mon … 7=Sun. */
+function bratislavaIsoWeekday(now = new Date()): number {
+  const jsDay = new Date(`${bratislavaDate(now)}T12:00:00Z`).getUTCDay(); // 0=Sun
+  return jsDay === 0 ? 7 : jsDay;
+}
+
+/** Normalised 5-word title fingerprint — catches near-duplicate topic titles. */
+function titleKey(s: string): string {
+  return s
+    .replace(/^(?:Nápad na blog|Čas napísať článok)\s*:\s*/i, "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // strip diacritics
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 5)
+    .join(" ");
+}
+
+/**
+ * The concrete article to write next: the highest-ranked weekly topic that isn't
+ * already a blog post (same target keyword or near-identical title) and wasn't
+ * suggested in a recent reminder. Falls back to the top topic if all repeat.
+ */
+async function pickArticleTopic() {
+  const topics = await generateWeeklyPlan();
+  if (!topics.length) return null;
+
+  const posts = await prisma.blogPost.findMany({ select: { title: true, targetKeyword: true } });
+  const usedKeywords = new Set(posts.map((p) => p.targetKeyword?.toLowerCase().trim()).filter(Boolean) as string[]);
+  const usedTitles = new Set(posts.map((p) => titleKey(p.title)));
+
+  const prior = await prisma.sentAlert.findMany({
+    where: { type: "blog_suggestion" },
+    select: { title: true },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+  });
+  for (const a of prior) usedTitles.add(titleKey(a.title));
+
+  return (
+    topics.find((t) => !usedKeywords.has(t.targetKeyword.toLowerCase().trim()) && !usedTitles.has(titleKey(t.title))) ??
+    topics[0]
+  );
+}
+
 function siteBase(): string {
   return (process.env.NEXTAUTH_URL || process.env.GOOGLE_OAUTH_REDIRECT_URI?.replace(/\/api\/.*/, "") || "").replace(/\/$/, "");
 }
@@ -65,24 +119,42 @@ export async function runNotifications(): Promise<RunResult> {
   const conversionAlerts: FinalAlert[] = [];
   const extraAlerts: FinalAlert[] = [];
 
-  // --- Blog idea (independent of Google Ads) — at most once per ISO week ---
-  if (settings.enabled && settings.alertBlog && settings.telegramChatId && process.env.ANTHROPIC_API_KEY) {
+  // --- "Write an article" reminder (independent of Google Ads) ---
+  // Fires on the configured weekday + hour (Bratislava), at most once per ISO week.
+  // The cron ticks every 30 min, so an hour match gives two chances; the dedup key
+  // ensures only the first one is delivered.
+  if (settings.enabled && settings.alertBlog && settings.telegramChatId) {
+    const dueNow =
+      bratislavaIsoWeekday() === settings.blogReminderDay && bratislavaHour() === settings.blogReminderHour;
     const key = `blog_suggestion:${isoWeek()}`;
-    const exists = await prisma.sentAlert.findUnique({ where: { dedupKey: key } });
-    if (!exists) {
+    if (dueNow && !(await prisma.sentAlert.findUnique({ where: { dedupKey: key } }))) {
       try {
-        const topic = (await generateWeeklyPlan())[0];
+        const topic = await pickArticleTopic();
         if (topic) {
+          const outline = topic.outline.slice(0, 4).map((h) => `• ${h}`).join("\n");
           extraAlerts.push({
             key,
             type: "blog_suggestion",
             severity: "info",
-            title: `Nápad na blog: ${topic.title}`,
-            body: `${topic.reason}\n\nKľúčové slovo: ${topic.targetKeyword} · SEO potenciál ${topic.potentialLabel} (${topic.seoPotential}/100). V dashboarde ti AI vygeneruje celý článok.`,
+            // Keep the topic in the title — pickArticleTopic() reads past alert
+            // titles to avoid suggesting the same article twice.
+            title: `Čas napísať článok: ${topic.title}`,
+            body: [
+              "Dnes je tvoj deň na nový článok. Konkrétna téma:",
+              "",
+              `📝 ${topic.title}`,
+              "",
+              `Prečo práve teraz: ${topic.reason}`,
+              `Kľúčové slovo: ${topic.targetKeyword}`,
+              `SEO potenciál: ${topic.potentialLabel} (${topic.seoPotential}/100)`,
+              ...(outline ? ["", "Osnova:", outline] : []),
+              "",
+              "V dashboarde ti AI vygeneruje celý článok.",
+            ].join("\n"),
           });
         }
       } catch {
-        /* ignore */
+        /* best-effort — a failed reminder must never break the whole run */
       }
     }
   }
@@ -225,11 +297,14 @@ async function deliverFinals(
   let sent = 0;
   let skipped = 0;
   for (const a of finals) {
-    if (quiet && a.severity !== "critical") {
+    // The blog reminder fires at a weekday+hour the user picked themselves, so
+    // quiet hours must not silently swallow it (it only gets one hour per week).
+    if (quiet && a.severity !== "critical" && a.type !== "blog_suggestion") {
       skipped++;
       continue;
     }
-    const text = `${SEVERITY_ICON[a.severity]} <b>${escapeHtml(a.title)}</b>\n\n${escapeHtml(a.body)}`;
+    const icon = a.type === "blog_suggestion" ? "✍️" : SEVERITY_ICON[a.severity];
+    const text = `${icon} <b>${escapeHtml(a.title)}</b>\n\n${escapeHtml(a.body)}`;
     const res = await sendTelegram(settings.telegramChatId, text, {
       link: linkFor(a.type),
       linkLabel: a.type === "blog_suggestion" ? "Otvoriť blog" : "Otvoriť dashboard",
