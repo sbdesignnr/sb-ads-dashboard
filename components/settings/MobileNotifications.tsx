@@ -15,6 +15,7 @@ interface Settings {
   alertConversions: boolean;
   alertActions: boolean;
   alertBlog: boolean;
+  alertSeo: boolean;
   blogReminderDay: number; // ISO weekday 1=Po … 7=Ne
   blogReminderHour: number; // 0-23, Europe/Bratislava
   minConversionValue: number | null;
@@ -211,6 +212,16 @@ export function MobileNotifications() {
                 </p>
               </div>
             )}
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">SEO prehľad (týždenne)</p>
+                <p className="text-xs text-muted">
+                  V pondelok ráno prehľad: skóre, tri najdôležitejšie úlohy na tento týždeň a overené
+                  výsledky tých, ktoré si už spravil.
+                </p>
+              </div>
+              <Switch checked={settings.alertSeo} onCheckedChange={(v) => patch({ alertSeo: v })} />
+            </div>
             <div className="flex items-center gap-2 pt-1">
               <Button variant="secondary" size="sm" onClick={test} disabled={busy === "test"}>
                 {busy === "test" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
