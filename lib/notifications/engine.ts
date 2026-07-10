@@ -131,7 +131,11 @@ export async function runNotifications(): Promise<RunResult> {
       try {
         const topic = await pickArticleTopic();
         if (topic) {
-          const outline = topic.outline.slice(0, 4).map((h) => `• ${h}`).join("\n");
+          // The AI sometimes prefixes headings with "H2:" — strip it for the message.
+          const outline = topic.outline
+            .slice(0, 4)
+            .map((h) => `• ${h.replace(/^\s*h[1-6]\s*:\s*/i, "").trim()}`)
+            .join("\n");
           extraAlerts.push({
             key,
             type: "blog_suggestion",
