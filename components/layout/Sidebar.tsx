@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { useUIStore } from "@/lib/store";
 import { NAV_ITEMS, isActive } from "./nav";
@@ -28,9 +28,13 @@ function Logo({ collapsed }: { collapsed: boolean }) {
 function NavLinks({
   collapsed,
   onNavigate,
+  // The desktop sidebar stays mounted (just hidden) on mobile, so the drawer must
+  // use its own layoutId — two live elements sharing one confuses framer-motion.
+  layoutId = "sidebar-active",
 }: {
   collapsed: boolean;
   onNavigate?: () => void;
+  layoutId?: string;
 }) {
   const pathname = usePathname();
   return (
@@ -54,7 +58,7 @@ function NavLinks({
           >
             {active && (
               <motion.span
-                layoutId="sidebar-active"
+                layoutId={layoutId}
                 className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary"
               />
             )}
@@ -119,40 +123,47 @@ export function Sidebar() {
         </div>
       </motion.aside>
 
-      {/* Mobile drawer */}
-      <AnimatePresence>
-        {mobileSidebarOpen && (
-          <div className="lg:hidden">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setMobileSidebarOpen(false)}
-              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
-            />
-            <motion.aside
-              initial={{ x: -300 }}
-              animate={{ x: 0 }}
-              exit={{ x: -300 }}
-              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-              className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border bg-surface"
-            >
-              <div className="flex h-16 items-center justify-between border-b border-border px-4">
-                <Logo collapsed={false} />
-                <button
-                  onClick={() => setMobileSidebarOpen(false)}
-                  className="rounded-lg p-1.5 text-muted hover:bg-surface-2 hover:text-foreground cursor-pointer"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-              <div className="flex flex-1 flex-col py-4">
-                <NavLinks collapsed={false} onNavigate={() => setMobileSidebarOpen(false)} />
-              </div>
-            </motion.aside>
-          </div>
-        )}
-      </AnimatePresence>
+      {/* Mobile drawer.
+          NOTE: deliberately NOT wrapped in <AnimatePresence>. An exit animation
+          keeps the child mounted until framer calls safeToRemove — and when a nav
+          tap closes the drawer *and* navigates at once (the route change remounts
+          the page via template.tsx), that callback can never fire. The backdrop
+          (fixed inset-0 z-40) then stays forever on top of the BottomNav/Header,
+          swallowing every tap: the page looks frozen. Unmounting immediately makes
+          that impossible. Enter animation only. */}
+      {mobileSidebarOpen && (
+        <div className="lg:hidden">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            onClick={() => setMobileSidebarOpen(false)}
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+          />
+          <motion.aside
+            initial={{ x: -300 }}
+            animate={{ x: 0 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border bg-surface"
+          >
+            <div className="flex h-16 items-center justify-between border-b border-border px-4">
+              <Logo collapsed={false} />
+              <button
+                onClick={() => setMobileSidebarOpen(false)}
+                className="rounded-lg p-1.5 text-muted hover:bg-surface-2 hover:text-foreground cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex flex-1 flex-col py-4">
+              <NavLinks
+                collapsed={false}
+                onNavigate={() => setMobileSidebarOpen(false)}
+                layoutId="sidebar-active-mobile"
+              />
+            </div>
+          </motion.aside>
+        </div>
+      )}
     </>
   );
 }

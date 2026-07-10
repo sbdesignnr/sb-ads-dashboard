@@ -8,7 +8,9 @@ export function JarvisButton() {
   const showBubbles = transcript || response || errorMsg;
 
   return (
-    <div className="fixed bottom-6 right-6 z-[60] flex flex-col items-end gap-2">
+    // On mobile the BottomNav (h-16 + safe area) owns the bottom edge, so lift the
+    // button above it — otherwise it covers the "Viac" tab. Desktop keeps bottom-6.
+    <div className="fixed right-6 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-[60] flex flex-col items-end gap-2 lg:bottom-6">
       {showBubbles && (
         <div className="flex max-w-[320px] flex-col items-end gap-2">
           {transcript && (
