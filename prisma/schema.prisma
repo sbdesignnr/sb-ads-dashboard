@@ -418,3 +418,82 @@ model Booking {
   @@index([date, status])
   @@map("bookings")
 }
+
+// ---------------------------------------------------------------------------
+// SEO engine. Audits a site across five pillars and emits concrete, measurable
+// tasks: every task carries a baseline metric snapshot, an expected effect and a
+// verification date, so after implementing it we can prove whether it worked.
+// ---------------------------------------------------------------------------
+
+model SeoSite {
+  id          String     @id @default(cuid())
+  domain      String     @unique // "sbdesign.sk"
+  url         String // canonical origin, e.g. "https://www.sbdesign.sk"
+  gscProperty String?    @map("gsc_property") // "sc-domain:sbdesign.sk" or a URL prefix
+  isPrimary   Boolean    @default(false) @map("is_primary")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  audits      SeoAudit[]
+  tasks       SeoTask[]
+
+  @@map("seo_sites")
+}
+
+model SeoAudit {
+  id           String    @id @default(cuid())
+  siteId       String    @map("site_id")
+  site         SeoSite   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  status       String    @default("running") // running | completed | failed
+  score        Int       @default(0) // overall 0-100
+  pillarScores Json?     @map("pillar_scores") // { technical, onpage, content, authority, local }
+  pagesCrawled Int       @default(0) @map("pages_crawled")
+  tasksOpen    Int       @default(0) @map("tasks_open")
+  gscConnected Boolean   @default(false) @map("gsc_connected")
+  errorMessage String?   @map("error_message")
+  startedAt    DateTime  @default(now()) @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+
+  @@index([siteId, startedAt])
+  @@map("seo_audits")
+}
+
+model SeoTask {
+  id       String  @id @default(cuid())
+  siteId   String  @map("site_id")
+  site     SeoSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  checkKey String  @map("check_key") // stable dedup id, e.g. "onpage:title-length:/sluzby"
+
+  pillar      String // technical | onpage | content | authority | local
+  title       String
+  why         String  @db.Text // the reasoning, with the site's real numbers
+  steps       Json // string[] — exact, do-this-then-that
+  codeSnippet String? @map("code_snippet") @db.Text
+  targetUrl   String? @map("target_url")
+
+  effortMin Int    @map("effort_min")
+  impact    Int // 1-5
+  priority  Int // impact-weighted, effort-discounted
+  status    String @default("todo") // todo | doing | done | verified | failed | dismissed
+  dueAt     DateTime? @map("due_at")
+
+  // --- measurement: the whole point of the system ---
+  metric          String? // gsc_impressions | gsc_clicks | gsc_ctr | gsc_position | psi_lcp | ga4_organic_sessions
+  metricScope     String?   @map("metric_scope") // the URL or query the metric is read for
+  baselineValue   Float?    @map("baseline_value")
+  baselineAt      DateTime? @map("baseline_at")
+  expectedValue   Float?    @map("expected_value")
+  expectedNote    String?   @map("expected_note")
+  verifyAfterDays Int       @default(28) @map("verify_after_days")
+  doneAt          DateTime? @map("done_at")
+  verifyAt        DateTime? @map("verify_at")
+  actualValue     Float?    @map("actual_value")
+  verdict         String? // improved | unchanged | worse
+  verdictNote     String?   @map("verdict_note") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([siteId, checkKey])
+  @@index([siteId, status, priority])
+  @@index([status, verifyAt])
+  @@map("seo_tasks")
+}
