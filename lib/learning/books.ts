@@ -129,6 +129,23 @@ interface OpenLibDoc {
   first_publish_year?: number;
 }
 
+/**
+ * Manual add: resolve whatever the user typed (any language) to the best real
+ * match with a cover. They typed the exact edition they want, so we take the top
+ * cover-bearing result as-is and read its real title/author/language.
+ */
+export async function lookupByTitle(query: string, author?: string): Promise<BookMeta | null> {
+  const results = await searchGoogle(query, author ?? "", undefined, 8);
+  // Require the result to actually match the query title (+ author if given) —
+  // otherwise the top cover-bearing result can be an unrelated book.
+  const hit = results.find(
+    (b) => b.coverUrl && titleRelated(b.title, [query]) && (!author || authorMatches(b.author, author)),
+  );
+  if (hit) return hit;
+  const ol = await fromOpenLibrary(query, author ?? "");
+  return ol?.coverUrl && titleRelated(ol.title, [query]) ? ol : null;
+}
+
 async function fromOpenLibrary(title: string, author: string): Promise<BookMeta | null> {
   const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(`${title} ${author}`)}&limit=1&fields=title,author_name,cover_i,isbn,first_publish_year`;
   try {

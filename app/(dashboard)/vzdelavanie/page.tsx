@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { Loader2, Sparkles, Star, X, Trash2, BookOpen, Check } from "lucide-react";
+import { Loader2, Sparkles, Star, X, Trash2, BookOpen, Check, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -242,6 +242,9 @@ export default function VzdelavaniePage() {
   const [recommending, setRecommending] = useState(false);
   const [selected, setSelected] = useState<Book | null>(null);
   const [focus, setFocus] = useState<Set<string>>(new Set());
+  const [addOpen, setAddOpen] = useState(false);
+  const [addTitle, setAddTitle] = useState("");
+  const [adding, setAdding] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/learning");
@@ -303,6 +306,34 @@ export default function VzdelavaniePage() {
     await fetch(`/api/learning/${id}`, { method: "DELETE" }).catch(() => {});
   };
 
+  const addBook = async () => {
+    const title = addTitle.trim();
+    if (!title) return;
+    setAdding(true);
+    toast.loading("Hľadám knihu a píšem odôvodnenie…", { id: "add" });
+    try {
+      const res = await fetch("/api/learning", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      const j = await res.json();
+      if (res.ok && j.book) {
+        toast.success(
+          j.foundCover ? `Pridané: „${j.book.title}"` : `Pridané: „${j.book.title}" (bez obálky v katalógu)`,
+          { id: "add", duration: 5000 },
+        );
+        setAddTitle("");
+        setAddOpen(false);
+        await load();
+      } else {
+        toast.error(j.message || j.error || "Nepodarilo sa pridať.", { id: "add" });
+      }
+    } finally {
+      setAdding(false);
+    }
+  };
+
   const toggleFocus = (c: string) =>
     setFocus((prev) => {
       const next = new Set(prev);
@@ -345,11 +376,38 @@ export default function VzdelavaniePage() {
           <h1 className="text-xl font-semibold text-foreground">Vzdelávanie</h1>
           <p className="text-sm text-muted">Knihy šité na mieru — prečo ich čítať a ako ich zapojiť do biznisu.</p>
         </div>
-        <Button size="sm" onClick={recommend} disabled={recommending}>
-          {recommending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          Odporuč mi knihy
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="secondary" onClick={() => setAddOpen((v) => !v)}>
+            <Plus className="h-4 w-4" />
+            Pridať knihu
+          </Button>
+          <Button size="sm" onClick={recommend} disabled={recommending}>
+            {recommending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Odporuč mi knihy
+          </Button>
+        </div>
       </div>
+
+      {addOpen && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface p-3">
+          <input
+            autoFocus
+            value={addTitle}
+            onChange={(e) => setAddTitle(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addBook()}
+            placeholder="Názov knihy (napr. Atomové návyky, alebo skopírovaný z Martinusu)…"
+            className="min-w-0 flex-1 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+          />
+          <Button size="sm" onClick={addBook} disabled={adding || !addTitle.trim()}>
+            {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            Pridať
+          </Button>
+          <p className="w-full text-xs text-muted">
+            Napíš presný slovenský/český názov (aj z Martinusu) — dohľadám obálku a AI napíše, prečo ju čítať a ako
+            ju použiť.
+          </p>
+        </div>
+      )}
 
       {/* Focus / filter chips */}
       <div className="flex flex-wrap gap-1.5">

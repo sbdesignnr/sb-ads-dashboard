@@ -63,6 +63,57 @@ PRE KAŽDÚ KNIHU:
 
 Píš po slovensky (názvy a mená autorov nechaj v origináli). Vráť VÝHRADNE cez nástroj "odporuc_knihy".`;
 
+export interface BookDescription {
+  category: LearningCategory;
+  why: string;
+  howToApply: string;
+  takeaways: string[];
+}
+
+const DESCRIBE_SYSTEM = `Si osobný mentor Samuela Bibeňa — zakladateľa SB Design (tvorba webov na mieru + výkonnostný online marketing, solo podnikateľ z Nitry, získava klientov cez cold outreach). Dostaneš konkrétnu knihu, ktorú si Samuel sám pridal. Napíš k nej:
+- "category": presne jedna z: biznis, predaj, marketing, zdravie, mindset, produktivita, financie.
+- "why": 2–3 vety PRIAMO pre Samuela, prečo mu táto kniha pomôže (konkrétne, napojené na jeho situáciu, nie fráza).
+- "howToApply": 2–4 vety s KONKRÉTNYM krokom, ako to zapojiť do SB Design alebo do života.
+- "takeaways": 3–4 hlavné ponaučenia (krátke odrážky).
+Píš po slovensky. Ak knihu nepoznáš, odhadni podľa názvu a autora, ale ostaň konkrétny. Vráť VÝHRADNE cez nástroj "popis".`;
+
+/** Tailored why/how/category for a specific book the user added manually. */
+export async function describeBook(title: string, author: string): Promise<BookDescription> {
+  const client = new Anthropic();
+  const msg = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1200,
+    system: DESCRIBE_SYSTEM,
+    tools: [
+      {
+        name: "popis",
+        description: "Popis knihy pre Samuela.",
+        input_schema: {
+          type: "object",
+          properties: {
+            category: { type: "string", enum: [...CATEGORIES] },
+            why: { type: "string" },
+            howToApply: { type: "string" },
+            takeaways: { type: "array", items: { type: "string" } },
+          },
+          required: ["category", "why", "howToApply", "takeaways"],
+        },
+      },
+    ],
+    tool_choice: { type: "tool", name: "popis" },
+    messages: [{ role: "user", content: `Kniha: „${title}" — ${author}` }],
+  });
+  const block = msg.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+  if (!block) throw new Error("AI nevrátila popis.");
+  const out = block.input as BookDescription;
+  return {
+    category: (CATEGORIES as readonly string[]).includes(out.category) ? out.category : "biznis",
+    why: out.why ?? "",
+    howToApply: out.howToApply ?? "",
+    takeaways: Array.isArray(out.takeaways) ? out.takeaways.slice(0, 5) : [],
+  };
+}
+
 export async function recommendBooks(input: RecommendInput): Promise<BookRec[]> {
   const client = new Anthropic();
   const have = input.alreadyHave.length
