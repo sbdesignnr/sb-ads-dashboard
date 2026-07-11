@@ -6,6 +6,7 @@ import {
   Loader2,
   Play,
   Check,
+  Sparkles,
   X,
   ChevronDown,
   ChevronRight,
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 
 interface SeoTask {
   id: string;
+  checkKey: string;
   pillar: string;
   title: string;
   why: string;
@@ -87,22 +89,38 @@ function ScoreRing({ score }: { score: number }) {
   );
 }
 
+// Checks the autopilot can resolve on its own (rest are guided, manual work).
+const AUTOFIXABLE = new Set(["content:no-topical-authority"]);
+
 function TaskCard({
   task,
   onStatus,
   onToggleStep,
+  onAutofix,
 }: {
   task: SeoTask;
   onStatus: (id: string, s: string) => void;
   onToggleStep: (id: string, index: number) => void;
+  onAutofix: (id: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [autofixing, setAutofixing] = useState(false);
 
   const doneSet = new Set(task.doneSteps ?? []);
   const stepsDone = task.steps.filter((_, i) => doneSet.has(i)).length;
   const allDone = task.steps.length > 0 && stepsDone === task.steps.length;
   const locked = task.status === "done" || task.status === "verified";
+  const canAutofix = AUTOFIXABLE.has(task.checkKey) && !locked;
+
+  const runAutofix = async () => {
+    setAutofixing(true);
+    try {
+      await onAutofix(task.id);
+    } finally {
+      setAutofixing(false);
+    }
+  };
 
   const act = async (s: string) => {
     setBusy(true);
@@ -160,6 +178,23 @@ function TaskCard({
 
       {open && (
         <div className="space-y-3 border-t border-border px-4 py-3 text-sm">
+          {canAutofix && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2.5">
+              <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-foreground">Nechaj to na AI</p>
+                <p className="text-xs text-muted">
+                  Vyberie tému (žiadne opakovanie), napíše celý článok a uloží ho ako draft. Ty ho len prečítaš a
+                  publikuješ.
+                </p>
+              </div>
+              <Button size="sm" onClick={runAutofix} disabled={autofixing}>
+                {autofixing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {autofixing ? "Píšem článok…" : "Napíš článok za mňa"}
+              </Button>
+            </div>
+          )}
+
           <div>
             <p className="mb-1 text-xs font-medium text-muted">Prečo na tom záleží</p>
             <p className="text-foreground">{task.why}</p>
@@ -335,6 +370,34 @@ export default function SeoPage() {
     }).catch(() => {});
   };
 
+  const autofix = async (id: string) => {
+    toast.loading("AI píše článok… (~1 min)", { id: "autofix" });
+    try {
+      const res = await fetch(`/api/seo/tasks/${id}/autofix`, { method: "POST" });
+      const j = await res.json();
+      if (res.ok && j.post) {
+        toast.success(
+          (t) => (
+            <span className="flex flex-col gap-1">
+              <span>Článok pripravený: „{j.post.title}“ (SEO {j.post.seoScore}/100)</span>
+              <a href={`/blog/${j.post.id}`} className="font-medium text-primary underline" onClick={() => toast.dismiss(t.id)}>
+                Otvoriť a skontrolovať →
+              </a>
+            </span>
+          ),
+          { id: "autofix", duration: 12000 },
+        );
+        await load();
+      } else {
+        toast.error(j.error === "not_autofixable" ? "Túto úlohu treba spraviť ručne." : j.error || "Nepodarilo sa.", {
+          id: "autofix",
+        });
+      }
+    } catch {
+      toast.error("Generovanie zlyhalo.", { id: "autofix" });
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center gap-2 py-20 text-sm text-muted">
@@ -411,7 +474,7 @@ export default function SeoPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             {thisWeek.map((t) => (
-              <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} />
+              <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} onAutofix={autofix} />
             ))}
           </CardContent>
         </Card>
@@ -425,7 +488,7 @@ export default function SeoPage() {
           {open.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted">Žiadne otvorené úlohy. Spusti audit.</p>
           ) : (
-            open.map((t) => <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} />)
+            open.map((t) => <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} onAutofix={autofix} />)
           )}
         </CardContent>
       </Card>
@@ -437,7 +500,7 @@ export default function SeoPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             {awaiting.map((t) => (
-              <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} />
+              <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} onAutofix={autofix} />
             ))}
           </CardContent>
         </Card>
@@ -450,7 +513,7 @@ export default function SeoPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             {verified.map((t) => (
-              <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} />
+              <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} onAutofix={autofix} />
             ))}
           </CardContent>
         </Card>
