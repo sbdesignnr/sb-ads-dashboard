@@ -43,6 +43,9 @@ interface SeoTask {
   verdict: string | null;
   verdictNote: string | null;
   verifyAt: string | null;
+  fixPrUrl: string | null;
+  fixPrState: string | null;
+  fixPrNumber: number | null;
 }
 
 interface Overview {
@@ -90,28 +93,35 @@ function ScoreRing({ score }: { score: number }) {
 }
 
 // Checks the autopilot can resolve on its own (rest are guided, manual work).
-const AUTOFIXABLE = new Set(["content:no-topical-authority"]);
+const ARTICLE_CHECKS = new Set(["content:no-topical-authority"]);
+const WEB_CHECKS = new Set(["technical:schema-service", "technical:schema-faq"]);
 
 function TaskCard({
   task,
   onStatus,
   onToggleStep,
   onAutofix,
+  onDeploy,
 }: {
   task: SeoTask;
   onStatus: (id: string, s: string) => void;
   onToggleStep: (id: string, index: number) => void;
   onAutofix: (id: string) => Promise<void>;
+  onDeploy: (id: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [autofixing, setAutofixing] = useState(false);
+  const [deploying, setDeploying] = useState(false);
 
   const doneSet = new Set(task.doneSteps ?? []);
   const stepsDone = task.steps.filter((_, i) => doneSet.has(i)).length;
   const allDone = task.steps.length > 0 && stepsDone === task.steps.length;
   const locked = task.status === "done" || task.status === "verified";
-  const canAutofix = AUTOFIXABLE.has(task.checkKey) && !locked;
+  const isArticle = ARTICLE_CHECKS.has(task.checkKey);
+  const isWeb = WEB_CHECKS.has(task.checkKey);
+  const hasOpenPr = isWeb && Boolean(task.fixPrUrl) && task.fixPrState === "open";
+  const canAutofix = (isArticle || isWeb) && !locked && !hasOpenPr;
 
   const runAutofix = async () => {
     setAutofixing(true);
@@ -119,6 +129,15 @@ function TaskCard({
       await onAutofix(task.id);
     } finally {
       setAutofixing(false);
+    }
+  };
+
+  const runDeploy = async () => {
+    setDeploying(true);
+    try {
+      await onDeploy(task.id);
+    } finally {
+      setDeploying(false);
     }
   };
 
@@ -184,14 +203,40 @@ function TaskCard({
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-foreground">Nechaj to na AI</p>
                 <p className="text-xs text-muted">
-                  Vyberie tému (žiadne opakovanie), napíše celý článok a uloží ho ako draft. Ty ho len prečítaš a
-                  publikuješ.
+                  {isArticle
+                    ? "Vyberie tému (žiadne opakovanie), napíše celý článok a uloží ho ako draft. Ty ho len prečítaš a publikuješ."
+                    : "AI vygeneruje presnú zmenu kódu a otvorí Pull Request s náhľadovým deployom. Ty skontroluješ a klikneš Nasadiť."}
                 </p>
               </div>
               <Button size="sm" onClick={runAutofix} disabled={autofixing}>
                 {autofixing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {autofixing ? "Píšem článok…" : "Napíš článok za mňa"}
+                {autofixing ? (isArticle ? "Píšem článok…" : "Pripravujem PR…") : isArticle ? "Napíš článok za mňa" : "Vyriešiť za mňa"}
               </Button>
+            </div>
+          )}
+
+          {hasOpenPr && (
+            <div className="rounded-lg border border-success/40 bg-success/10 px-3 py-2.5">
+              <p className="text-sm font-medium text-foreground">Zmena je pripravená v Pull Requeste</p>
+              <p className="mt-0.5 text-xs text-muted">
+                Skontroluj náhľadový deploy (na PR ho pridá Vercel ako „Preview"). Keď je OK, klikni Nasadiť — zlúči sa
+                do produkcie a spustím meranie výsledku.
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <a
+                  href={task.fixPrUrl ?? "#"}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-foreground hover:border-primary/40"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Otvoriť PR #{task.fixPrNumber} + náhľad
+                </a>
+                <Button size="sm" onClick={runDeploy} disabled={deploying}>
+                  {deploying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  Nasadiť
+                </Button>
+              </div>
             </div>
           )}
 
@@ -371,11 +416,11 @@ export default function SeoPage() {
   };
 
   const autofix = async (id: string) => {
-    toast.loading("AI píše článok… (~1 min)", { id: "autofix" });
+    toast.loading("AI pracuje… (~1 min)", { id: "autofix" });
     try {
       const res = await fetch(`/api/seo/tasks/${id}/autofix`, { method: "POST" });
       const j = await res.json();
-      if (res.ok && j.post) {
+      if (res.ok && j.kind === "article_draft") {
         toast.success(
           (t) => (
             <span className="flex flex-col gap-1">
@@ -388,13 +433,42 @@ export default function SeoPage() {
           { id: "autofix", duration: 12000 },
         );
         await load();
+      } else if (res.ok && j.kind === "web_pr") {
+        toast.success(
+          (t) => (
+            <span className="flex flex-col gap-1">
+              <span>Pull Request #{j.pr.number} vytvorený. Skontroluj náhľad a daj Nasadiť.</span>
+              <a href={j.pr.url} target="_blank" rel="noreferrer" className="font-medium text-primary underline" onClick={() => toast.dismiss(t.id)}>
+                Otvoriť PR →
+              </a>
+            </span>
+          ),
+          { id: "autofix", duration: 12000 },
+        );
+        await load();
       } else {
         toast.error(j.error === "not_autofixable" ? "Túto úlohu treba spraviť ručne." : j.error || "Nepodarilo sa.", {
           id: "autofix",
         });
       }
     } catch {
-      toast.error("Generovanie zlyhalo.", { id: "autofix" });
+      toast.error("Automatická oprava zlyhala.", { id: "autofix" });
+    }
+  };
+
+  const deploy = async (id: string) => {
+    toast.loading("Nasadzujem (merge PR)…", { id: "deploy" });
+    try {
+      const res = await fetch(`/api/seo/tasks/${id}/deploy`, { method: "POST" });
+      const j = await res.json();
+      if (res.ok && j.merged) {
+        toast.success("Nasadené do produkcie — baseline odfotený, výsledok premeriam automaticky", { id: "deploy", duration: 8000 });
+        await load();
+      } else {
+        toast.error(j.error || "Nasadenie zlyhalo.", { id: "deploy" });
+      }
+    } catch {
+      toast.error("Nasadenie zlyhalo.", { id: "deploy" });
     }
   };
 
@@ -474,7 +548,7 @@ export default function SeoPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             {thisWeek.map((t) => (
-              <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} onAutofix={autofix} />
+              <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} onAutofix={autofix} onDeploy={deploy} />
             ))}
           </CardContent>
         </Card>
@@ -488,7 +562,7 @@ export default function SeoPage() {
           {open.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted">Žiadne otvorené úlohy. Spusti audit.</p>
           ) : (
-            open.map((t) => <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} onAutofix={autofix} />)
+            open.map((t) => <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} onAutofix={autofix} onDeploy={deploy} />)
           )}
         </CardContent>
       </Card>
@@ -500,7 +574,7 @@ export default function SeoPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             {awaiting.map((t) => (
-              <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} onAutofix={autofix} />
+              <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} onAutofix={autofix} onDeploy={deploy} />
             ))}
           </CardContent>
         </Card>
@@ -513,7 +587,7 @@ export default function SeoPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             {verified.map((t) => (
-              <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} onAutofix={autofix} />
+              <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} onAutofix={autofix} onDeploy={deploy} />
             ))}
           </CardContent>
         </Card>

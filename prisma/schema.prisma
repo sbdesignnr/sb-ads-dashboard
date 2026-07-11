@@ -475,6 +475,12 @@ model SeoTask {
   priority  Int // impact-weighted, effort-discounted
   status    String @default("todo") // todo | doing | done | verified | failed | dismissed
   doneSteps Int[]  @default([]) @map("done_steps") // indexy odškrtnutých krokov
+
+  // Webový autopilot: PR vytvorený "Vyriešiť za mňa"
+  fixBranch  String? @map("fix_branch")
+  fixPrNumber Int?   @map("fix_pr_number")
+  fixPrUrl   String? @map("fix_pr_url")
+  fixPrState String? @map("fix_pr_state") // open | merged | closed
   dueAt     DateTime? @map("due_at")
 
   // --- measurement: the whole point of the system ---
