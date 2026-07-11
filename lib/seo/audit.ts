@@ -131,8 +131,21 @@ export async function runAudit(siteId?: string): Promise<AuditResult> {
     // Checks that stopped firing → the problem is gone. Auto-resolve, but leave
     // manual playbook tasks (authority/local) alone — a crawl can't see those.
     const firedKeys = new Set(drafts.map((d) => d.checkKey));
+
+    // A check can also stop firing because its DATA is missing, not because the
+    // problem went away. PageSpeed intermittently returns NO_LCP, and GSC can be
+    // unreachable — resolving those tasks would silently claim a win we never had.
+    const unmeasured: string[] = [];
+    if (psi.lcp === null) unmeasured.push("technical:cwv-lcp", "technical:cwv-cls");
+    if (!gscSignals) unmeasured.push("content:striking-distance", "onpage:low-ctr-good-position");
+
     const stale = await prisma.seoTask.findMany({
-      where: { siteId: site.id, status: { in: ["todo", "doing"] }, pillar: { notIn: ["authority", "local"] } },
+      where: {
+        siteId: site.id,
+        status: { in: ["todo", "doing"] },
+        pillar: { notIn: ["authority", "local"] },
+        checkKey: { notIn: unmeasured },
+      },
       select: { id: true, checkKey: true },
     });
     const resolvedIds = stale.filter((t) => !firedKeys.has(t.checkKey)).map((t) => t.id);
