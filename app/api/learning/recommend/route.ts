@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     seen.add(bookKey(r.title));
     // Ground the title/language in the real catalog — corrects the AI's guessed
     // translations and gives a real SK/CZ cover when a translation exists.
-    const meta = await lookupBook(r.titleOriginal, r.author, { hintTitle: r.title }).catch(() => null);
+    const meta = await lookupBook(r.titleOriginal, r.author, { hintTitle: r.title, hintLanguage: r.language }).catch(() => null);
     const displayTitle = meta?.title || r.title;
     const lang = meta?.resolvedLanguage ?? "en";
     const book = await prisma.learningBook.create({
