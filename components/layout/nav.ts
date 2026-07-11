@@ -8,6 +8,7 @@ import {
   FileText,
   Newspaper,
   Gauge,
+  BookOpen,
   Youtube,
   Target,
   Settings,
@@ -37,6 +38,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/videos", label: "Videá", icon: Youtube },
   { href: "/leads", label: "Leady", icon: Target },
   { href: "/rezervacie", label: "Rezervácie", icon: CalendarClock },
+  { href: "/vzdelavanie", label: "Vzdelávanie", icon: BookOpen },
   { href: "/jarvis", label: "Jarvis", icon: Bot },
   { href: "/settings", label: "Nastavenia", icon: Settings },
 ];

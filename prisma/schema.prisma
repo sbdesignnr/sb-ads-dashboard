@@ -505,3 +505,34 @@ model SeoTask {
   @@index([status, verifyAt])
   @@map("seo_tasks")
 }
+
+// ---------------------------------------------------------------------------
+// Vzdelávanie: a tailored reading path. AI recommends real books (grounded via
+// Google Books / Open Library for real covers + metadata), each with a
+// personalised "why" and "how to apply to your business", tracked as you read.
+// ---------------------------------------------------------------------------
+
+model LearningBook {
+  id            String    @id @default(cuid())
+  title         String
+  author        String
+  category      String // biznis | predaj | marketing | zdravie | mindset | produktivita | financie
+  coverUrl      String?   @map("cover_url")
+  isbn          String?
+  publishedYear Int?      @map("published_year")
+  why           String    @db.Text // prečo čítať práve TY — šité na mieru
+  howToApply    String    @db.Text  @map("how_to_apply") // ako to zapojiť do biznisu/života
+  takeaways     String[]  @default([]) // hlavné ponaučenia
+  priority      Int       @default(0) // poradie v učebnom pláne (nižšie = skôr)
+  status        String    @default("want") // want | reading | read | skipped
+  rating        Int? // 1-5 po prečítaní
+  notes         String    @default("") @db.Text
+  startedAt     DateTime? @map("started_at")
+  finishedAt    DateTime? @map("finished_at")
+  source        String    @default("ai") // ai | manual
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, priority])
+  @@map("learning_books")
+}
