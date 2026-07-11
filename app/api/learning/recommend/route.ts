@@ -38,10 +38,16 @@ export async function POST(req: NextRequest) {
   for (const r of recs) {
     if (seen.has(bookKey(r.title))) continue; // never duplicate what he already has
     seen.add(bookKey(r.title));
-    const meta = await lookupBook(r.title, r.author).catch(() => null);
+    // Ground the title/language in the real catalog — corrects the AI's guessed
+    // translations and gives a real SK/CZ cover when a translation exists.
+    const meta = await lookupBook(r.titleOriginal, r.author, { hintTitle: r.title }).catch(() => null);
+    const displayTitle = meta?.title || r.title;
+    const lang = meta?.resolvedLanguage ?? "en";
     const book = await prisma.learningBook.create({
       data: {
-        title: meta?.title || r.title,
+        title: displayTitle,
+        originalTitle: lang !== "en" && r.titleOriginal !== displayTitle ? r.titleOriginal : null,
+        language: lang,
         author: meta?.author || r.author,
         category: r.category,
         coverUrl: meta?.coverUrl ?? null,

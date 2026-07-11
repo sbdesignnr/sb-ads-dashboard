@@ -3,6 +3,8 @@ import type { LearningBook } from "@prisma/client";
 export interface LearningBookDTO {
   id: string;
   title: string;
+  originalTitle: string | null;
+  language: string | null;
   author: string;
   category: string;
   coverUrl: string | null;
@@ -24,6 +26,8 @@ export function serializeBook(b: LearningBook): LearningBookDTO {
   return {
     id: b.id,
     title: b.title,
+    originalTitle: b.originalTitle,
+    language: b.language,
     author: b.author,
     category: b.category,
     coverUrl: b.coverUrl,

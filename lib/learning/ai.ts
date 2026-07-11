@@ -20,7 +20,9 @@ export const CATEGORIES = [
 export type LearningCategory = (typeof CATEGORIES)[number];
 
 export interface BookRec {
-  title: string;
+  title: string; // názov vydania, ktoré má čítať (SK/CZ ak existuje preklad)
+  titleOriginal: string; // pôvodný (anglický) názov — na dohľadanie obálky
+  language: "SK" | "CZ" | "en";
   author: string;
   category: LearningCategory;
   why: string;
@@ -41,9 +43,16 @@ Tvoja úloha: odporučiť KONKRÉTNE, REÁLNE existujúce knihy (svetovo známe 
 
 PRAVIDLÁ PRE VÝBER:
 - Len skutočné knihy so správnym názvom a autorom (musia sa dať dohľadať). Radšej známe tituly, nie okrajové.
+- Samuel číta po SLOVENSKY alebo ČESKY. SILNE preferuj knihy, ktoré MAJÚ slovenský alebo český preklad. Knihu iba v angličtine zaraď len ak je naozaj zásadná a preklad neexistuje.
 - Priorita: predaj, marketing, budovanie biznisu a osobná efektivita — to sú jeho páky. Doplň mindset/psychológiu, financie a zdravie (energia = výkon), aby bol rast vyvážený.
 - Nikdy neodporúčaj knihu, ktorú už má (dostaneš zoznam).
 - Ak dostaneš zvolené oblasti záujmu, drž sa ich; ak nie, urob vyvážený mix.
+
+JAZYK VYDANIA (dôležité):
+- "title" = názov vydania, ktoré má reálne čítať: ak existuje SK preklad, uveď slovenský názov; inak český; ak preklad neexistuje, pôvodný.
+- "language" = "SK" ak si dal slovenský názov, "CZ" ak český, "en" ak iba originál.
+- "titleOriginal" = VŽDY pôvodný (najčastejšie anglický) názov knihy — slúži na dohľadanie obálky.
+- Uvádzaj len preklady, o ktorých reálne vieš, že existujú. Nevymýšľaj názvy prekladov.
 
 PRE KAŽDÚ KNIHU:
 - "why": 2–3 vety PRIAMO pre Samuela — prečo práve on, práve teraz. Konkrétne, nie všeobecné frázy. Napoj na jeho situáciu (solo podnikateľ, získava klientov cez cold outreach, robí weby a reklamu).
@@ -77,7 +86,9 @@ export async function recommendBooks(input: RecommendInput): Promise<BookRec[]> 
               items: {
                 type: "object",
                 properties: {
-                  title: { type: "string" },
+                  title: { type: "string", description: "Názov vydania na čítanie (SK/CZ ak existuje preklad)." },
+                  titleOriginal: { type: "string", description: "Pôvodný (anglický) názov — na dohľadanie obálky." },
+                  language: { type: "string", enum: ["SK", "CZ", "en"] },
                   author: { type: "string" },
                   category: { type: "string", enum: [...CATEGORIES] },
                   why: { type: "string" },
@@ -85,7 +96,7 @@ export async function recommendBooks(input: RecommendInput): Promise<BookRec[]> 
                   takeaways: { type: "array", items: { type: "string" } },
                   priority: { type: "number" },
                 },
-                required: ["title", "author", "category", "why", "howToApply", "takeaways", "priority"],
+                required: ["title", "titleOriginal", "language", "author", "category", "why", "howToApply", "takeaways", "priority"],
               },
             },
           },
@@ -105,10 +116,13 @@ export async function recommendBooks(input: RecommendInput): Promise<BookRec[]> 
   const block = msg.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
   if (!block) throw new Error("AI nevrátila odporúčania.");
   const out = block.input as { books?: BookRec[] };
-  return (out.books ?? [])
-    .filter((b) => b.title && b.author)
+  const list = Array.isArray(out.books) ? out.books : [];
+  return list
+    .filter((b) => b && b.title && b.author)
     .map((b) => ({
       ...b,
+      titleOriginal: b.titleOriginal || b.title,
+      language: (["SK", "CZ", "en"] as const).includes(b.language) ? b.language : "en",
       category: (CATEGORIES as readonly string[]).includes(b.category) ? b.category : "biznis",
       takeaways: Array.isArray(b.takeaways) ? b.takeaways.slice(0, 5) : [],
     }));

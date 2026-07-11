@@ -516,6 +516,8 @@ model LearningBook {
   id            String    @id @default(cuid())
   title         String
   author        String
+  originalTitle  String?   @map("original_title") // pôvodný (anglický) názov — pre dohľadanie obálky
+  language      String?   // SK | CZ | en (jazyk zobrazeného vydania)
   category      String // biznis | predaj | marketing | zdravie | mindset | produktivita | financie
   coverUrl      String?   @map("cover_url")
   isbn          String?

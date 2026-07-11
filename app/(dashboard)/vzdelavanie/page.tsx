@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 interface Book {
   id: string;
   title: string;
+  originalTitle: string | null;
+  language: string | null;
   author: string;
   category: string;
   coverUrl: string | null;
@@ -137,6 +139,11 @@ function BookModal({
               {book.author}
               {book.publishedYear ? ` · ${book.publishedYear}` : ""}
             </p>
+            {book.originalTitle && book.originalTitle !== book.title && (
+              <p className="mt-0.5 text-xs text-muted">
+                {book.language === "SK" ? "Slovenské" : book.language === "CZ" ? "České" : ""} vydanie · originál: {book.originalTitle}
+              </p>
+            )}
 
             <div className="mt-3 flex flex-wrap gap-2">
               {(["want", "reading", "read"] as const).map((s) => (
@@ -207,6 +214,11 @@ function BookCard({ book, onOpen }: { book: Book; onOpen: () => void }) {
     <button type="button" onClick={onOpen} className="group text-left">
       <div className="relative aspect-[2/3] overflow-hidden rounded-lg border border-border shadow-sm transition-transform group-hover:-translate-y-1 group-hover:shadow-lg">
         <Cover book={book} />
+        {book.language && (
+          <span className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">
+            {book.language === "en" ? "EN" : book.language}
+          </span>
+        )}
         {book.status === "read" && (
           <div className="absolute right-1.5 top-1.5 rounded-full bg-success p-1 text-white shadow">
             <Check className="h-3 w-3" strokeWidth={3} />
