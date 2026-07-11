@@ -32,6 +32,7 @@ interface SeoTask {
   impact: number;
   priority: number;
   status: string;
+  doneSteps: number[];
   metric: string | null;
   expectedNote: string | null;
   verifyAfterDays: number;
@@ -86,9 +87,22 @@ function ScoreRing({ score }: { score: number }) {
   );
 }
 
-function TaskCard({ task, onStatus }: { task: SeoTask; onStatus: (id: string, s: string) => void }) {
+function TaskCard({
+  task,
+  onStatus,
+  onToggleStep,
+}: {
+  task: SeoTask;
+  onStatus: (id: string, s: string) => void;
+  onToggleStep: (id: string, index: number) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const doneSet = new Set(task.doneSteps ?? []);
+  const stepsDone = task.steps.filter((_, i) => doneSet.has(i)).length;
+  const allDone = task.steps.length > 0 && stepsDone === task.steps.length;
+  const locked = task.status === "done" || task.status === "verified";
 
   const act = async (s: string) => {
     setBusy(true);
@@ -129,6 +143,12 @@ function TaskCard({ task, onStatus }: { task: SeoTask; onStatus: (id: string, s:
             Priorita {task.priority} · dopad {task.impact}/5 · {task.effortMin} min
             {task.metric && ` · meria sa cez ${task.metric}`}
           </p>
+          {!locked && stepsDone > 0 && (
+            <p className={cn("mt-1 text-xs font-medium", allDone ? "text-success" : "text-primary")}>
+              Krok {stepsDone}/{task.steps.length}
+              {allDone ? " — hotovo, môžeš dať Hotovo ✓" : " rozpracované"}
+            </p>
+          )}
           {task.verdictNote && (
             <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-foreground">
               {verdictIcon}
@@ -146,12 +166,44 @@ function TaskCard({ task, onStatus }: { task: SeoTask; onStatus: (id: string, s:
           </div>
 
           <div>
-            <p className="mb-1 text-xs font-medium text-muted">Presné kroky</p>
-            <ol className="list-decimal space-y-1 pl-5 text-foreground">
-              {task.steps.map((s, i) => (
-                <li key={i}>{s}</li>
-              ))}
-            </ol>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs font-medium text-muted">Presné kroky — odškrtávaj postupne</p>
+              <span className={cn("text-xs font-medium", allDone ? "text-success" : "text-muted")}>
+                {stepsDone}/{task.steps.length} hotových
+              </span>
+            </div>
+            {/* Progress bar */}
+            <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-surface-2">
+              <div
+                className={cn("h-full rounded-full transition-all", allDone ? "bg-success" : "bg-primary")}
+                style={{ width: `${task.steps.length ? (stepsDone / task.steps.length) * 100 : 0}%` }}
+              />
+            </div>
+            <ul className="space-y-1.5">
+              {task.steps.map((s, i) => {
+                const checked = doneSet.has(i);
+                return (
+                  <li key={i}>
+                    <button
+                      type="button"
+                      onClick={() => onToggleStep(task.id, i)}
+                      disabled={locked}
+                      className="flex w-full items-start gap-2.5 rounded-md px-1 py-1 text-left transition-colors hover:bg-surface-2/60 disabled:cursor-default disabled:hover:bg-transparent"
+                    >
+                      <span
+                        className={cn(
+                          "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] border transition-colors",
+                          checked ? "border-success bg-success text-white" : "border-border bg-surface",
+                        )}
+                      >
+                        {checked && <Check className="h-3 w-3" strokeWidth={3} />}
+                      </span>
+                      <span className={cn("text-sm", checked ? "text-muted line-through" : "text-foreground")}>{s}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
 
           {task.codeSnippet && (
@@ -183,19 +235,23 @@ function TaskCard({ task, onStatus }: { task: SeoTask; onStatus: (id: string, s:
                 Otvoriť stránku
               </a>
             )}
-            <div className="ml-auto flex gap-2">
-              {task.status === "todo" && (
-                <Button size="sm" variant="secondary" onClick={() => act("doing")} disabled={busy}>
-                  Začať
-                </Button>
+            <div className="ml-auto flex items-center gap-2">
+              {allDone && (task.status === "todo" || task.status === "doing") && (
+                <span className="hidden text-xs text-success sm:inline">Všetky kroky hotové 🎉</span>
               )}
               {(task.status === "todo" || task.status === "doing") && (
                 <>
-                  <Button size="sm" onClick={() => act("done")} disabled={busy}>
+                  <Button
+                    size="sm"
+                    variant={allDone ? "default" : "secondary"}
+                    onClick={() => act("done")}
+                    disabled={busy}
+                    title={allDone ? "Odfotím baseline a o pár týždňov premeriam výsledok" : "Označ ako hotové (baseline sa odfotí)"}
+                  >
                     {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                     Hotovo
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => act("dismissed")} disabled={busy}>
+                  <Button size="sm" variant="ghost" onClick={() => act("dismissed")} disabled={busy} title="Skryť túto úlohu">
                     <X className="h-4 w-4" />
                   </Button>
                 </>
@@ -253,6 +309,30 @@ export default function SeoPage() {
     });
     if (status === "done") toast.success("Označené ako hotové — baseline odfotený, výsledok overím automaticky");
     await load();
+  };
+
+  // Optimistic step toggle — flip locally right away so the checkbox feels instant,
+  // then persist and reconcile with the server.
+  const toggleStep = async (id: string, index: number) => {
+    setData((d) => {
+      if (!d) return d;
+      return {
+        ...d,
+        tasks: d.tasks.map((t) => {
+          if (t.id !== id) return t;
+          const set = new Set(t.doneSteps ?? []);
+          set.has(index) ? set.delete(index) : set.add(index);
+          const doneSteps = [...set].sort((a, b) => a - b);
+          const status = t.status === "todo" && doneSteps.length > 0 ? "doing" : t.status;
+          return { ...t, doneSteps, status };
+        }),
+      };
+    });
+    await fetch(`/api/seo/tasks/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ toggleStep: index }),
+    }).catch(() => {});
   };
 
   if (loading) {
@@ -331,7 +411,7 @@ export default function SeoPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             {thisWeek.map((t) => (
-              <TaskCard key={t.id} task={t} onStatus={setStatus} />
+              <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} />
             ))}
           </CardContent>
         </Card>
@@ -345,7 +425,7 @@ export default function SeoPage() {
           {open.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted">Žiadne otvorené úlohy. Spusti audit.</p>
           ) : (
-            open.map((t) => <TaskCard key={t.id} task={t} onStatus={setStatus} />)
+            open.map((t) => <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} />)
           )}
         </CardContent>
       </Card>
@@ -357,7 +437,7 @@ export default function SeoPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             {awaiting.map((t) => (
-              <TaskCard key={t.id} task={t} onStatus={setStatus} />
+              <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} />
             ))}
           </CardContent>
         </Card>
@@ -370,7 +450,7 @@ export default function SeoPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             {verified.map((t) => (
-              <TaskCard key={t.id} task={t} onStatus={setStatus} />
+              <TaskCard key={t.id} task={t} onStatus={setStatus} onToggleStep={toggleStep} />
             ))}
           </CardContent>
         </Card>

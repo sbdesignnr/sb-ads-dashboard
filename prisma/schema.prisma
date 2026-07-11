@@ -474,6 +474,7 @@ model SeoTask {
   impact    Int // 1-5
   priority  Int // impact-weighted, effort-discounted
   status    String @default("todo") // todo | doing | done | verified | failed | dismissed
+  doneSteps Int[]  @default([]) @map("done_steps") // indexy odškrtnutých krokov
   dueAt     DateTime? @map("due_at")
 
   // --- measurement: the whole point of the system ---

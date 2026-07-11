@@ -122,8 +122,10 @@ export async function runAudit(siteId?: string): Promise<AuditResult> {
           impact: d.impact,
           priority,
           expectedNote: d.expectedNote ?? null,
-          // A check that fires again after being "done" means it regressed.
-          ...(existing?.status === "done" || existing?.status === "verified" ? { status: "todo", doneAt: null } : {}),
+          // A check that fires again after being "done" means it regressed → reopen it fresh.
+          ...(existing?.status === "done" || existing?.status === "verified"
+            ? { status: "todo", doneAt: null, doneSteps: [] }
+            : {}),
         },
       });
     }
