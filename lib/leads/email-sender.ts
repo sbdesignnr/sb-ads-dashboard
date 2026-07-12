@@ -22,24 +22,46 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/** Em/en dashes read as "AI-written" and render inconsistently — use a hyphen. */
+function normalizeDashes(text: string): string {
+  return text.replace(/—/g, "-").replace(/–/g, "-").trim();
+}
+
 /**
- * Clean the plain-text body before sending: em/en dashes read as "AI-written"
- * and render inconsistently, so use a plain hyphen; also strip any stray bold or
- * italic markdown asterisks.
+ * The body supports a tiny Markdown subset the user types in the editor:
+ *   **tučné**, *šikmé*, [text](https://odkaz)
+ * `markdownToPlain` flattens it for the text/plain part; `markdownToHtml` renders
+ * it. HTML is escaped BEFORE this runs, so a link's text/URL can't inject markup —
+ * and only http(s) URLs are matched, which rules out `javascript:` hrefs.
  */
+// Boundaries matter: without them a stray asterisk (e.g. "5*3 a text *") would
+// italicise half the e-mail. Emphasis must hug its text — no space just inside the
+// markers — and italic must not open right after a word character.
+const LINK_RE = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+const BOLD_RE = /\*\*(?!\s)([^*\n]+?)(?<!\s)\*\*/g;
+const ITALIC_RE = /(^|[^\w*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?!\*)/g;
+
+function markdownToPlain(text: string): string {
+  return text.replace(LINK_RE, "$1 ($2)").replace(BOLD_RE, "$1").replace(ITALIC_RE, "$1$2");
+}
+
+function markdownToHtml(escaped: string): string {
+  return escaped
+    .replace(LINK_RE, '<a href="$2" style="color:#4A90D9;text-decoration:underline;">$1</a>')
+    .replace(BOLD_RE, "<strong>$1</strong>")
+    .replace(ITALIC_RE, "$1<em>$2</em>");
+}
+
+/** Subject + plain-text body: no dashes, no markup. */
 function sanitizeEmailText(text: string): string {
-  return text
-    .replace(/—/g, "-") // em dash → hyphen
-    .replace(/–/g, "-") // en dash → hyphen
-    .replace(/\*\*(.*?)\*\*/g, "$1") // strip bold
-    .replace(/\*(.*?)\*/g, "$1") // strip italic
-    .trim();
+  return markdownToPlain(normalizeDashes(text));
 }
 
 // HTML email: the (sanitised, escaped) body, Samuel's signature card, and an
 // optional 1x1 open-tracking pixel.
 function toHtml(body: string, trackingId?: string): string {
-  const safeBody = escapeHtml(sanitizeEmailText(body)).replace(/\n/g, "<br>");
+  // Escape first (no HTML injection), THEN render the Markdown subset.
+  const safeBody = markdownToHtml(escapeHtml(normalizeDashes(body))).replace(/\n/g, "<br>");
   // NOTE: do NOT use display:none/visibility:hidden — Gmail/Outlook skip loading
   // hidden images, which breaks open tracking. opacity:0.01 keeps it imperceptible
   // but still "visible" enough that clients load it.

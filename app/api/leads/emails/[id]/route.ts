@@ -10,15 +10,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { id } = await params;
-  let body: { subject?: string; body?: string } = {};
+  let body: { subject?: string; body?: string; status?: string } = {};
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
-  const data: { subject?: string; body?: string } = {};
+  const data: { subject?: string; body?: string; status?: string } = {};
   if (typeof body.subject === "string") data.subject = body.subject.trim();
   if (typeof body.body === "string") data.body = body.body;
+  // Move an approved e-mail back to drafts (or re-approve) — a typo caught after
+  // approving must not mean the e-mail is stuck waiting to send.
+  if (body.status === "draft" || body.status === "approved") data.status = body.status;
   try {
     const email = await prisma.leadEmail.update({
       where: { id },

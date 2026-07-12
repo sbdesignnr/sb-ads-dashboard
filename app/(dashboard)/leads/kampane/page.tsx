@@ -16,6 +16,7 @@ import {
   Inbox,
   CheckCheck,
   Search,
+  Link2 as LinkIcon,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,22 @@ function ClickBadge({ count }: { count: number }) {
   return <Badge variant="success">👆 {count}×</Badge>;
 }
 
+// Mirrors lib/leads/email-sender.ts so the preview shows exactly what gets sent:
+// escape first (no injection), then render the Markdown subset. Boundaries stop a
+// stray asterisk ("5*3") from italicising half the message.
+const PV_LINK = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+const PV_BOLD = /\*\*(?!\s)([^*\n]+?)(?<!\s)\*\*/g;
+const PV_ITALIC = /(^|[^\w*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?!\*)/g;
+
+function previewHtml(body: string): string {
+  const escaped = body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return escaped
+    .replace(PV_LINK, '<a href="$2" style="color:#4A90D9;text-decoration:underline;">$1</a>')
+    .replace(PV_BOLD, "<strong>$1</strong>")
+    .replace(PV_ITALIC, "$1<em>$2</em>")
+    .replace(/\n/g, "<br>");
+}
+
 export default function CampaignsPage() {
   const [segments, setSegments] = useState<SegmentDTO[]>([]);
   const [stats, setStats] = useState<Stats>({ sentToday: 0, pendingApproval: 0, totalSent: 0 });
@@ -76,6 +93,7 @@ export default function CampaignsPage() {
 
   const [queue, setQueue] = useState<LeadEmailDTO[]>([]);
   const [followups, setFollowups] = useState<LeadEmailDTO[]>([]);
+  const [approved, setApproved] = useState<LeadEmailDTO[]>([]);
   const [sent, setSent] = useState<LeadEmailDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -101,14 +119,16 @@ export default function CampaignsPage() {
     setLoading(true);
     try {
       const seg = `&segment=${encodeURIComponent(segmentId)}`;
-      const [a, b, c] = await Promise.all([
+      const [a, b, c, d] = await Promise.all([
         fetch(`/api/leads/emails?queue=initial${seg}`).then((r) => r.json()),
         fetch(`/api/leads/emails?queue=followup${seg}`).then((r) => r.json()),
+        fetch(`/api/leads/emails?queue=approved${seg}`).then((r) => r.json()),
         fetch(`/api/leads/emails?queue=sent${seg}`).then((r) => r.json()),
       ]);
       setQueue(a.emails ?? []);
       setFollowups(b.emails ?? []);
-      setSent(c.emails ?? []);
+      setApproved(c.emails ?? []);
+      setSent(d.emails ?? []);
     } finally {
       setLoading(false);
     }
@@ -255,6 +275,25 @@ export default function CampaignsPage() {
         n.delete(email.id);
         return n;
       });
+      // An approved e-mail moves to the "waiting to send" shelf, not into the void.
+      if (action === "approve") loadQueues();
+      loadCampaigns();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  /** Approved → back to drafts, so a mistake caught after approving is fixable. */
+  const unapprove = async (email: LeadEmailDTO) => {
+    setBusyId(email.id);
+    try {
+      await fetch(`/api/leads/emails/${email.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "draft" }),
+      });
+      toast.success("Vrátené do konceptov — môžeš ho upraviť");
+      await loadQueues();
       loadCampaigns();
     } finally {
       setBusyId(null);
@@ -269,6 +308,8 @@ export default function CampaignsPage() {
         toast.success("Email odoslaný ✓");
         setQueue((q) => q.filter((e) => e.id !== email.id));
         setFollowups((q) => q.filter((e) => e.id !== email.id));
+        setApproved((q) => q.filter((e) => e.id !== email.id));
+        loadQueues();
         loadCampaigns();
       } else {
         toast.error(j.error || "Odoslanie zlyhalo");
@@ -527,6 +568,53 @@ export default function CampaignsPage() {
         </CardContent>
       </Card>
 
+      {/* Approved, waiting for the sender — still fully editable. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Check className="h-4 w-4 text-success" />
+            Schválené — čakajú na odoslanie ({approved.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {approved.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted">Žiadne schválené emaily čakajúce na odoslanie.</p>
+          ) : (
+            <div className="space-y-1">
+              <p className="pb-1 text-xs text-muted">
+                Klikni na email a stále ho vieš upraviť, vrátiť do konceptov alebo odoslať hneď.
+              </p>
+              {approved.map((e) => (
+                <div
+                  key={e.id}
+                  className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+                >
+                  <button type="button" onClick={() => setEditing(e)} className="min-w-0 flex-1 text-left">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-medium text-foreground">{e.companyName}</span>
+                      {e.segmentName && <span className="shrink-0 text-xs text-muted">· {e.segmentName}</span>}
+                    </div>
+                    <p className="truncate text-xs text-muted">{e.subject || "—"}</p>
+                  </button>
+                  <Button size="sm" variant="ghost" onClick={() => unapprove(e)} disabled={busyId === e.id}>
+                    Späť do konceptov
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => sendNow(e)}
+                    disabled={busyId === e.id || !e.companyEmail}
+                    title={e.companyEmail ? "Odoslať teraz" : "Chýba email"}
+                  >
+                    {busyId === e.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    Odoslať
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Sent emails with open tracking */}
       <Card>
         <CardHeader>
@@ -571,23 +659,34 @@ export default function CampaignsPage() {
           onSaved={(updated) => {
             setQueue((q) => q.map((e) => (e.id === updated.id ? updated : e)));
             setFollowups((q) => q.map((e) => (e.id === updated.id ? updated : e)));
+            setApproved((q) => q.map((e) => (e.id === updated.id ? updated : e)));
+            setEditing(updated); // keep the open modal in sync
           }}
           onApproved={(id) => {
             setQueue((q) => q.filter((e) => e.id !== id));
             setFollowups((q) => q.filter((e) => e.id !== id));
             setEditing(null);
+            loadQueues(); // it now shows up under "Schválené"
+            loadCampaigns();
+          }}
+          onUnapproved={() => {
+            setEditing(null);
+            loadQueues();
             loadCampaigns();
           }}
           onRejected={(id) => {
             setQueue((q) => q.filter((e) => e.id !== id));
             setFollowups((q) => q.filter((e) => e.id !== id));
+            setApproved((q) => q.filter((e) => e.id !== id));
             setEditing(null);
             loadCampaigns();
           }}
           onSent={(id) => {
             setQueue((q) => q.filter((e) => e.id !== id));
             setFollowups((q) => q.filter((e) => e.id !== id));
+            setApproved((q) => q.filter((e) => e.id !== id));
             setEditing(null);
+            loadQueues();
             loadCampaigns();
           }}
         />
@@ -675,6 +774,7 @@ function EmailEditor({
   onClose,
   onSaved,
   onApproved,
+  onUnapproved,
   onRejected,
   onSent,
 }: {
@@ -682,6 +782,7 @@ function EmailEditor({
   onClose: () => void;
   onSaved: (e: LeadEmailDTO) => void;
   onApproved: (id: string) => void;
+  onUnapproved: (id: string) => void;
   onRejected: (id: string) => void;
   onSent: (id: string) => void;
 }) {
@@ -689,6 +790,31 @@ function EmailEditor({
   const [body, setBody] = useState(email.body);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
+  const [preview, setPreview] = useState(false);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const isApproved = email.status === "approved";
+
+  /** Wrap the selected text in Markdown the sender renders (**bold**, *italic*, [text](url)). */
+  const wrap = (before: string, after: string, placeholder: string) => {
+    const ta = bodyRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const sel = body.slice(start, end) || placeholder;
+    const next = body.slice(0, start) + before + sel + after + body.slice(end);
+    setBody(next);
+    // Re-select the wrapped text so it can be typed over straight away.
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.setSelectionRange(start + before.length, start + before.length + sel.length);
+    });
+  };
+
+  const addLink = () => {
+    const url = prompt("Adresa odkazu (https://…)", "https://www.sbdesign.sk");
+    if (!url || !/^https?:\/\//i.test(url)) return;
+    wrap("[", `](${url})`, "text odkazu");
+  };
 
   const save = async (): Promise<LeadEmailDTO | null> => {
     const j = await fetch(`/api/leads/emails/${email.id}`, {
@@ -697,6 +823,23 @@ function EmailEditor({
       body: JSON.stringify({ subject, body }),
     }).then((r) => r.json());
     return j.email ?? null;
+  };
+
+  const unapprove = async () => {
+    setSaving(true);
+    try {
+      const updated = await save();
+      if (updated) onSaved(updated);
+      await fetch(`/api/leads/emails/${email.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "draft" }),
+      });
+      toast.success("Vrátené do konceptov");
+      onUnapproved(email.id);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveAndApprove = async () => {
@@ -763,13 +906,65 @@ function EmailEditor({
           onChange={(e) => setSubject(e.target.value)}
           className="mb-3 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
         />
-        <label className="mb-1 block text-xs text-muted">Telo emailu</label>
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          rows={14}
-          className="w-full rounded-lg border border-border bg-surface px-3 py-2 font-mono text-sm leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-primary/30"
-        />
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <label className="text-xs text-muted">Telo emailu</label>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => wrap("**", "**", "tučný text")}
+              title="Tučné (**text**)"
+              className="rounded border border-border px-2 py-1 text-xs font-bold text-foreground hover:bg-surface-2"
+            >
+              B
+            </button>
+            <button
+              type="button"
+              onClick={() => wrap("*", "*", "šikmý text")}
+              title="Šikmé (*text*)"
+              className="rounded border border-border px-2 py-1 text-xs italic text-foreground hover:bg-surface-2"
+            >
+              I
+            </button>
+            <button
+              type="button"
+              onClick={addLink}
+              title="Vložiť odkaz"
+              className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-foreground hover:bg-surface-2"
+            >
+              <LinkIcon className="h-3 w-3" />
+              Odkaz
+            </button>
+            <button
+              type="button"
+              onClick={() => setPreview((v) => !v)}
+              className={cn(
+                "rounded border px-2 py-1 text-xs",
+                preview ? "border-primary bg-primary/10 text-primary" : "border-border text-muted hover:text-foreground",
+              )}
+            >
+              {preview ? "Upraviť" : "Náhľad"}
+            </button>
+          </div>
+        </div>
+
+        {preview ? (
+          <div
+            className="min-h-[280px] w-full rounded-lg border border-border bg-white px-4 py-3 text-sm leading-relaxed text-black"
+            dangerouslySetInnerHTML={{ __html: previewHtml(body) }}
+          />
+        ) : (
+          <textarea
+            ref={bodyRef}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            rows={14}
+            className="w-full rounded-lg border border-border bg-surface px-3 py-2 font-mono text-sm leading-relaxed text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        )}
+        <p className="mt-1 text-xs text-muted">
+          Formátovanie: <code>**tučné**</code> · <code>*šikmé*</code> · <code>[text](https://odkaz.sk)</code> — v
+          Náhľade uvidíš, ako to príde klientovi.
+        </p>
 
         <div className="mt-4 flex items-center justify-between gap-2">
           <Button variant="ghost" size="sm" onClick={reject}>
@@ -794,10 +989,17 @@ function EmailEditor({
               <Check className="h-4 w-4" />
               Uložiť zmeny
             </Button>
-            <Button size="sm" variant="secondary" onClick={saveAndApprove} disabled={saving || sending}>
-              <Check className="h-4 w-4" />
-              Uložiť & Schváliť
-            </Button>
+            {isApproved ? (
+              <Button size="sm" variant="secondary" onClick={unapprove} disabled={saving || sending}>
+                <X className="h-4 w-4" />
+                Vrátiť do konceptov
+              </Button>
+            ) : (
+              <Button size="sm" variant="secondary" onClick={saveAndApprove} disabled={saving || sending}>
+                <Check className="h-4 w-4" />
+                Uložiť & Schváliť
+              </Button>
+            )}
             <Button
               size="sm"
               onClick={sendNow}

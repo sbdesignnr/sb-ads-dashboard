@@ -11,6 +11,7 @@ const withLead = { lead: { include: { segment: { select: { name: true } } } } };
 // Queue lists for the campaign page:
 //  ?queue=initial   → initial drafts waiting for approval
 //  ?queue=followup  → due follow-up drafts (scheduled within the next 24h)
+//  ?queue=approved  → approved, waiting for the sender cron (still editable!)
 //  ?queue=sent      → already-sent emails (with open tracking), newest first
 //  ?segment=<id>    → only emails whose lead is in that segment (per campaign)
 export async function GET(req: NextRequest) {
@@ -23,13 +24,15 @@ export async function GET(req: NextRequest) {
   const where: Prisma.LeadEmailWhereInput =
     queue === "sent"
       ? { status: "sent" }
-      : queue === "followup"
-        ? {
-            status: "draft",
-            emailType: { in: ["followup1", "followup2"] },
-            scheduledAt: { lte: new Date(Date.now() + 24 * 3600 * 1000) },
-          }
-        : { status: "draft", emailType: "initial" };
+      : queue === "approved"
+        ? { status: "approved" }
+        : queue === "followup"
+          ? {
+              status: "draft",
+              emailType: { in: ["followup1", "followup2"] },
+              scheduledAt: { lte: new Date(Date.now() + 24 * 3600 * 1000) },
+            }
+          : { status: "draft", emailType: "initial" };
 
   // Scope to one campaign's segment when requested.
   if (segment && segment !== "all") {
