@@ -1,4 +1,6 @@
 import nodemailer from "nodemailer";
+import MailComposer from "nodemailer/lib/mail-composer";
+import { saveToSent } from "@/lib/email/sent-folder";
 import type { Booking } from "@prisma/client";
 
 const SENDER = { name: "Samuel Bibeň", email: "biben@sbdesign.sk" };
@@ -27,15 +29,22 @@ async function sendViaSmtp(to: string, subject: string, html: string, text: stri
     auth: { user: process.env.SMTP_USER!.trim(), pass: process.env.SMTP_PASSWORD!.trim() },
   });
   try {
-    const info = await transporter.sendMail({
+    // Compose once → send that exact MIME → file that exact copy in Sent (SMTP
+    // alone never puts anything in the Sent folder).
+    const raw = await new MailComposer({
       from: `"${SENDER.name}" <${SENDER.email}>`,
       to,
       replyTo: SENDER.email,
       subject,
       html,
       text,
-    });
+    })
+      .compile()
+      .build();
+
+    const info = await transporter.sendMail({ envelope: { from: SENDER.email, to }, raw });
     console.log("[booking/email] SMTP sent OK:", subject, "→", to, info.messageId);
+    await saveToSent(raw).catch(() => false); // best-effort
     return true;
   } catch (e) {
     console.error("[booking/email] SMTP send error:", subject, "→", (e as Error).message);

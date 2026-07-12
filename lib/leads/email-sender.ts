@@ -1,4 +1,6 @@
 import nodemailer from "nodemailer";
+import MailComposer from "nodemailer/lib/mail-composer";
+import { saveToSent } from "@/lib/email/sent-folder";
 import { prisma } from "@/lib/prisma";
 
 // Outreach is sent from Samuel's own address. Primary path: Websupport SMTP via
@@ -138,14 +140,24 @@ async function sendViaSmtp(a: SendArgs): Promise<Delivery> {
   const t = smtpTransporter();
   if (!t) return { ok: false, error: "smtp_not_configured" };
   try {
-    const info = await t.sendMail({
+    // Compose the MIME ONCE, then send that exact message and file that exact copy
+    // in Sent — so what the client received and what you see in Sent are identical.
+    const raw = await new MailComposer({
       from: `"${SENDER.name}" <${SENDER.email}>`,
       to: a.to,
       replyTo: SENDER.email,
       subject: a.subject,
       html: a.html,
       text: a.text, // plain-text fallback
-    });
+    })
+      .compile()
+      .build();
+
+    const info = await t.sendMail({ envelope: { from: SENDER.email, to: a.to }, raw });
+
+    // Best-effort — the e-mail is already delivered; a failed copy must not fail it.
+    await saveToSent(raw).catch(() => false);
+
     return { ok: true, messageId: info.messageId ?? null };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
