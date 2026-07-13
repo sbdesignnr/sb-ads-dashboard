@@ -2,15 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Chrome, Search, Sparkles, MoreHorizontal } from "lucide-react";
+import {
+  LayoutDashboard,
+  ListChecks,
+  Chrome,
+  Sparkles,
+  MoreHorizontal,
+} from "lucide-react";
 import { useUIStore } from "@/lib/store";
 import { isActive } from "./nav";
 import { cn } from "@/lib/utils";
 
 const PRIMARY = [
   { href: "/", label: "Prehľad", icon: LayoutDashboard },
+  { href: "/todo", label: "Úlohy", icon: ListChecks },
   { href: "/google-ads", label: "Google", icon: Chrome },
-  { href: "/keywords", label: "Slová", icon: Search },
   { href: "/ai-insights", label: "AI", icon: Sparkles },
 ];
 

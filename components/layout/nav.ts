@@ -15,6 +15,7 @@ import {
   Bot,
   Wallet,
   CalendarClock,
+  ListChecks,
   type LucideIcon,
 } from "lucide-react";
 
@@ -26,6 +27,7 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Prehľad", icon: LayoutDashboard },
+  { href: "/todo", label: "Úlohy", icon: ListChecks },
   { href: "/google-ads", label: "Google Ads", icon: Chrome },
   { href: "/meta-ads", label: "Meta Ads", icon: Facebook },
   { href: "/keywords", label: "Kľúčové slová", icon: Search },
@@ -46,7 +48,9 @@ export const NAV_ITEMS: NavItem[] = [
 export function getPageTitle(pathname: string): string {
   if (pathname === "/") return "Prehľad";
   if (pathname.startsWith("/campaigns")) return "Detail kampane";
-  const item = NAV_ITEMS.find((n) => n.href !== "/" && pathname.startsWith(n.href));
+  const item = NAV_ITEMS.find(
+    (n) => n.href !== "/" && pathname.startsWith(n.href),
+  );
   return item?.label ?? "Dashboard";
 }
 

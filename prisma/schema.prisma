@@ -7,8 +7,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
@@ -98,46 +98,46 @@ model LeadSegment {
 }
 
 model Lead {
-  id                String       @id @default(cuid())
-  segmentId         String?      @map("segment_id")
-  segment           LeadSegment? @relation(fields: [segmentId], references: [id], onDelete: SetNull)
-  emails            LeadEmail[]
-  companyName       String       @map("company_name")
-  ico               String?
-  websiteUrl        String?      @unique @map("website_url")
-  websiteScore      Int?         @map("website_score") // total 0-100, higher = worse (better lead)
-  technicalScore    Int?         @map("technical_score") // 0-40
-  visualScore       Int?         @map("visual_score") // 0-60 (AI visual outdatedness)
-  websiteAge        Int?         @map("website_age")
-  copyrightYear     Int?         @map("copyright_year")
-  websiteTechnology String?      @map("website_technology")
-  hasModernFramework Boolean?    @map("has_modern_framework")
-  pageSpeedMobile   Int?         @map("page_speed_mobile")
-  pageSpeedDesktop  Int?         @map("page_speed_desktop")
-  hasSsl            Boolean?     @map("has_ssl")
-  isMobileFriendly  Boolean?     @map("is_mobile_friendly")
-  websiteIssues     String[]     @map("website_issues")
-  visualIssues      String[]     @default([]) @map("visual_issues") // AI-detected visual problems
-  aiVisualReason    String?      @map("ai_visual_reason") // why the design looks outdated
-  disqualifyReason  String?      @map("disqualify_reason") // set when a lead is filtered out
-  aiSummary         String?      @map("ai_summary")
-  aiPainPoint       String?      @map("ai_pain_point")
-  aiOpportunity     String?      @map("ai_opportunity")
-  aiOutreachAngle   String?      @map("ai_outreach_angle")
-  bestContactTime   String?      @map("best_contact_time")
-  companyActive     Boolean?     @map("company_active")
-  ownerName         String?      @map("owner_name")
-  ownerPosition     String?      @map("owner_position")
-  companyEmail      String?      @map("company_email")
-  companyPhone      String?      @map("company_phone")
-  companyAddress    String?      @map("company_address")
-  companyCity       String?      @map("company_city")
-  status            String       @default("new") // new | contacted | rejected | converted
-  notes             String?
-  source            String?
-  createdAt         DateTime     @default(now()) @map("created_at")
-  updatedAt         DateTime     @updatedAt @map("updated_at")
-  lastScannedAt     DateTime?    @map("last_scanned_at")
+  id                 String       @id @default(cuid())
+  segmentId          String?      @map("segment_id")
+  segment            LeadSegment? @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  emails             LeadEmail[]
+  companyName        String       @map("company_name")
+  ico                String?
+  websiteUrl         String?      @unique @map("website_url")
+  websiteScore       Int?         @map("website_score") // total 0-100, higher = worse (better lead)
+  technicalScore     Int?         @map("technical_score") // 0-40
+  visualScore        Int?         @map("visual_score") // 0-60 (AI visual outdatedness)
+  websiteAge         Int?         @map("website_age")
+  copyrightYear      Int?         @map("copyright_year")
+  websiteTechnology  String?      @map("website_technology")
+  hasModernFramework Boolean?     @map("has_modern_framework")
+  pageSpeedMobile    Int?         @map("page_speed_mobile")
+  pageSpeedDesktop   Int?         @map("page_speed_desktop")
+  hasSsl             Boolean?     @map("has_ssl")
+  isMobileFriendly   Boolean?     @map("is_mobile_friendly")
+  websiteIssues      String[]     @map("website_issues")
+  visualIssues       String[]     @default([]) @map("visual_issues") // AI-detected visual problems
+  aiVisualReason     String?      @map("ai_visual_reason") // why the design looks outdated
+  disqualifyReason   String?      @map("disqualify_reason") // set when a lead is filtered out
+  aiSummary          String?      @map("ai_summary")
+  aiPainPoint        String?      @map("ai_pain_point")
+  aiOpportunity      String?      @map("ai_opportunity")
+  aiOutreachAngle    String?      @map("ai_outreach_angle")
+  bestContactTime    String?      @map("best_contact_time")
+  companyActive      Boolean?     @map("company_active")
+  ownerName          String?      @map("owner_name")
+  ownerPosition      String?      @map("owner_position")
+  companyEmail       String?      @map("company_email")
+  companyPhone       String?      @map("company_phone")
+  companyAddress     String?      @map("company_address")
+  companyCity        String?      @map("company_city")
+  status             String       @default("new") // new | contacted | rejected | converted
+  notes              String?
+  source             String?
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+  lastScannedAt      DateTime?    @map("last_scanned_at")
 
   @@index([segmentId, status])
   @@map("leads")
@@ -209,19 +209,19 @@ model LeadScanJob {
 
 // Singleton row (id = "primary") holding push-notification preferences.
 model NotificationSetting {
-  id                String   @id @default("primary")
-  telegramChatId    String?  @map("telegram_chat_id")
-  enabled           Boolean  @default(true)
-  alertConversions  Boolean  @default(true) @map("alert_conversions")
-  alertActions      Boolean  @default(true) @map("alert_actions")
-  alertBlog         Boolean  @default(true) @map("alert_blog")
-  alertSeo          Boolean  @default(true) @map("alert_seo")
-  blogReminderDay   Int      @default(1) @map("blog_reminder_day") // ISO weekday 1=Mon…7=Sun
-  blogReminderHour  Int      @default(9) @map("blog_reminder_hour") // 0-23, Europe/Bratislava
-  minConversionValue Float?  @map("min_conversion_value")
-  quietHoursStart   Int?     @map("quiet_hours_start") // 0-23 local hour, inclusive
-  quietHoursEnd     Int?     @map("quiet_hours_end")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id                 String   @id @default("primary")
+  telegramChatId     String?  @map("telegram_chat_id")
+  enabled            Boolean  @default(true)
+  alertConversions   Boolean  @default(true) @map("alert_conversions")
+  alertActions       Boolean  @default(true) @map("alert_actions")
+  alertBlog          Boolean  @default(true) @map("alert_blog")
+  alertSeo           Boolean  @default(true) @map("alert_seo")
+  blogReminderDay    Int      @default(1) @map("blog_reminder_day") // ISO weekday 1=Mon…7=Sun
+  blogReminderHour   Int      @default(9) @map("blog_reminder_hour") // 0-23, Europe/Bratislava
+  minConversionValue Float?   @map("min_conversion_value")
+  quietHoursStart    Int?     @map("quiet_hours_start") // 0-23 local hour, inclusive
+  quietHoursEnd      Int?     @map("quiet_hours_end")
+  updatedAt          DateTime @updatedAt @map("updated_at")
 
   @@map("notification_settings")
 }
@@ -347,7 +347,7 @@ model GoogleAdsToken {
 model FinanceAccount {
   id           String               @id @default(cuid())
   name         String
-  type         String               // personal | business
+  type         String // personal | business
   currency     String               @default("EUR")
   createdAt    DateTime             @default(now()) @map("created_at")
   transactions FinanceTransaction[]
@@ -364,8 +364,8 @@ model FinanceTransaction {
   description String
   category    String
   subcategory String?
-  type        String         // income | expense | transfer
-  source      String         // csv_import | manual | voice
+  type        String // income | expense | transfer
+  source      String // csv_import | manual | voice
   notes       String?
   createdAt   DateTime       @default(now()) @map("created_at")
 
@@ -477,11 +477,11 @@ model SeoTask {
   doneSteps Int[]  @default([]) @map("done_steps") // indexy odškrtnutých krokov
 
   // Webový autopilot: PR vytvorený "Vyriešiť za mňa"
-  fixBranch  String? @map("fix_branch")
-  fixPrNumber Int?   @map("fix_pr_number")
-  fixPrUrl   String? @map("fix_pr_url")
-  fixPrState String? @map("fix_pr_state") // open | merged | closed
-  dueAt     DateTime? @map("due_at")
+  fixBranch   String?   @map("fix_branch")
+  fixPrNumber Int?      @map("fix_pr_number")
+  fixPrUrl    String?   @map("fix_pr_url")
+  fixPrState  String?   @map("fix_pr_state") // open | merged | closed
+  dueAt       DateTime? @map("due_at")
 
   // --- measurement: the whole point of the system ---
   metric          String? // gsc_impressions | gsc_clicks | gsc_ctr | gsc_position | psi_lcp | ga4_organic_sessions
@@ -516,14 +516,14 @@ model LearningBook {
   id            String    @id @default(cuid())
   title         String
   author        String
-  originalTitle  String?   @map("original_title") // pôvodný (anglický) názov — pre dohľadanie obálky
-  language      String?   // SK | CZ | en (jazyk zobrazeného vydania)
+  originalTitle String?   @map("original_title") // pôvodný (anglický) názov — pre dohľadanie obálky
+  language      String? // SK | CZ | en (jazyk zobrazeného vydania)
   category      String // biznis | predaj | marketing | zdravie | mindset | produktivita | financie
   coverUrl      String?   @map("cover_url")
   isbn          String?
   publishedYear Int?      @map("published_year")
   why           String    @db.Text // prečo čítať práve TY — šité na mieru
-  howToApply    String    @db.Text  @map("how_to_apply") // ako to zapojiť do biznisu/života
+  howToApply    String    @map("how_to_apply") @db.Text // ako to zapojiť do biznisu/života
   takeaways     String[]  @default([]) // hlavné ponaučenia
   priority      Int       @default(0) // poradie v učebnom pláne (nižšie = skôr)
   status        String    @default("want") // want | reading | read | skipped
@@ -537,4 +537,46 @@ model LearningBook {
 
   @@index([status, priority])
   @@map("learning_books")
+}
+
+// ── To-Do / Ciele ────────────────────────────────────────────────────────────
+// Denné úlohy s časom a prioritou, naviazané na týždenné/mesačné/ročné ciele.
+// Cieľ sa neplní sám — plní sa tým, že odškrtneš úlohy, ktoré pod neho patria.
+
+model Goal {
+  id          String    @id @default(cuid())
+  title       String
+  description String    @default("") @db.Text
+  period      String // week | month | year
+  periodKey   String    @map("period_key") // "2026-W29" | "2026-07" | "2026"
+  priority    String    @default("normal") // urgent | high | normal | low
+  status      String    @default("active") // active | done | dropped
+  progress    Int       @default(0) // 0-100 — ručný postup, keď cieľ nemá naviazané úlohy
+  doneAt      DateTime? @map("done_at")
+  tasks       Task[]
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([period, periodKey, status])
+  @@map("goals")
+}
+
+model Task {
+  id        String    @id @default(cuid())
+  title     String
+  notes     String    @default("") @db.Text
+  date      DateTime? @db.Date // deň, na ktorý je naplánovaná; null = Nezaradené
+  time      String? // "09:30" lokálneho času; null = úloha bez presného času
+  priority  String    @default("normal") // urgent | high | normal | low
+  done      Boolean   @default(false)
+  doneAt    DateTime? @map("done_at")
+  goalId    String?   @map("goal_id")
+  goal      Goal?     @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  sortOrder Int       @default(0) @map("sort_order")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@index([date, done])
+  @@index([goalId])
+  @@map("tasks")
 }
