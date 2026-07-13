@@ -14,7 +14,7 @@
     },
     {
       "path": "/api/cron/send-emails",
-      "schedule": "25 8 * * *"
+      "schedule": "*/30 * * * *"
     },
     {
       "path": "/api/cron/booking-reminders",

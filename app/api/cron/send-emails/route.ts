@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { fromZonedTime } from "date-fns-tz";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { sendLeadEmail } from "@/lib/leads/email-sender";
@@ -15,27 +16,68 @@ async function isAuthorized(req: NextRequest): Promise<boolean> {
   return Boolean(secret && req.headers.get("authorization") === `Bearer ${secret}`);
 }
 
-function startOfTodayUTC(): Date {
-  const d = new Date();
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+const TZ = "Europe/Bratislava";
+
+/** Local wall-clock day (YYYY-MM-DD) in Bratislava. */
+function todayLocal(now: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(now);
 }
 
-// Daily (08:25 UTC): send today's approved emails up to each campaign's limit,
-// and generate the bodies of due follow-ups so they surface for approval.
-// Follow-ups are NEVER sent automatically.
+/** Minutes since local midnight in Bratislava — for comparing against campaign.sendTime. */
+function minutesNowLocal(now: Date): number {
+  const hhmm = new Intl.DateTimeFormat("en-GB", {
+    timeZone: TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(now);
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+
+/** "08:30" → 510. Unparseable → 0 (send at the first run of the day). */
+function minutesFromHHMM(v: string | null | undefined): number {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((v ?? "").trim());
+  if (!m) return 0;
+  return Math.min(23, Number(m[1])) * 60 + Math.min(59, Number(m[2]));
+}
+
+/** The UTC instant of local midnight today — the correct "today" boundary for the daily limit. */
+function startOfTodayLocal(now: Date): Date {
+  return fromZonedTime(`${todayLocal(now)}T00:00:00`, TZ);
+}
+
+// Runs every 30 min. Each active campaign sends its approved emails once its own
+// sendTime (Bratislava) has arrived, up to its daily limit. Also generates bodies
+// for due follow-ups so they surface for approval — follow-ups are NEVER sent
+// automatically.
 async function handle(req: NextRequest) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const now = new Date();
+  const nowMin = minutesNowLocal(now);
 
   let sent = 0;
+  const skipped: string[] = [];
   const campaigns = await prisma.leadCampaign.findMany({ where: { isActive: true } });
+  if (!campaigns.length) skipped.push("žiadna aktívna kampaň");
+
   for (const c of campaigns) {
+    // Respect the campaign's own send time. Before it → not yet; at/after → send.
+    const sendMin = minutesFromHHMM(c.sendTime);
+    if (nowMin < sendMin) {
+      skipped.push(`${c.name}: ešte nie je ${c.sendTime}`);
+      continue;
+    }
+
     const scope = c.segmentId ? { segmentId: c.segmentId } : {};
     const sentToday = await prisma.leadEmail.count({
-      where: { status: "sent", sentAt: { gte: startOfTodayUTC() }, lead: scope },
+      where: { status: "sent", sentAt: { gte: startOfTodayLocal(now) }, lead: scope },
     });
     const remaining = c.dailyLimit - sentToday;
-    if (remaining <= 0) continue;
+    if (remaining <= 0) {
+      skipped.push(`${c.name}: denný limit ${c.dailyLimit} vyčerpaný`);
+      continue;
+    }
 
     const approved = await prisma.leadEmail.findMany({
       where: {
@@ -46,6 +88,10 @@ async function handle(req: NextRequest) {
       orderBy: { createdAt: "asc" },
       take: remaining,
     });
+    if (!approved.length) {
+      skipped.push(`${c.name}: 0 schválených emailov v jej segmente`);
+      continue;
+    }
 
     let campaignSent = 0;
     for (const e of approved) {
@@ -53,6 +99,8 @@ async function handle(req: NextRequest) {
       if (r.success) {
         sent++;
         campaignSent++;
+      } else {
+        console.error("[cron/send-emails] send failed:", e.id, r.error);
       }
     }
     if (campaignSent > 0) {
@@ -62,6 +110,7 @@ async function handle(req: NextRequest) {
       });
     }
   }
+  if (skipped.length) console.log("[cron/send-emails] neodoslané:", skipped.join(" | "));
 
   // Due follow-ups → generate bodies (if missing) so they appear in the queue.
   let followupsReady = 0;
@@ -95,7 +144,7 @@ async function handle(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ sent, followups_ready: followupsReady });
+  return NextResponse.json({ sent, followups_ready: followupsReady, skipped });
 }
 
 export const GET = handle;

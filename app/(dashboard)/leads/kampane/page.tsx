@@ -17,6 +17,7 @@ import {
   CheckCheck,
   Search,
   Link2 as LinkIcon,
+  AlertTriangle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { type LeadEmailDTO, type SegmentDTO, type CampaignDTO, EMAIL_TYPE_LABEL } from "@/lib/leads/types";
+import {
+  type LeadEmailDTO,
+  type SegmentDTO,
+  type CampaignDTO,
+  EMAIL_TYPE_LABEL,
+} from "@/lib/leads/types";
 
 interface Stats {
   sentToday: number;
@@ -42,14 +48,22 @@ function StatBox({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-lg border border-border bg-surface-2/40 px-3 py-2">
       <p className="text-xs text-muted">{label}</p>
-      <p className="mt-0.5 text-xl font-semibold tabular-nums text-foreground">{value}</p>
+      <p className="mt-0.5 text-xl font-semibold tabular-nums text-foreground">
+        {value}
+      </p>
     </div>
   );
 }
 
 // Open-tracking badge: red 0×, yellow 1×, green 2×+.
 function OpenBadge({ count }: { count: number }) {
-  return <Badge variant={count >= 2 ? "success" : count === 1 ? "warning" : "danger"}>👁 {count}×</Badge>;
+  return (
+    <Badge
+      variant={count >= 2 ? "success" : count === 1 ? "warning" : "danger"}
+    >
+      👁 {count}×
+    </Badge>
+  );
 }
 
 // Clicks are a stronger signal than opens (Gmail caches the open pixel), so only
@@ -67,17 +81,44 @@ const PV_BOLD = /\*\*(?!\s)([^*\n]+?)(?<!\s)\*\*/g;
 const PV_ITALIC = /(^|[^\w*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?!\*)/g;
 
 function previewHtml(body: string): string {
-  const escaped = body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const escaped = body
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
   return escaped
-    .replace(PV_LINK, '<a href="$2" style="color:#4A90D9;text-decoration:underline;">$1</a>')
+    .replace(
+      PV_LINK,
+      '<a href="$2" style="color:#4A90D9;text-decoration:underline;">$1</a>',
+    )
     .replace(PV_BOLD, "<strong>$1</strong>")
     .replace(PV_ITALIC, "$1<em>$2</em>")
     .replace(/\n/g, "<br>");
 }
 
+/**
+ * The sender only ever sends an approved email if some ACTIVE campaign covers its
+ * lead's segment (a campaign with no segment set covers all of them). If none does,
+ * the email sits in "Schválené" forever and nothing tells you why — so we say why.
+ */
+function blockedReason(
+  email: LeadEmailDTO,
+  campaigns: CampaignDTO[],
+): string | null {
+  const active = campaigns.filter((c) => c.isActive);
+  if (!active.length) return "Žiadna kampaň nie je zapnutá";
+  const covers = active.some(
+    (c) => !c.segmentId || c.segmentId === email.segmentId,
+  );
+  return covers ? null : "Žiadna zapnutá kampaň nepokrýva segment tohto leadu";
+}
+
 export default function CampaignsPage() {
   const [segments, setSegments] = useState<SegmentDTO[]>([]);
-  const [stats, setStats] = useState<Stats>({ sentToday: 0, pendingApproval: 0, totalSent: 0 });
+  const [stats, setStats] = useState<Stats>({
+    sentToday: 0,
+    pendingApproval: 0,
+    totalSent: 0,
+  });
 
   // All campaigns (switchable) + the currently selected one's editable settings.
   const [campaigns, setCampaigns] = useState<CampaignDTO[]>([]);
@@ -170,13 +211,20 @@ export default function CampaignsPage() {
   };
 
   const activeSegmentName =
-    segmentId === "all" ? "Všetky segmenty" : segments.find((s) => s.id === segmentId)?.name ?? "—";
+    segmentId === "all"
+      ? "Všetky segmenty"
+      : (segments.find((s) => s.id === segmentId)?.name ?? "—");
 
-  const saveCampaign = async (overrides: Partial<{ isActive: boolean }> = {}) => {
+  const saveCampaign = async (
+    overrides: Partial<{ isActive: boolean }> = {},
+  ) => {
     setSavingCampaign(true);
     try {
       const payload = {
-        name: segmentId === "all" ? "Všetky segmenty" : segments.find((s) => s.id === segmentId)?.name ?? "Kampaň",
+        name:
+          segmentId === "all"
+            ? "Všetky segmenty"
+            : (segments.find((s) => s.id === segmentId)?.name ?? "Kampaň"),
         segmentId,
         dailyLimit,
         sendTime,
@@ -251,7 +299,10 @@ export default function CampaignsPage() {
       if (j.error) {
         toast.error(j.error, { id: "find" });
       } else {
-        toast.success(`Nájdených ${j.found} emailov z ${j.processed} leadov`, { id: "find", duration: 5000 });
+        toast.success(`Nájdených ${j.found} emailov z ${j.processed} leadov`, {
+          id: "find",
+          duration: 5000,
+        });
         loadCampaigns();
         // generateBatch reloads the queues + refreshes the missing-email count,
         // and turns the newly-found emails into drafts.
@@ -267,7 +318,9 @@ export default function CampaignsPage() {
   const act = async (email: LeadEmailDTO, action: "approve" | "reject") => {
     setBusyId(email.id);
     try {
-      await fetch(`/api/leads/emails/${email.id}/${action}`, { method: "PATCH" });
+      await fetch(`/api/leads/emails/${email.id}/${action}`, {
+        method: "PATCH",
+      });
       setQueue((q) => q.filter((e) => e.id !== email.id));
       setFollowups((q) => q.filter((e) => e.id !== email.id));
       setSelected((s) => {
@@ -303,7 +356,9 @@ export default function CampaignsPage() {
   const sendNow = async (email: LeadEmailDTO) => {
     setBusyId(email.id);
     try {
-      const j = await fetch(`/api/leads/emails/${email.id}/send`, { method: "POST" }).then((r) => r.json());
+      const j = await fetch(`/api/leads/emails/${email.id}/send`, {
+        method: "POST",
+      }).then((r) => r.json());
       if (j.success) {
         toast.success("Email odoslaný ✓");
         setQueue((q) => q.filter((e) => e.id !== email.id));
@@ -322,7 +377,9 @@ export default function CampaignsPage() {
   const generateBody = async (email: LeadEmailDTO) => {
     setBusyId(email.id);
     try {
-      const j = await fetch(`/api/leads/emails/${email.id}/generate`, { method: "POST" }).then((r) => r.json());
+      const j = await fetch(`/api/leads/emails/${email.id}/generate`, {
+        method: "POST",
+      }).then((r) => r.json());
       if (j.email) {
         setFollowups((q) => q.map((e) => (e.id === email.id ? j.email : e)));
         toast.success("Followup vygenerovaný");
@@ -351,7 +408,11 @@ export default function CampaignsPage() {
   const bulkReject = async () => {
     const ids = [...selected];
     if (!ids.length) return;
-    await Promise.all(ids.map((id) => fetch(`/api/leads/emails/${id}/reject`, { method: "PATCH" })));
+    await Promise.all(
+      ids.map((id) =>
+        fetch(`/api/leads/emails/${id}/reject`, { method: "PATCH" }),
+      ),
+    );
     setQueue((q) => q.filter((e) => !selected.has(e.id)));
     setSelected(new Set());
     toast.success(`Zamietnutých ${ids.length}`);
@@ -359,7 +420,8 @@ export default function CampaignsPage() {
   };
 
   const allSelected = queue.length > 0 && selected.size === queue.length;
-  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(queue.map((e) => e.id)));
+  const toggleAll = () =>
+    setSelected(allSelected ? new Set() : new Set(queue.map((e) => e.id)));
   const toggleOne = (id: string) =>
     setSelected((s) => {
       const n = new Set(s);
@@ -371,13 +433,20 @@ export default function CampaignsPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
-        <Link href="/leads" className="inline-flex items-center gap-1 text-sm text-muted hover:text-foreground">
+        <Link
+          href="/leads"
+          className="inline-flex items-center gap-1 text-sm text-muted hover:text-foreground"
+        >
           <ArrowLeft className="h-4 w-4" />
           Späť
         </Link>
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Emailové kampane</h1>
-          <p className="text-sm text-muted">Generuj, schvaľuj a plánuj cold emaily pre leady.</p>
+          <h1 className="text-xl font-semibold text-foreground">
+            Emailové kampane
+          </h1>
+          <p className="text-sm text-muted">
+            Generuj, schvaľuj a plánuj cold emaily pre leady.
+          </p>
         </div>
       </div>
 
@@ -390,7 +459,10 @@ export default function CampaignsPage() {
           {/* Campaign switcher — pick which campaign (segment) you're managing */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted">Kampaň:</span>
-            <Select value={campaignId ?? "__new__"} onValueChange={selectCampaign}>
+            <Select
+              value={campaignId ?? "__new__"}
+              onValueChange={selectCampaign}
+            >
               <SelectTrigger className="h-9 w-auto min-w-[220px]">
                 <SelectValue placeholder="Nová kampaň" />
               </SelectTrigger>
@@ -405,7 +477,9 @@ export default function CampaignsPage() {
               </SelectContent>
             </Select>
             {campaignId && (
-              <Badge variant={isActive ? "success" : "default"}>{isActive ? "Aktívna" : "Neaktívna"}</Badge>
+              <Badge variant={isActive ? "success" : "default"}>
+                {isActive ? "Aktívna" : "Neaktívna"}
+              </Badge>
             )}
           </div>
 
@@ -433,7 +507,11 @@ export default function CampaignsPage() {
                 min={1}
                 max={50}
                 value={dailyLimit}
-                onChange={(e) => setDailyLimit(Math.min(50, Math.max(1, Number(e.target.value) || 1)))}
+                onChange={(e) =>
+                  setDailyLimit(
+                    Math.min(50, Math.max(1, Number(e.target.value) || 1)),
+                  )
+                }
                 className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
               />
             </label>
@@ -454,17 +532,41 @@ export default function CampaignsPage() {
               Kampaň aktívna
             </label>
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="secondary" size="sm" onClick={() => saveCampaign()} disabled={savingCampaign}>
-                {savingCampaign ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => saveCampaign()}
+                disabled={savingCampaign}
+              >
+                {savingCampaign ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Check className="h-4 w-4" />
+                )}
                 Uložiť
               </Button>
               <Button size="sm" onClick={generateBatch} disabled={generating}>
-                {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {generating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
                 Načítať emaily na schválenie
               </Button>
-              <Button size="sm" variant="secondary" onClick={findMissingEmails} disabled={findingEmails}>
-                {findingEmails ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                {findingEmails ? "Hľadám emaily…" : "Hľadať emaily pre leady bez kontaktu"}
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={findMissingEmails}
+                disabled={findingEmails}
+              >
+                {findingEmails ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+                {findingEmails
+                  ? "Hľadám emaily…"
+                  : "Hľadať emaily pre leady bez kontaktu"}
               </Button>
             </div>
           </div>
@@ -511,12 +613,18 @@ export default function CampaignsPage() {
             </div>
           ) : queue.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted">
-              Žiadne emaily na schválenie. Klikni „Načítať emaily na schválenie".
+              Žiadne emaily na schválenie. Klikni „Načítať emaily na
+              schválenie".
             </p>
           ) : (
             <div className="space-y-1">
               <div className="flex items-center gap-2 px-1 pb-2 text-xs text-muted">
-                <input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4 accent-primary" />
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  className="h-4 w-4 accent-primary"
+                />
                 Vybrať všetky
               </div>
               {queue.map((e) => (
@@ -547,7 +655,9 @@ export default function CampaignsPage() {
         </CardHeader>
         <CardContent>
           {followups.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted">Žiadne followupy nie sú momentálne na rade.</p>
+            <p className="py-6 text-center text-sm text-muted">
+              Žiadne followupy nie sú momentálne na rade.
+            </p>
           ) : (
             <div className="space-y-1">
               {followups.map((e) => (
@@ -557,7 +667,9 @@ export default function CampaignsPage() {
                   onOpen={() => setEditing(e)}
                   onApprove={() => act(e, "approve")}
                   onReject={() => act(e, "reject")}
-                  onGenerate={!e.body?.trim() ? () => generateBody(e) : undefined}
+                  onGenerate={
+                    !e.body?.trim() ? () => generateBody(e) : undefined
+                  }
                   onSend={e.body?.trim() ? () => sendNow(e) : undefined}
                   busy={busyId === e.id}
                   showType
@@ -578,38 +690,98 @@ export default function CampaignsPage() {
         </CardHeader>
         <CardContent>
           {approved.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted">Žiadne schválené emaily čakajúce na odoslanie.</p>
+            <p className="py-6 text-center text-sm text-muted">
+              Žiadne schválené emaily čakajúce na odoslanie.
+            </p>
           ) : (
             <div className="space-y-1">
-              <p className="pb-1 text-xs text-muted">
-                Klikni na email a stále ho vieš upraviť, vrátiť do konceptov alebo odoslať hneď.
-              </p>
-              {approved.map((e) => (
-                <div
-                  key={e.id}
-                  className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm"
-                >
-                  <button type="button" onClick={() => setEditing(e)} className="min-w-0 flex-1 text-left">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate font-medium text-foreground">{e.companyName}</span>
-                      {e.segmentName && <span className="shrink-0 text-xs text-muted">· {e.segmentName}</span>}
+              {(() => {
+                const blocked = approved.filter((e) =>
+                  blockedReason(e, campaigns),
+                );
+                if (!blocked.length) return null;
+                return (
+                  <div className="mb-2 flex gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                    <div className="space-y-1">
+                      <p className="font-medium text-foreground">
+                        {blocked.length} z {approved.length} sa automaticky
+                        NEODOŠLE
+                      </p>
+                      <p className="text-muted">
+                        Automat posiela len emaily, ktoré spadajú pod{" "}
+                        <strong>zapnutú</strong> kampaň. Zapni kampaň vyššie a
+                        nastav jej segment na ten, z ktorého sú tieto leady
+                        (alebo na „Všetky segmenty“). Tlačidlom „Odoslať“ ich
+                        vieš poslať aj hneď ručne.
+                      </p>
                     </div>
-                    <p className="truncate text-xs text-muted">{e.subject || "—"}</p>
-                  </button>
-                  <Button size="sm" variant="ghost" onClick={() => unapprove(e)} disabled={busyId === e.id}>
-                    Späť do konceptov
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => sendNow(e)}
-                    disabled={busyId === e.id || !e.companyEmail}
-                    title={e.companyEmail ? "Odoslať teraz" : "Chýba email"}
+                  </div>
+                );
+              })()}
+              <p className="pb-1 text-xs text-muted">
+                Klikni na email a stále ho vieš upraviť, vrátiť do konceptov
+                alebo odoslať hneď.
+              </p>
+              {approved.map((e) => {
+                const blocked = blockedReason(e, campaigns);
+                return (
+                  <div
+                    key={e.id}
+                    className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm"
                   >
-                    {busyId === e.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                    Odoslať
-                  </Button>
-                </div>
-              ))}
+                    <button
+                      type="button"
+                      onClick={() => setEditing(e)}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="truncate font-medium text-foreground">
+                          {e.companyName}
+                        </span>
+                        {e.segmentName && (
+                          <span className="shrink-0 text-xs text-muted">
+                            · {e.segmentName}
+                          </span>
+                        )}
+                        {blocked && (
+                          <span
+                            title={blocked}
+                            className="flex shrink-0 items-center gap-1 rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning"
+                          >
+                            <AlertTriangle className="h-3 w-3" />
+                            Neodošle sa
+                          </span>
+                        )}
+                      </div>
+                      <p className="truncate text-xs text-muted">
+                        {blocked ?? (e.subject || "—")}
+                      </p>
+                    </button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => unapprove(e)}
+                      disabled={busyId === e.id}
+                    >
+                      Späť do konceptov
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => sendNow(e)}
+                      disabled={busyId === e.id || !e.companyEmail}
+                      title={e.companyEmail ? "Odoslať teraz" : "Chýba email"}
+                    >
+                      {busyId === e.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                      Odoslať
+                    </Button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </CardContent>
@@ -625,7 +797,9 @@ export default function CampaignsPage() {
         </CardHeader>
         <CardContent>
           {sent.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted">Zatiaľ žiadne odoslané emaily pre tento segment.</p>
+            <p className="py-6 text-center text-sm text-muted">
+              Zatiaľ žiadne odoslané emaily pre tento segment.
+            </p>
           ) : (
             <div className="space-y-1">
               {sent.map((e) => (
@@ -635,13 +809,23 @@ export default function CampaignsPage() {
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="truncate font-medium text-foreground">{e.companyName}</span>
-                      {e.segmentName && <span className="shrink-0 text-xs text-muted">· {e.segmentName}</span>}
+                      <span className="truncate font-medium text-foreground">
+                        {e.companyName}
+                      </span>
+                      {e.segmentName && (
+                        <span className="shrink-0 text-xs text-muted">
+                          · {e.segmentName}
+                        </span>
+                      )}
                     </div>
-                    <p className="truncate text-xs text-muted">{e.subject || "—"}</p>
+                    <p className="truncate text-xs text-muted">
+                      {e.subject || "—"}
+                    </p>
                   </div>
                   <span className="shrink-0 text-xs text-muted">
-                    {e.sentAt ? new Date(e.sentAt).toLocaleDateString("sk-SK") : ""}
+                    {e.sentAt
+                      ? new Date(e.sentAt).toLocaleDateString("sk-SK")
+                      : ""}
                   </span>
                   <OpenBadge count={e.openCount} />
                   <ClickBadge count={e.clickCount} />
@@ -658,8 +842,12 @@ export default function CampaignsPage() {
           onClose={() => setEditing(null)}
           onSaved={(updated) => {
             setQueue((q) => q.map((e) => (e.id === updated.id ? updated : e)));
-            setFollowups((q) => q.map((e) => (e.id === updated.id ? updated : e)));
-            setApproved((q) => q.map((e) => (e.id === updated.id ? updated : e)));
+            setFollowups((q) =>
+              q.map((e) => (e.id === updated.id ? updated : e)),
+            );
+            setApproved((q) =>
+              q.map((e) => (e.id === updated.id ? updated : e)),
+            );
             setEditing(updated); // keep the open modal in sync
           }}
           onApproved={(id) => {
@@ -721,26 +909,55 @@ function EmailRow({
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
       {onCheck && (
-        <input type="checkbox" checked={checked} onChange={onCheck} className="h-4 w-4 shrink-0 accent-primary" />
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={onCheck}
+          className="h-4 w-4 shrink-0 accent-primary"
+        />
       )}
       <button onClick={onOpen} className="min-w-0 flex-1 text-left">
         <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-foreground">{email.companyName}</span>
-          {email.segmentName && <span className="shrink-0 text-xs text-muted">· {email.segmentName}</span>}
+          <span className="truncate text-sm font-medium text-foreground">
+            {email.companyName}
+          </span>
+          {email.segmentName && (
+            <span className="shrink-0 text-xs text-muted">
+              · {email.segmentName}
+            </span>
+          )}
           {showType && (
-            <Badge variant={email.emailType === "followup2" ? "warning" : "info"}>
+            <Badge
+              variant={email.emailType === "followup2" ? "warning" : "info"}
+            >
               {EMAIL_TYPE_LABEL[email.emailType]}
             </Badge>
           )}
           {!email.companyEmail && <Badge variant="danger">Chýba email</Badge>}
         </div>
-        <p className="truncate text-xs text-foreground/80">{email.subject || "—"}</p>
-        <p className="truncate text-xs text-muted">{email.body ? email.body.replace(/\s+/g, " ").slice(0, 90) : "(bez tela)"}</p>
+        <p className="truncate text-xs text-foreground/80">
+          {email.subject || "—"}
+        </p>
+        <p className="truncate text-xs text-muted">
+          {email.body
+            ? email.body.replace(/\s+/g, " ").slice(0, 90)
+            : "(bez tela)"}
+        </p>
       </button>
       <div className="flex shrink-0 items-center gap-1">
         {onGenerate && (
-          <Button size="sm" variant="ghost" onClick={onGenerate} disabled={busy} aria-label="Vygenerovať">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onGenerate}
+            disabled={busy}
+            aria-label="Vygenerovať"
+          >
+            {busy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
           </Button>
         )}
         <Button size="sm" variant="ghost" onClick={onOpen} aria-label="Upraviť">
@@ -755,13 +972,29 @@ function EmailRow({
             aria-label="Odoslať teraz"
             title={email.companyEmail ? "Odoslať teraz" : "Chýba email"}
           >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 text-primary" />}
+            {busy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4 text-primary" />
+            )}
           </Button>
         )}
-        <Button size="sm" variant="ghost" onClick={onApprove} disabled={busy} aria-label="Schváliť">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onApprove}
+          disabled={busy}
+          aria-label="Schváliť"
+        >
           <Check className="h-4 w-4 text-success" />
         </Button>
-        <Button size="sm" variant="ghost" onClick={onReject} disabled={busy} aria-label="Zamietnuť">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={onReject}
+          disabled={busy}
+          aria-label="Zamietnuť"
+        >
           <X className="h-4 w-4 text-danger" />
         </Button>
       </div>
@@ -806,7 +1039,10 @@ function EmailEditor({
     // Re-select the wrapped text so it can be typed over straight away.
     requestAnimationFrame(() => {
       ta.focus();
-      ta.setSelectionRange(start + before.length, start + before.length + sel.length);
+      ta.setSelectionRange(
+        start + before.length,
+        start + before.length + sel.length,
+      );
     });
   };
 
@@ -866,7 +1102,9 @@ function EmailEditor({
       // Persist any edits first so the sent copy matches what's on screen.
       const updated = await save();
       if (updated) onSaved(updated);
-      const j = await fetch(`/api/leads/emails/${email.id}/send`, { method: "POST" }).then((r) => r.json());
+      const j = await fetch(`/api/leads/emails/${email.id}/send`, {
+        method: "POST",
+      }).then((r) => r.json());
       if (j.success) {
         toast.success("Email odoslaný ✓");
         onSent(email.id);
@@ -879,23 +1117,33 @@ function EmailEditor({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+    >
       <div
         className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border bg-surface p-5 shadow-xl"
         onClick={(ev) => ev.stopPropagation()}
       >
         <div className="mb-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold text-foreground">{email.companyName}</h2>
+            <h2 className="truncate text-lg font-semibold text-foreground">
+              {email.companyName}
+            </h2>
             <p className="truncate text-xs text-muted">
               {email.segmentName ?? "—"}
               {email.companyCity ? ` · ${email.companyCity}` : ""}
-              {email.websiteUrl ? ` · ${email.websiteUrl.replace(/^https?:\/\/(www\.)?/, "")}` : ""}
+              {email.websiteUrl
+                ? ` · ${email.websiteUrl.replace(/^https?:\/\/(www\.)?/, "")}`
+                : ""}
               {" · "}
               {email.companyEmail ?? "chýba email"}
             </p>
           </div>
-          <button onClick={onClose} className="text-muted hover:text-foreground">
+          <button
+            onClick={onClose}
+            className="text-muted hover:text-foreground"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -939,7 +1187,9 @@ function EmailEditor({
               onClick={() => setPreview((v) => !v)}
               className={cn(
                 "rounded border px-2 py-1 text-xs",
-                preview ? "border-primary bg-primary/10 text-primary" : "border-border text-muted hover:text-foreground",
+                preview
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border text-muted hover:text-foreground",
               )}
             >
               {preview ? "Upraviť" : "Náhľad"}
@@ -962,8 +1212,9 @@ function EmailEditor({
           />
         )}
         <p className="mt-1 text-xs text-muted">
-          Formátovanie: <code>**tučné**</code> · <code>*šikmé*</code> · <code>[text](https://odkaz.sk)</code> — v
-          Náhľade uvidíš, ako to príde klientovi.
+          Formátovanie: <code>**tučné**</code> · <code>*šikmé*</code> ·{" "}
+          <code>[text](https://odkaz.sk)</code> — v Náhľade uvidíš, ako to príde
+          klientovi.
         </p>
 
         <div className="mt-4 flex items-center justify-between gap-2">
@@ -990,12 +1241,22 @@ function EmailEditor({
               Uložiť zmeny
             </Button>
             {isApproved ? (
-              <Button size="sm" variant="secondary" onClick={unapprove} disabled={saving || sending}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={unapprove}
+                disabled={saving || sending}
+              >
                 <X className="h-4 w-4" />
                 Vrátiť do konceptov
               </Button>
             ) : (
-              <Button size="sm" variant="secondary" onClick={saveAndApprove} disabled={saving || sending}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={saveAndApprove}
+                disabled={saving || sending}
+              >
                 <Check className="h-4 w-4" />
                 Uložiť & Schváliť
               </Button>
@@ -1006,7 +1267,11 @@ function EmailEditor({
               disabled={saving || sending || !email.companyEmail}
               title={email.companyEmail ? "Odoslať teraz" : "Chýba email"}
             >
-              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {sending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
               Odoslať teraz
             </Button>
           </div>

@@ -76,6 +76,7 @@ export interface LeadEmailDTO {
   companyName: string;
   companyEmail: string | null;
   companyCity: string | null;
+  segmentId: string | null;
   segmentName: string | null;
   websiteUrl: string | null;
   subject: string;

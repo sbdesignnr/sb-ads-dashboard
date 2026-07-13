@@ -44,7 +44,7 @@ export function serializeLead(l: Lead): LeadDTO {
   };
 }
 
-type LeadLite = Pick<Lead, "companyName" | "companyEmail" | "companyCity" | "websiteUrl"> & {
+type LeadLite = Pick<Lead, "companyName" | "companyEmail" | "companyCity" | "websiteUrl" | "segmentId"> & {
   segment?: { name: string } | null;
 };
 
@@ -56,6 +56,7 @@ export function serializeLeadEmail(e: LeadEmail & { lead?: LeadLite | null }): L
     companyName: e.lead?.companyName ?? "—",
     companyEmail: e.lead?.companyEmail ?? null,
     companyCity: e.lead?.companyCity ?? null,
+    segmentId: e.lead?.segmentId ?? null,
     segmentName: e.lead?.segment?.name ?? null,
     websiteUrl: e.lead?.websiteUrl ?? null,
     subject: e.subject,
