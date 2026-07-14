@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e 'const p=require\\(\"./package.json\"\\);console.log\\(Object.keys\\({...p.dependencies,...p.devDependencies}\\).join\\(\"\\\\n\"\\)\\)')",
+      "Bash(node -e 'const p=require\\(\"./package.json\"\\);console.log\\(\"react:\",p.dependencies.react,\"| next:\",p.dependencies.next\\)')",
+      "Bash(node -e 'const p=require\\(\"./package.json\"\\);for\\(const[k,v]of Object.entries\\(p.dependencies\\)\\)if\\(k.includes\\(\"tiptap\"\\)\\)console.log\\(k,v\\)')",
+      "Bash(node -e ' *)",
+      "Bash(node -e 'console.log\\(\"sanitize-html:\", require\\(\"./package.json\"\\).dependencies[\"sanitize-html\"]\\)')"
+    ]
+  }
+}

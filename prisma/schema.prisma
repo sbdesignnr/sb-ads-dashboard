@@ -513,30 +513,48 @@ model SeoTask {
 // ---------------------------------------------------------------------------
 
 model LearningBook {
-  id            String    @id @default(cuid())
+  id            String     @id @default(cuid())
   title         String
   author        String
-  originalTitle String?   @map("original_title") // pôvodný (anglický) názov — pre dohľadanie obálky
+  originalTitle String?    @map("original_title") // pôvodný (anglický) názov — pre dohľadanie obálky
   language      String? // SK | CZ | en (jazyk zobrazeného vydania)
   category      String // biznis | predaj | marketing | zdravie | mindset | produktivita | financie
-  coverUrl      String?   @map("cover_url")
+  coverUrl      String?    @map("cover_url")
   isbn          String?
-  publishedYear Int?      @map("published_year")
-  why           String    @db.Text // prečo čítať práve TY — šité na mieru
-  howToApply    String    @map("how_to_apply") @db.Text // ako to zapojiť do biznisu/života
-  takeaways     String[]  @default([]) // hlavné ponaučenia
-  priority      Int       @default(0) // poradie v učebnom pláne (nižšie = skôr)
-  status        String    @default("want") // want | reading | read | skipped
+  publishedYear Int?       @map("published_year")
+  why           String     @db.Text // prečo čítať práve TY — šité na mieru
+  howToApply    String     @map("how_to_apply") @db.Text // ako to zapojiť do biznisu/života
+  takeaways     String[]   @default([]) // hlavné ponaučenia
+  priority      Int        @default(0) // poradie v učebnom pláne (nižšie = skôr)
+  status        String     @default("want") // want | reading | read | skipped
   rating        Int? // 1-5 po prečítaní
-  notes         String    @default("") @db.Text
-  startedAt     DateTime? @map("started_at")
-  finishedAt    DateTime? @map("finished_at")
-  source        String    @default("ai") // ai | manual
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  notes         String     @default("") @db.Text
+  startedAt     DateTime?  @map("started_at")
+  finishedAt    DateTime?  @map("finished_at")
+  source        String     @default("ai") // ai | manual
+  chapters      BookNote[]
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
 
   @@index([status, priority])
   @@map("learning_books")
+}
+
+// Poznámky ku knihe, rozdelené po kapitolách. `content` je HTML z editora
+// (TipTap/ProseMirror) — obmedzené na značky, ktoré schéma editora pozná, a späť
+// sa vždy vykresľuje cez editor, nikdy cez dangerouslySetInnerHTML.
+model BookNote {
+  id        String       @id @default(cuid())
+  bookId    String       @map("book_id")
+  book      LearningBook @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  title     String // názov kapitoly, napr. "3. Zákon malých zlepšení"
+  content   String       @default("") @db.Text // HTML
+  sortOrder Int          @default(0) @map("sort_order")
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  @@index([bookId, sortOrder])
+  @@map("book_notes")
 }
 
 // ── To-Do / Ciele ────────────────────────────────────────────────────────────

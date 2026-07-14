@@ -1,4 +1,4 @@
-import type { LearningBook } from "@prisma/client";
+import type { BookNote, LearningBook } from "@prisma/client";
 
 export interface LearningBookDTO {
   id: string;
@@ -44,6 +44,40 @@ export function serializeBook(b: LearningBook): LearningBookDTO {
     finishedAt: b.finishedAt?.toISOString() ?? null,
     source: b.source,
   };
+}
+
+export interface BookNoteDTO {
+  id: string;
+  bookId: string;
+  title: string;
+  /** HTML z editora — už prefiltrované (lib/learning/sanitize.ts). */
+  content: string;
+  sortOrder: number;
+  updatedAt: string;
+}
+
+export function serializeNote(n: BookNote): BookNoteDTO {
+  return {
+    id: n.id,
+    bookId: n.bookId,
+    title: n.title,
+    content: n.content,
+    sortOrder: n.sortOrder,
+    updatedAt: n.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Hrubý odhad, koľko je v kapitole naozaj textu — HTML značky sa nerátajú.
+ * Slúži na prehľad ("3 kapitoly · 480 slov"), nie na presnú štatistiku.
+ */
+export function noteWordCount(html: string): number {
+  const text = html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&[a-z]+;/gi, "")
+    .trim();
+  return text ? text.split(/\s+/).length : 0;
 }
 
 /** Normalised title key for dedup (strip diacritics/punctuation). */

@@ -2,11 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { Loader2, Sparkles, Star, X, Trash2, BookOpen, Check, Plus } from "lucide-react";
+import {
+  Loader2,
+  Sparkles,
+  Star,
+  X,
+  Trash2,
+  BookOpen,
+  Check,
+  Plus,
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { BookNotes } from "@/components/learning/BookNotes";
 
 interface Book {
   id: string;
@@ -26,7 +36,15 @@ interface Book {
   notes: string;
 }
 
-const CATEGORIES = ["biznis", "predaj", "marketing", "zdravie", "mindset", "produktivita", "financie"];
+const CATEGORIES = [
+  "biznis",
+  "predaj",
+  "marketing",
+  "zdravie",
+  "mindset",
+  "produktivita",
+  "financie",
+];
 const CAT_COLOR: Record<string, string> = {
   biznis: "#3b82f6",
   predaj: "#22c55e",
@@ -55,19 +73,30 @@ function Cover({ book, className }: { book: Book; className?: string }) {
   // Placeholder "spine" when no real cover exists.
   return (
     <div
-      className={cn("flex h-full w-full flex-col justify-between p-3 text-white", className)}
+      className={cn(
+        "flex h-full w-full flex-col justify-between p-3 text-white",
+        className,
+      )}
       style={{ background: `linear-gradient(150deg, ${color}, ${color}99)` }}
     >
       <BookOpen className="h-4 w-4 opacity-70" />
       <div>
-        <p className="line-clamp-4 text-sm font-semibold leading-tight">{book.title}</p>
+        <p className="line-clamp-4 text-sm font-semibold leading-tight">
+          {book.title}
+        </p>
         <p className="mt-1 text-[11px] opacity-80">{book.author}</p>
       </div>
     </div>
   );
 }
 
-function Stars({ value, onSet }: { value: number | null; onSet?: (n: number) => void }) {
+function Stars({
+  value,
+  onSet,
+}: {
+  value: number | null;
+  onSet?: (n: number) => void;
+}) {
   return (
     <div className="flex gap-0.5">
       {[1, 2, 3, 4, 5].map((n) => (
@@ -78,14 +107,24 @@ function Stars({ value, onSet }: { value: number | null; onSet?: (n: number) => 
           className={onSet ? "cursor-pointer" : "cursor-default"}
           aria-label={`${n} hviezd`}
         >
-          <Star className={cn("h-4 w-4", value && n <= value ? "fill-warning text-warning" : "text-muted")} />
+          <Star
+            className={cn(
+              "h-4 w-4",
+              value && n <= value ? "fill-warning text-warning" : "text-muted",
+            )}
+          />
         </button>
       ))}
     </div>
   );
 }
 
-const STATUS_LABEL: Record<string, string> = { want: "Chcem prečítať", reading: "Čítam", read: "Prečítané", skipped: "Preskočené" };
+const STATUS_LABEL: Record<string, string> = {
+  want: "Chcem prečítať",
+  reading: "Čítam",
+  read: "Prečítané",
+  skipped: "Preskočené",
+};
 
 function BookModal({
   book,
@@ -131,17 +170,27 @@ function BookModal({
             <Cover book={book} />
           </div>
           <div className="min-w-0 flex-1">
-            <Badge variant="default" style={{ borderColor: `${CAT_COLOR[book.category]}55` }}>
+            <Badge
+              variant="default"
+              style={{ borderColor: `${CAT_COLOR[book.category]}55` }}
+            >
               {book.category}
             </Badge>
-            <h2 className="mt-2 text-xl font-semibold text-foreground">{book.title}</h2>
+            <h2 className="mt-2 text-xl font-semibold text-foreground">
+              {book.title}
+            </h2>
             <p className="text-sm text-muted">
               {book.author}
               {book.publishedYear ? ` · ${book.publishedYear}` : ""}
             </p>
             {book.originalTitle && book.originalTitle !== book.title && (
               <p className="mt-0.5 text-xs text-muted">
-                {book.language === "SK" ? "Slovenské" : book.language === "CZ" ? "České" : ""} vydanie · originál: {book.originalTitle}
+                {book.language === "SK"
+                  ? "Slovenské"
+                  : book.language === "CZ"
+                    ? "České"
+                    : ""}{" "}
+                vydanie · originál: {book.originalTitle}
               </p>
             )}
 
@@ -160,7 +209,11 @@ function BookModal({
             </div>
             {book.status === "read" && (
               <div className="mt-3 flex items-center gap-2 text-sm text-muted">
-                Hodnotenie: <Stars value={book.rating} onSet={(n) => onRating(book.id, n)} />
+                Hodnotenie:{" "}
+                <Stars
+                  value={book.rating}
+                  onSet={(n) => onRating(book.id, n)}
+                />
               </div>
             )}
           </div>
@@ -168,16 +221,22 @@ function BookModal({
 
         <div className="space-y-4 border-t border-border p-5 sm:p-6">
           <div>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-primary">Prečo si to prečítať</p>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-primary">
+              Prečo si to prečítať
+            </p>
             <p className="text-sm text-foreground">{book.why}</p>
           </div>
           <div>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-success">Ako to aplikovať</p>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-success">
+              Ako to aplikovať
+            </p>
             <p className="text-sm text-foreground">{book.howToApply}</p>
           </div>
           {book.takeaways.length > 0 && (
             <div>
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Hlavné ponaučenia</p>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">
+                Hlavné ponaučenia
+              </p>
               <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
                 {book.takeaways.map((t, i) => (
                   <li key={i}>{t}</li>
@@ -186,16 +245,24 @@ function BookModal({
             </div>
           )}
           <div>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Moje poznámky</p>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">
+              Hlavná myšlienka{" "}
+              <span className="font-normal normal-case tracking-normal">
+                — jedna veta, čo si si odniesol
+              </span>
+            </p>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               onBlur={() => notes !== book.notes && onNotes(book.id, notes)}
-              rows={4}
-              placeholder="Čo si si z knihy odniesol, čo chceš vyskúšať…"
+              rows={2}
+              placeholder="Keby si si mal z celej knihy zapamätať jedinú vec…"
               className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
+
+          <BookNotes bookId={book.id} />
+
           <button
             onClick={() => onDelete(book.id)}
             className="inline-flex items-center gap-1.5 text-xs text-danger hover:underline"
@@ -230,7 +297,9 @@ function BookCard({ book, onOpen }: { book: Book; onOpen: () => void }) {
           </div>
         )}
       </div>
-      <p className="mt-1.5 line-clamp-2 text-xs font-medium text-foreground">{book.title}</p>
+      <p className="mt-1.5 line-clamp-2 text-xs font-medium text-foreground">
+        {book.title}
+      </p>
       <p className="line-clamp-1 text-[11px] text-muted">{book.author}</p>
     </button>
   );
@@ -275,7 +344,10 @@ export default function VzdelavaniePage() {
       });
       const j = await res.json();
       if (res.ok) {
-        toast.success(`Pridaných ${j.count} nových kníh do knižnice`, { id: "rec", duration: 5000 });
+        toast.success(`Pridaných ${j.count} nových kníh do knižnice`, {
+          id: "rec",
+          duration: 5000,
+        });
         await load();
       } else {
         toast.error(j.error || "Nepodarilo sa.", { id: "rec" });
@@ -320,14 +392,18 @@ export default function VzdelavaniePage() {
       const j = await res.json();
       if (res.ok && j.book) {
         toast.success(
-          j.foundCover ? `Pridané: „${j.book.title}"` : `Pridané: „${j.book.title}" (bez obálky v katalógu)`,
+          j.foundCover
+            ? `Pridané: „${j.book.title}"`
+            : `Pridané: „${j.book.title}" (bez obálky v katalógu)`,
           { id: "add", duration: 5000 },
         );
         setAddTitle("");
         setAddOpen(false);
         await load();
       } else {
-        toast.error(j.message || j.error || "Nepodarilo sa pridať.", { id: "add" });
+        toast.error(j.message || j.error || "Nepodarilo sa pridať.", {
+          id: "add",
+        });
       }
     } finally {
       setAdding(false);
@@ -341,10 +417,17 @@ export default function VzdelavaniePage() {
       return next;
     });
 
-  const visible = useMemo(() => (focus.size ? books.filter((b) => focus.has(b.category)) : books), [books, focus]);
-  const next = visible.filter((b) => b.status === "want").sort((a, b) => a.priority - b.priority);
+  const visible = useMemo(
+    () => (focus.size ? books.filter((b) => focus.has(b.category)) : books),
+    [books, focus],
+  );
+  const next = visible
+    .filter((b) => b.status === "want")
+    .sort((a, b) => a.priority - b.priority);
   const reading = visible.filter((b) => b.status === "reading");
-  const read = visible.filter((b) => b.status === "read").sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+  const read = visible
+    .filter((b) => b.status === "read")
+    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
 
   if (loading) {
     return (
@@ -374,15 +457,25 @@ export default function VzdelavaniePage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Vzdelávanie</h1>
-          <p className="text-sm text-muted">Knihy šité na mieru — prečo ich čítať a ako ich zapojiť do biznisu.</p>
+          <p className="text-sm text-muted">
+            Knihy šité na mieru — prečo ich čítať a ako ich zapojiť do biznisu.
+          </p>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="secondary" onClick={() => setAddOpen((v) => !v)}>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setAddOpen((v) => !v)}
+          >
             <Plus className="h-4 w-4" />
             Pridať knihu
           </Button>
           <Button size="sm" onClick={recommend} disabled={recommending}>
-            {recommending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {recommending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
             Odporuč mi knihy
           </Button>
         </div>
@@ -398,13 +491,21 @@ export default function VzdelavaniePage() {
             placeholder="Názov knihy (napr. Atomové návyky, alebo skopírovaný z Martinusu)…"
             className="min-w-0 flex-1 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
           />
-          <Button size="sm" onClick={addBook} disabled={adding || !addTitle.trim()}>
-            {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          <Button
+            size="sm"
+            onClick={addBook}
+            disabled={adding || !addTitle.trim()}
+          >
+            {adding ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
             Pridať
           </Button>
           <p className="w-full text-xs text-muted">
-            Napíš presný slovenský/český názov (aj z Martinusu) — dohľadám obálku a AI napíše, prečo ju čítať a ako
-            ju použiť.
+            Napíš presný slovenský/český názov (aj z Martinusu) — dohľadám
+            obálku a AI napíše, prečo ju čítať a ako ju použiť.
           </p>
         </div>
       )}
@@ -418,7 +519,9 @@ export default function VzdelavaniePage() {
             onClick={() => toggleFocus(c)}
             className={cn(
               "rounded-full border px-3 py-1 text-xs font-medium capitalize transition-colors",
-              focus.has(c) ? "border-transparent text-white" : "border-border text-muted hover:text-foreground",
+              focus.has(c)
+                ? "border-transparent text-white"
+                : "border-border text-muted hover:text-foreground",
             )}
             style={focus.has(c) ? { background: CAT_COLOR[c] } : undefined}
           >
@@ -426,7 +529,11 @@ export default function VzdelavaniePage() {
           </button>
         ))}
         {focus.size > 0 && (
-          <button type="button" onClick={() => setFocus(new Set())} className="px-2 py-1 text-xs text-muted hover:text-foreground">
+          <button
+            type="button"
+            onClick={() => setFocus(new Set())}
+            className="px-2 py-1 text-xs text-muted hover:text-foreground"
+          >
             zrušiť filter
           </button>
         )}
@@ -437,11 +544,19 @@ export default function VzdelavaniePage() {
           <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
             <BookOpen className="h-8 w-8 text-muted" />
             <div>
-              <p className="font-medium text-foreground">Zatiaľ prázdna knižnica</p>
-              <p className="text-sm text-muted">Klikni „Odporuč mi knihy" a AI ti zostaví učebný plán na mieru.</p>
+              <p className="font-medium text-foreground">
+                Zatiaľ prázdna knižnica
+              </p>
+              <p className="text-sm text-muted">
+                Klikni „Odporuč mi knihy" a AI ti zostaví učebný plán na mieru.
+              </p>
             </div>
             <Button size="sm" onClick={recommend} disabled={recommending}>
-              {recommending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {recommending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
               Odporuč mi knihy
             </Button>
           </CardContent>
@@ -451,7 +566,11 @@ export default function VzdelavaniePage() {
           <Section title="Ďalšie na rade" items={next} />
           <Section title="Práve čítam" items={reading} />
           <Section title="Prečítané" items={read} />
-          {visible.length === 0 && <p className="py-8 text-center text-sm text-muted">V tejto kategórii zatiaľ nič.</p>}
+          {visible.length === 0 && (
+            <p className="py-8 text-center text-sm text-muted">
+              V tejto kategórii zatiaľ nič.
+            </p>
+          )}
         </div>
       )}
 

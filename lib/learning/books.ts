@@ -35,7 +35,10 @@ interface GoogleVolume {
   };
 }
 
-function mapVolume(v: NonNullable<GoogleVolume["volumeInfo"]>, author: string): BookMeta | null {
+function mapVolume(
+  v: NonNullable<GoogleVolume["volumeInfo"]>,
+  author: string,
+): BookMeta | null {
   if (!v.title) return null;
   const isbn =
     v.industryIdentifiers?.find((i) => i.type === "ISBN_13")?.identifier ??
@@ -46,7 +49,9 @@ function mapVolume(v: NonNullable<GoogleVolume["volumeInfo"]>, author: string): 
       ?.replace(/^http:/, "https:")
       .replace(/&edge=curl/, "")
       .replace(/zoom=\d/, "zoom=1") ?? null;
-  const year = v.publishedDate ? Number(v.publishedDate.slice(0, 4)) || null : null;
+  const year = v.publishedDate
+    ? Number(v.publishedDate.slice(0, 4)) || null
+    : null;
   const vlang = v.language?.toLowerCase();
   return {
     title: v.title,
@@ -62,7 +67,12 @@ function mapVolume(v: NonNullable<GoogleVolume["volumeInfo"]>, author: string): 
 /** Up to `max` volumes for a query (optionally biased to a language). */
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function searchGoogle(title: string, author: string, lang?: string, max = 6): Promise<BookMeta[]> {
+async function searchGoogle(
+  title: string,
+  author: string,
+  lang?: string,
+  max = 6,
+): Promise<BookMeta[]> {
   const key = booksKey();
   // Plain relevance query — the `intitle:`/`inauthor:` operators are too strict for
   // translated editions (the author name + exact title differ from the original).
@@ -76,7 +86,9 @@ async function searchGoogle(title: string, author: string, lang?: string, max = 
       const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
       if (res.ok) {
         const data = (await res.json()) as { items?: GoogleVolume[] };
-        return (data.items ?? []).map((it) => mapVolume(it.volumeInfo ?? {}, author)).filter((b): b is BookMeta => b !== null);
+        return (data.items ?? [])
+          .map((it) => mapVolume(it.volumeInfo ?? {}, author))
+          .filter((b): b is BookMeta => b !== null);
       }
       if (res.status !== 503 && res.status !== 429) return []; // hard error — don't retry
     } catch {
@@ -103,8 +115,16 @@ function authorMatches(candidate: string, original: string): boolean {
 
 /** Candidate title must share a meaningful word with one of the seeds. */
 function titleRelated(candidate: string, seeds: string[]): boolean {
-  const cw = new Set(fold(candidate).split(/\s+/).filter((w) => w.length >= 4));
-  return seeds.some((s) => fold(s).split(/\s+/).some((w) => w.length >= 4 && cw.has(w)));
+  const cw = new Set(
+    fold(candidate)
+      .split(/\s+/)
+      .filter((w) => w.length >= 4),
+  );
+  return seeds.some((s) =>
+    fold(s)
+      .split(/\s+/)
+      .some((w) => w.length >= 4 && cw.has(w)),
+  );
 }
 
 /** A candidate is the real localized edition if language + author + title all line up. */
@@ -117,8 +137,14 @@ function isRealEdition(b: BookMeta, author: string, seeds: string[]): boolean {
   );
 }
 
-async function fromGoogle(title: string, author: string): Promise<BookMeta | null> {
-  return (await searchGoogle(title, author, undefined, 3)).find((b) => b.coverUrl) ?? null;
+async function fromGoogle(
+  title: string,
+  author: string,
+): Promise<BookMeta | null> {
+  return (
+    (await searchGoogle(title, author, undefined, 3)).find((b) => b.coverUrl) ??
+    null
+  );
 }
 
 interface OpenLibDoc {
@@ -134,19 +160,28 @@ interface OpenLibDoc {
  * match with a cover. They typed the exact edition they want, so we take the top
  * cover-bearing result as-is and read its real title/author/language.
  */
-export async function lookupByTitle(query: string, author?: string): Promise<BookMeta | null> {
+export async function lookupByTitle(
+  query: string,
+  author?: string,
+): Promise<BookMeta | null> {
   const results = await searchGoogle(query, author ?? "", undefined, 8);
   // Require the result to actually match the query title (+ author if given) —
   // otherwise the top cover-bearing result can be an unrelated book.
   const hit = results.find(
-    (b) => b.coverUrl && titleRelated(b.title, [query]) && (!author || authorMatches(b.author, author)),
+    (b) =>
+      b.coverUrl &&
+      titleRelated(b.title, [query]) &&
+      (!author || authorMatches(b.author, author)),
   );
   if (hit) return hit;
   const ol = await fromOpenLibrary(query, author ?? "");
   return ol?.coverUrl && titleRelated(ol.title, [query]) ? ol : null;
 }
 
-async function fromOpenLibrary(title: string, author: string): Promise<BookMeta | null> {
+async function fromOpenLibrary(
+  title: string,
+  author: string,
+): Promise<BookMeta | null> {
   const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(`${title} ${author}`)}&limit=1&fields=title,author_name,cover_i,isbn,first_publish_year`;
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
@@ -157,7 +192,9 @@ async function fromOpenLibrary(title: string, author: string): Promise<BookMeta 
     return {
       title: d.title,
       author: d.author_name?.join(", ") ?? author,
-      coverUrl: d.cover_i ? `https://covers.openlibrary.org/b/id/${d.cover_i}-L.jpg` : null,
+      coverUrl: d.cover_i
+        ? `https://covers.openlibrary.org/b/id/${d.cover_i}-L.jpg`
+        : null,
       isbn: d.isbn?.[0] ?? null,
       publishedYear: d.first_publish_year ?? null,
       resolvedLanguage: "en",
@@ -191,16 +228,27 @@ export async function lookupBook(
   //    single query per book is what stops Google Books 503-ing mid-batch.
   if (hint && opts.hintLanguage && opts.hintLanguage !== "en") {
     const seeds = [hint, originalTitle];
-    const hit = (await searchGoogle(hint, author, undefined, 8)).find((b) => isRealEdition(b, author, seeds));
+    const hit = (await searchGoogle(hint, author, undefined, 8)).find((b) =>
+      isRealEdition(b, author, seeds),
+    );
     if (hit) return hit;
   }
 
   // 2) No real SK/CZ edition (or AI knows there isn't one) → original edition.
   const en = await fromGoogle(originalTitle, author);
-  if (en?.coverUrl) return { ...en, title: originalTitle, resolvedLanguage: "en" };
+  if (en?.coverUrl)
+    return { ...en, title: originalTitle, resolvedLanguage: "en" };
   const ol = await fromOpenLibrary(originalTitle, author);
-  if (ol?.coverUrl) return { ...ol, title: originalTitle, resolvedLanguage: "en" };
+  if (ol?.coverUrl)
+    return { ...ol, title: originalTitle, resolvedLanguage: "en" };
 
   // 3) Nothing — placeholder spine with the original title.
-  return { title: originalTitle, author, coverUrl: null, isbn: null, publishedYear: null, resolvedLanguage: "en" };
+  return {
+    title: originalTitle,
+    author,
+    coverUrl: null,
+    isbn: null,
+    publishedYear: null,
+    resolvedLanguage: "en",
+  };
 }

@@ -32,7 +32,12 @@ export interface BookRec {
 }
 
 export interface RecommendInput {
-  alreadyHave: { title: string; author: string; category: string; status: string }[];
+  alreadyHave: {
+    title: string;
+    author: string;
+    category: string;
+    status: string;
+  }[];
   focusAreas: string[]; // subset of CATEGORIES, or empty = balanced
   count: number;
 }
@@ -78,7 +83,10 @@ const DESCRIBE_SYSTEM = `Si osobný mentor Samuela Bibeňa — zakladateľa SB D
 Píš po slovensky. Ak knihu nepoznáš, odhadni podľa názvu a autora, ale ostaň konkrétny. Vráť VÝHRADNE cez nástroj "popis".`;
 
 /** Tailored why/how/category for a specific book the user added manually. */
-export async function describeBook(title: string, author: string): Promise<BookDescription> {
+export async function describeBook(
+  title: string,
+  author: string,
+): Promise<BookDescription> {
   const client = new Anthropic();
   const msg = await client.messages.create({
     model: "claude-sonnet-4-6",
@@ -103,23 +111,33 @@ export async function describeBook(title: string, author: string): Promise<BookD
     tool_choice: { type: "tool", name: "popis" },
     messages: [{ role: "user", content: `Kniha: „${title}" — ${author}` }],
   });
-  const block = msg.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+  const block = msg.content.find(
+    (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
+  );
   if (!block) throw new Error("AI nevrátila popis.");
   const out = block.input as BookDescription;
   return {
-    category: (CATEGORIES as readonly string[]).includes(out.category) ? out.category : "biznis",
+    category: (CATEGORIES as readonly string[]).includes(out.category)
+      ? out.category
+      : "biznis",
     why: out.why ?? "",
     howToApply: out.howToApply ?? "",
     takeaways: Array.isArray(out.takeaways) ? out.takeaways.slice(0, 5) : [],
   };
 }
 
-export async function recommendBooks(input: RecommendInput): Promise<BookRec[]> {
+export async function recommendBooks(
+  input: RecommendInput,
+): Promise<BookRec[]> {
   const client = new Anthropic();
   const have = input.alreadyHave.length
-    ? input.alreadyHave.map((b) => `- ${b.title} (${b.author}) [${b.category}, ${b.status}]`).join("\n")
+    ? input.alreadyHave
+        .map((b) => `- ${b.title} (${b.author}) [${b.category}, ${b.status}]`)
+        .join("\n")
     : "(zatiaľ žiadne)";
-  const focus = input.focusAreas.length ? input.focusAreas.join(", ") : "vyvážený mix všetkých oblastí";
+  const focus = input.focusAreas.length
+    ? input.focusAreas.join(", ")
+    : "vyvážený mix všetkých oblastí";
 
   const msg = await client.messages.create({
     model: "claude-sonnet-4-6",
@@ -137,8 +155,16 @@ export async function recommendBooks(input: RecommendInput): Promise<BookRec[]> 
               items: {
                 type: "object",
                 properties: {
-                  title: { type: "string", description: "Názov vydania na čítanie (SK/CZ ak existuje preklad)." },
-                  titleOriginal: { type: "string", description: "Pôvodný (anglický) názov — na dohľadanie obálky." },
+                  title: {
+                    type: "string",
+                    description:
+                      "Názov vydania na čítanie (SK/CZ ak existuje preklad).",
+                  },
+                  titleOriginal: {
+                    type: "string",
+                    description:
+                      "Pôvodný (anglický) názov — na dohľadanie obálky.",
+                  },
                   language: { type: "string", enum: ["SK", "CZ", "en"] },
                   author: { type: "string" },
                   category: { type: "string", enum: [...CATEGORIES] },
@@ -147,7 +173,17 @@ export async function recommendBooks(input: RecommendInput): Promise<BookRec[]> 
                   takeaways: { type: "array", items: { type: "string" } },
                   priority: { type: "number" },
                 },
-                required: ["title", "titleOriginal", "language", "author", "category", "why", "howToApply", "takeaways", "priority"],
+                required: [
+                  "title",
+                  "titleOriginal",
+                  "language",
+                  "author",
+                  "category",
+                  "why",
+                  "howToApply",
+                  "takeaways",
+                  "priority",
+                ],
               },
             },
           },
@@ -164,7 +200,9 @@ export async function recommendBooks(input: RecommendInput): Promise<BookRec[]> 
     ],
   });
 
-  const block = msg.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+  const block = msg.content.find(
+    (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
+  );
   if (!block) throw new Error("AI nevrátila odporúčania.");
   const out = block.input as { books?: BookRec[] };
   const list = Array.isArray(out.books) ? out.books : [];
@@ -173,8 +211,12 @@ export async function recommendBooks(input: RecommendInput): Promise<BookRec[]> 
     .map((b) => ({
       ...b,
       titleOriginal: b.titleOriginal || b.title,
-      language: (["SK", "CZ", "en"] as const).includes(b.language) ? b.language : "en",
-      category: (CATEGORIES as readonly string[]).includes(b.category) ? b.category : "biznis",
+      language: (["SK", "CZ", "en"] as const).includes(b.language)
+        ? b.language
+        : "en",
+      category: (CATEGORIES as readonly string[]).includes(b.category)
+        ? b.category
+        : "biznis",
       takeaways: Array.isArray(b.takeaways) ? b.takeaways.slice(0, 5) : [],
     }));
 }

@@ -8,9 +8,13 @@ export const dynamic = "force-dynamic";
 
 const STATUSES = ["want", "reading", "read", "skipped"] as const;
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!session?.user)
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { id } = await params;
 
   let body: { status?: string; notes?: string; rating?: number | null } = {};
@@ -21,15 +25,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const data: Record<string, unknown> = {};
-  if (typeof body.status === "string" && STATUSES.includes(body.status as (typeof STATUSES)[number])) {
+  if (
+    typeof body.status === "string" &&
+    STATUSES.includes(body.status as (typeof STATUSES)[number])
+  ) {
     data.status = body.status;
     // Stamp the reading timeline as the status moves.
     if (body.status === "reading") data.startedAt = new Date();
     if (body.status === "read") data.finishedAt = new Date();
-    if (body.status === "want") { data.startedAt = null; data.finishedAt = null; }
+    if (body.status === "want") {
+      data.startedAt = null;
+      data.finishedAt = null;
+    }
   }
   if (typeof body.notes === "string") data.notes = body.notes;
-  if (body.rating === null || (typeof body.rating === "number" && body.rating >= 1 && body.rating <= 5)) {
+  if (
+    body.rating === null ||
+    (typeof body.rating === "number" && body.rating >= 1 && body.rating <= 5)
+  ) {
     data.rating = body.rating;
   }
 
@@ -41,9 +54,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!session?.user)
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { id } = await params;
   await prisma.learningBook.delete({ where: { id } }).catch(() => {});
   return NextResponse.json({ ok: true });
