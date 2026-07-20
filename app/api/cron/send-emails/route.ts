@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { fromZonedTime } from "date-fns-tz";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
@@ -13,7 +14,9 @@ async function isAuthorized(req: NextRequest): Promise<boolean> {
   const session = await auth();
   if (session?.user) return true;
   const secret = process.env.CRON_SECRET;
-  return Boolean(secret && req.headers.get("authorization") === `Bearer ${secret}`);
+  return Boolean(
+    secret && req.headers.get("authorization") === `Bearer ${secret}`,
+  );
 }
 
 const TZ = "Europe/Bratislava";
@@ -52,26 +55,33 @@ function startOfTodayLocal(now: Date): Date {
 // for due follow-ups so they surface for approval — follow-ups are NEVER sent
 // automatically.
 async function handle(req: NextRequest) {
-  if (!(await isAuthorized(req))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!(await isAuthorized(req)))
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const now = new Date();
   const nowMin = minutesNowLocal(now);
 
   let sent = 0;
   const skipped: string[] = [];
-  const campaigns = await prisma.leadCampaign.findMany({ where: { isActive: true } });
+  const campaigns = await prisma.leadCampaign.findMany({
+    where: { isActive: true },
+  });
   if (!campaigns.length) skipped.push("žiadna aktívna kampaň");
 
   for (const c of campaigns) {
-    // Respect the campaign's own send time. Before it → not yet; at/after → send.
+    // Dve cesty odoslania:
+    //  1) mail s vlastným časom (scheduledAt) sa odošle, keď jeho čas prišiel —
+    //     bez ohľadu na denný sendTime kampane (používateľ ho naplánoval presne),
+    //  2) mail bez vlastného času sa riadi denným sendTime kampane.
     const sendMin = minutesFromHHMM(c.sendTime);
-    if (nowMin < sendMin) {
-      skipped.push(`${c.name}: ešte nie je ${c.sendTime}`);
-      continue;
-    }
+    const sendTimePassed = nowMin >= sendMin;
 
     const scope = c.segmentId ? { segmentId: c.segmentId } : {};
     const sentToday = await prisma.leadEmail.count({
-      where: { status: "sent", sentAt: { gte: startOfTodayLocal(now) }, lead: scope },
+      where: {
+        status: "sent",
+        sentAt: { gte: startOfTodayLocal(now) },
+        lead: scope,
+      },
     });
     const remaining = c.dailyLimit - sentToday;
     if (remaining <= 0) {
@@ -79,17 +89,24 @@ async function handle(req: NextRequest) {
       continue;
     }
 
+    // Naplánované (čas prišiel) VŽDY; nenaplánované len keď prešiel denný sendTime.
+    const dueClauses: Prisma.LeadEmailWhereInput[] = [
+      { scheduledAt: { lte: now } },
+    ];
+    if (sendTimePassed) dueClauses.push({ scheduledAt: null });
+
     const approved = await prisma.leadEmail.findMany({
-      where: {
-        status: "approved",
-        OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
-        lead: scope,
-      },
-      orderBy: { createdAt: "asc" },
+      where: { status: "approved", OR: dueClauses, lead: scope },
+      // Naplánované najskôr (podľa vlastného času), potom podľa poradia vytvorenia.
+      orderBy: [{ scheduledAt: "asc" }, { createdAt: "asc" }],
       take: remaining,
     });
     if (!approved.length) {
-      skipped.push(`${c.name}: 0 schválených emailov v jej segmente`);
+      skipped.push(
+        sendTimePassed
+          ? `${c.name}: 0 schválených emailov v jej segmente`
+          : `${c.name}: pred ${c.sendTime} sa posielajú len naplánované (žiadne nie je splatné)`,
+      );
       continue;
     }
 
@@ -106,16 +123,24 @@ async function handle(req: NextRequest) {
     if (campaignSent > 0) {
       await prisma.leadCampaign.update({
         where: { id: c.id },
-        data: { totalSent: { increment: campaignSent }, ...(c.startedAt ? {} : { startedAt: now }) },
+        data: {
+          totalSent: { increment: campaignSent },
+          ...(c.startedAt ? {} : { startedAt: now }),
+        },
       });
     }
   }
-  if (skipped.length) console.log("[cron/send-emails] neodoslané:", skipped.join(" | "));
+  if (skipped.length)
+    console.log("[cron/send-emails] neodoslané:", skipped.join(" | "));
 
   // Due follow-ups → generate bodies (if missing) so they appear in the queue.
   let followupsReady = 0;
   const dueFollowups = await prisma.leadEmail.findMany({
-    where: { status: "draft", emailType: { in: ["followup1", "followup2"] }, scheduledAt: { lte: now } },
+    where: {
+      status: "draft",
+      emailType: { in: ["followup1", "followup2"] },
+      scheduledAt: { lte: now },
+    },
     include: { lead: { include: { segment: true } } },
     take: 50,
   });
@@ -137,7 +162,10 @@ async function handle(req: NextRequest) {
         previousSubject: initial?.subject,
         previousBody: initial?.body,
       });
-      await prisma.leadEmail.update({ where: { id: f.id }, data: { subject: out.subject, body: out.body } });
+      await prisma.leadEmail.update({
+        where: { id: f.id },
+        data: { subject: out.subject, body: out.body },
+      });
       followupsReady++;
     } catch {
       /* skip */

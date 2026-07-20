@@ -10,22 +10,32 @@ export const maxDuration = 60;
 
 // (Re)generate the subject + body for an email — used for follow-ups queued with
 // an empty body, or to refresh an initial draft.
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "AI nie je nakonfigurované." }, { status: 503 });
+  if (!session?.user)
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!process.env.ANTHROPIC_API_KEY)
+    return NextResponse.json(
+      { error: "AI nie je nakonfigurované." },
+      { status: 503 },
+    );
   const { id } = await params;
 
   const email = await prisma.leadEmail.findUnique({
     where: { id },
     include: { lead: { include: { segment: true } } },
   });
-  if (!email?.lead) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (!email?.lead)
+    return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-  const type = (["initial", "followup1", "followup2"].includes(email.emailType) ? email.emailType : "initial") as
-    | "initial"
-    | "followup1"
-    | "followup2";
+  const type = (
+    ["initial", "followup1", "followup2"].includes(email.emailType)
+      ? email.emailType
+      : "initial"
+  ) as "initial" | "followup1" | "followup2";
 
   // Follow-ups reference the initial email in the thread.
   let previousSubject: string | null = null;

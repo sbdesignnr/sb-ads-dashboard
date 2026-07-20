@@ -11,9 +11,13 @@ export const maxDuration = 300;
 // e-mail and no initial email yet.
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!session?.user)
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!process.env.ANTHROPIC_API_KEY) {
-    return NextResponse.json({ error: "AI nie je nakonfigurované." }, { status: 503 });
+    return NextResponse.json(
+      { error: "AI nie je nakonfigurované." },
+      { status: 503 },
+    );
   }
 
   let body: { segmentId?: string; limit?: number } = {};
@@ -22,20 +26,49 @@ export async function POST(req: NextRequest) {
   } catch {
     /* defaults */
   }
-  const limit = Math.min(Math.max(1, Number(body.limit) || 20), 50);
-  const segmentId = body.segmentId && body.segmentId !== "all" ? body.segmentId : undefined;
+  // Koľko vygenerovať v JEDNOM behu (kvôli časovému limitu funkcie). UI volá
+  // opakovane, kým `remaining` neklesne na 0 — tak sa „načítajú všetky zvyšné".
+  const limit = Math.min(Math.max(1, Number(body.limit) || 30), 40);
+  const segmentId =
+    body.segmentId && body.segmentId !== "all" ? body.segmentId : undefined;
   const segFilter = segmentId ? { segmentId } : {};
 
   // Diagnostics for "only 1 generated": how many "new" leads have/lack an email,
   // and how many already have an initial draft (so they're skipped here).
-  const [leadsWithEmail, leadsWithoutEmail, alreadyHaveInitial] = await Promise.all([
-    prisma.lead.count({ where: { status: "new", ...segFilter, companyEmail: { not: null }, NOT: { companyEmail: "" } } }),
-    prisma.lead.count({ where: { status: "new", ...segFilter, OR: [{ companyEmail: null }, { companyEmail: "" }] } }),
-    prisma.lead.count({
-      where: { status: "new", ...segFilter, companyEmail: { not: null }, emails: { some: { emailType: "initial" } } },
-    }),
-  ]);
-  console.log("Leads with email:", leadsWithEmail, "without:", leadsWithoutEmail, "· already have initial draft:", alreadyHaveInitial);
+  const [leadsWithEmail, leadsWithoutEmail, alreadyHaveInitial] =
+    await Promise.all([
+      prisma.lead.count({
+        where: {
+          status: "new",
+          ...segFilter,
+          companyEmail: { not: null },
+          NOT: { companyEmail: "" },
+        },
+      }),
+      prisma.lead.count({
+        where: {
+          status: "new",
+          ...segFilter,
+          OR: [{ companyEmail: null }, { companyEmail: "" }],
+        },
+      }),
+      prisma.lead.count({
+        where: {
+          status: "new",
+          ...segFilter,
+          companyEmail: { not: null },
+          emails: { some: { emailType: "initial" } },
+        },
+      }),
+    ]);
+  console.log(
+    "Leads with email:",
+    leadsWithEmail,
+    "without:",
+    leadsWithoutEmail,
+    "· already have initial draft:",
+    alreadyHaveInitial,
+  );
 
   const leads = await prisma.lead.findMany({
     where: {
@@ -62,7 +95,9 @@ export async function POST(req: NextRequest) {
 
   for (let i = 0; i < leads.length; i += BATCH_SIZE) {
     const batch = leads.slice(i, i + BATCH_SIZE);
-    console.log(`Generating emails ${i + 1}-${Math.min(i + BATCH_SIZE, leads.length)} / ${leads.length}`);
+    console.log(
+      `Generating emails ${i + 1}-${Math.min(i + BATCH_SIZE, leads.length)} / ${leads.length}`,
+    );
     await Promise.all(
       batch.map(async (lead) => {
         try {
@@ -73,7 +108,9 @@ export async function POST(req: NextRequest) {
           });
           if (email.skipReason) {
             skippedSegment++;
-            details.push(`${lead.companyName}: preskočený (${email.skipReason})`);
+            details.push(
+              `${lead.companyName}: preskočený (${email.skipReason})`,
+            );
             return;
           }
           if (!email.subject || !email.body) {
@@ -82,12 +119,20 @@ export async function POST(req: NextRequest) {
             return;
           }
           await prisma.leadEmail.create({
-            data: { leadId: lead.id, subject: email.subject, body: email.body, emailType: "initial", status: "draft" },
+            data: {
+              leadId: lead.id,
+              subject: email.subject,
+              body: email.body,
+              emailType: "initial",
+              status: "draft",
+            },
           });
           generated++;
         } catch (err) {
           failed++;
-          details.push(`${lead.companyName}: chyba (${(err as Error).message.slice(0, 80)})`);
+          details.push(
+            `${lead.companyName}: chyba (${(err as Error).message.slice(0, 80)})`,
+          );
           console.error("Email gen failed for:", lead.companyName, err);
         }
       }),
@@ -96,11 +141,28 @@ export async function POST(req: NextRequest) {
 
   // New leads in scope we couldn't queue because they have no e-mail.
   const missingEmail = await prisma.lead.count({
-    where: { status: "new", companyEmail: null, ...(segmentId ? { segmentId } : {}) },
+    where: {
+      status: "new",
+      companyEmail: null,
+      ...(segmentId ? { segmentId } : {}),
+    },
+  });
+
+  // Koľko ešte zostáva vygenerovať (neoslovené leady s emailom bez initial draftu)
+  // — UI podľa toho vie, či zavolať ďalší beh.
+  const remaining = await prisma.lead.count({
+    where: {
+      status: "new",
+      companyEmail: { not: null },
+      NOT: { companyEmail: "" },
+      ...(segmentId ? { segmentId } : {}),
+      emails: { none: { emailType: "initial" } },
+    },
   });
 
   return NextResponse.json({
     generated,
+    remaining,
     skipped: skippedSegment + missingEmail,
     missingEmail, // leads skipped specifically for a missing e-mail (for the finder button)
     failed,

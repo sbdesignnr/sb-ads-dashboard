@@ -45,6 +45,65 @@ interface Stats {
   totalSent: number;
 }
 
+interface SegmentSummary {
+  leadsTotal: number;
+  withEmail: number;
+  contacted: number;
+  notContacted: number;
+  drafts: number;
+  approved: number;
+  noEmail: number;
+}
+
+/** ISO → hodnota pre <input type="datetime-local"> v lokálnom čase. */
+function toLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** Hodnota z datetime-local (lokálny čas) → ISO (UTC) pre server, alebo null. */
+function localInputToIso(v: string): string | null {
+  if (!v) return null;
+  const d = new Date(v); // prehliadač parsuje datetime-local ako lokálny čas
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** Ľudský zápis naplánovaného času, napr. „21. 7. o 9:00". */
+function fmtSchedule(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return `${d.getDate()}. ${d.getMonth() + 1}. o ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function SummaryTile({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone?: "success" | "primary" | "warning";
+}) {
+  const color =
+    tone === "success"
+      ? "text-success"
+      : tone === "primary"
+        ? "text-primary"
+        : tone === "warning"
+          ? "text-warning"
+          : "text-foreground";
+  return (
+    <div className="rounded-lg border border-border bg-surface-2/40 px-3 py-2">
+      <p className="text-[11px] leading-tight text-muted">{label}</p>
+      <p className={cn("mt-0.5 text-xl font-semibold tabular-nums", color)}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
 function StatBox({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-lg border border-border bg-surface-2/40 px-3 py-2">
@@ -141,6 +200,7 @@ export default function CampaignsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<LeadEmailDTO | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [summary, setSummary] = useState<SegmentSummary | null>(null);
 
   const applyCampaign = useCallback((c: CampaignDTO) => {
     setCampaignId(c.id);
@@ -155,6 +215,17 @@ export default function CampaignsPage() {
     setStats(j.stats ?? { sentToday: 0, pendingApproval: 0, totalSent: 0 });
     setCampaigns(j.campaigns ?? []);
   }, []);
+
+  const loadSummary = useCallback(async () => {
+    try {
+      const j = await fetch(
+        `/api/leads/emails/summary?segment=${encodeURIComponent(segmentId)}`,
+      ).then((r) => r.json());
+      if (!j.error) setSummary(j);
+    } catch {
+      /* ticho */
+    }
+  }, [segmentId]);
 
   // Email queues are scoped to the active campaign's segment.
   const loadQueues = useCallback(async () => {
@@ -193,10 +264,11 @@ export default function CampaignsPage() {
     applyCampaign(campaigns[0]);
   }, [campaigns, applyCampaign]);
 
-  // Reload the visible queues whenever the active segment changes.
+  // Reload the visible queues + summary whenever the active segment changes.
   useEffect(() => {
     loadQueues();
-  }, [loadQueues]);
+    loadSummary();
+  }, [loadQueues, loadSummary]);
 
   const selectCampaign = (id: string) => {
     if (id === "__new__") {
@@ -260,25 +332,40 @@ export default function CampaignsPage() {
     await saveCampaign({ isActive: v });
   };
 
+  // Načíta koncepty pre VŠETKY zvyšné neoslovené leady segmentu — server generuje
+  // po dávkach (kvôli časovému limitu), tu voláme dokola, kým `remaining` != 0.
   const generateBatch = async () => {
     setGenerating(true);
+    let totalGen = 0;
+    let lastMissing = 0;
     toast.loading("Generujem emaily…", { id: "gen" });
     try {
-      const j = await fetch("/api/leads/emails/generate-batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ segmentId, limit: dailyLimit }),
-      }).then((r) => r.json());
-      if (j.error) {
-        toast.error(j.error, { id: "gen" });
-      } else {
-        toast.success(
-          `Vygenerovaných ${j.generated}${j.skipped ? ` · ${j.skipped} preskočených` : ""}${j.failed ? ` · ${j.failed} zlyhaných` : ""}`,
+      for (let round = 0; round < 30; round++) {
+        const j = await fetch("/api/leads/emails/generate-batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ segmentId }),
+        }).then((r) => r.json());
+        if (j.error) {
+          toast.error(j.error, { id: "gen" });
+          break;
+        }
+        totalGen += j.generated ?? 0;
+        lastMissing = j.missingEmail ?? 0;
+        toast.loading(
+          `Generujem… ${totalGen} hotových${j.remaining ? `, ešte ${j.remaining}` : ""}`,
           { id: "gen" },
         );
+        // Koniec, keď nič nezostáva alebo sa už nedá pohnúť (zvyšok bez emailu / chyby).
+        if (!j.remaining || !j.generated) break;
       }
+      toast.success(
+        `Načítaných ${totalGen} emailov na schválenie${lastMissing ? ` · ${lastMissing} leadov bez emailu` : ""}`,
+        { id: "gen", duration: 5000 },
+      );
       loadQueues();
       loadCampaigns();
+      loadSummary();
     } catch {
       toast.error("Generovanie zlyhalo", { id: "gen" });
     } finally {
@@ -586,6 +673,53 @@ export default function CampaignsPage() {
         <Badge variant="info">{activeSegmentName}</Badge>
       </div>
 
+      {/* Prehľad segmentu — koľko leadov zo skenov, koľko oslovených, čo čaká. */}
+      {summary && (
+        <Card>
+          <CardContent className="py-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              <SummaryTile label="Leady zo skenov" value={summary.leadsTotal} />
+              <SummaryTile
+                label="Oslovených"
+                value={summary.contacted}
+                tone="success"
+              />
+              <SummaryTile label="Neoslovených" value={summary.notContacted} />
+              <SummaryTile
+                label="Čaká na schválenie"
+                value={summary.drafts}
+                tone="primary"
+              />
+              <SummaryTile
+                label="Schválené"
+                value={summary.approved}
+                tone="primary"
+              />
+              <SummaryTile
+                label="Bez emailu"
+                value={summary.noEmail}
+                tone={summary.noEmail ? "warning" : undefined}
+              />
+            </div>
+            <p className="mt-3 text-xs text-muted">
+              {summary.notContacted > 0 ? (
+                <>
+                  Z {summary.leadsTotal} leadov je {summary.contacted}{" "}
+                  oslovených. „Načítať emaily na schválenie" pripraví koncepty
+                  pre zvyšných neoslovených
+                  {summary.noEmail
+                    ? ` (okrem ${summary.noEmail} bez emailu)`
+                    : ""}
+                  .
+                </>
+              ) : (
+                <>Všetky leady v segmente sú už oslovené alebo pripravené. 🎉</>
+              )}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* SEKCIA B — initial queue */}
       <Card>
         <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
@@ -758,6 +892,12 @@ export default function CampaignsPage() {
                       <p className="truncate text-xs text-muted">
                         {blocked ?? (e.subject || "—")}
                       </p>
+                      {e.scheduledAt && (
+                        <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-primary">
+                          <Clock className="h-3 w-3" />
+                          Naplánované {fmtSchedule(e.scheduledAt)}
+                        </span>
+                      )}
                     </button>
                     <Button
                       size="sm"
@@ -1022,6 +1162,7 @@ function EmailEditor({
 }) {
   const [subject, setSubject] = useState(email.subject);
   const [body, setBody] = useState(email.body);
+  const [scheduled, setScheduled] = useState(toLocalInput(email.scheduledAt));
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [preview, setPreview] = useState(false);
@@ -1057,7 +1198,11 @@ function EmailEditor({
     const j = await fetch(`/api/leads/emails/${email.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subject, body }),
+      body: JSON.stringify({
+        subject,
+        body,
+        scheduledAt: localInputToIso(scheduled),
+      }),
     }).then((r) => r.json());
     return j.email ?? null;
   };
@@ -1246,6 +1391,36 @@ function EmailEditor({
           <code>[text](https://odkaz.sk)</code> — v Náhľade uvidíš, ako to príde
           klientovi.
         </p>
+
+        {/* Naplánovanie odoslania */}
+        <div className="mt-3 rounded-lg border border-border bg-surface-2/40 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Clock className="h-4 w-4 text-muted" />
+            <label className="text-sm text-foreground">
+              Odoslať dňa a o čase:
+            </label>
+            <input
+              type="datetime-local"
+              value={scheduled}
+              onChange={(e) => setScheduled(e.target.value)}
+              className="rounded-lg border border-border bg-surface px-2 py-1 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            {scheduled && (
+              <button
+                type="button"
+                onClick={() => setScheduled("")}
+                className="text-xs text-muted underline-offset-2 hover:text-foreground hover:underline"
+              >
+                zrušiť čas
+              </button>
+            )}
+          </div>
+          <p className="mt-1.5 text-xs text-muted">
+            {scheduled
+              ? `Odošle sa najskôr ${fmtSchedule(localInputToIso(scheduled))} (v rámci denného limitu kampane).`
+              : "Bez času sa odošle podľa denného času kampane po schválení. Nastav čas, ak chceš konkrétny deň/hodinu."}
+          </p>
+        </div>
 
         <div className="mt-4 flex items-center justify-between gap-2">
           <Button variant="ghost" size="sm" onClick={reject}>

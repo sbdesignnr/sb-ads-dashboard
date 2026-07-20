@@ -16,7 +16,8 @@ const withLead = { lead: { include: { segment: { select: { name: true } } } } };
 //  ?segment=<id>    → only emails whose lead is in that segment (per campaign)
 export async function GET(req: NextRequest) {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!session?.user)
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const sp = new URL(req.url).searchParams;
   const queue = sp.get("queue") ?? "initial";
   const segment = sp.get("segment");
