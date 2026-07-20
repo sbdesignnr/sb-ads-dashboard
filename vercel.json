@@ -17,6 +17,10 @@
       "schedule": "*/30 * * * *"
     },
     {
+      "path": "/api/cron/detect-replies",
+      "schedule": "15 */2 * * *"
+    },
+    {
       "path": "/api/cron/booking-reminders",
       "schedule": "0 8 * * *"
     },
