@@ -13,11 +13,17 @@ import {
   Gauge,
   Layers,
   Mail,
+  BarChart3,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { type LeadDTO, type SegmentDTO, type LeadStatus, LEAD_STATUS_LABEL } from "@/lib/leads/types";
+import {
+  type LeadDTO,
+  type SegmentDTO,
+  type LeadStatus,
+  LEAD_STATUS_LABEL,
+} from "@/lib/leads/types";
 
 type StatusFilter = LeadStatus | "all";
 
@@ -28,7 +34,10 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "Všetky" },
 ];
 
-const STATUS_VARIANT: Record<LeadStatus, "default" | "info" | "warning" | "success" | "danger"> = {
+const STATUS_VARIANT: Record<
+  LeadStatus,
+  "default" | "info" | "warning" | "success" | "danger"
+> = {
   new: "info",
   contacted: "warning",
   responded: "success",
@@ -77,7 +86,9 @@ export default function LeadsPage() {
   const loadLeads = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/leads?segment=${encodeURIComponent(segment)}&status=${status}`);
+      const res = await fetch(
+        `/api/leads?segment=${encodeURIComponent(segment)}&status=${status}`,
+      );
       const j = await res.json();
       setLeads(j.leads ?? []);
       setTotal(j.total ?? 0);
@@ -93,9 +104,24 @@ export default function LeadsPage() {
     loadLeads();
   }, [loadLeads]);
 
-  const totalLeads = useMemo(() => segments.reduce((a, s) => a + s.leadCount, 0), [segments]);
+  const totalLeads = useMemo(
+    () => segments.reduce((a, s) => a + s.leadCount, 0),
+    [segments],
+  );
 
-  const SegmentBtn = ({ id, name, color, count, mobile }: { id: string; name: string; color?: string; count: number; mobile?: boolean }) => (
+  const SegmentBtn = ({
+    id,
+    name,
+    color,
+    count,
+    mobile,
+  }: {
+    id: string;
+    name: string;
+    color?: string;
+    count: number;
+    mobile?: boolean;
+  }) => (
     <button
       onClick={() => setSegment(id)}
       className={cn(
@@ -112,7 +138,10 @@ export default function LeadsPage() {
       )}
     >
       {color ? (
-        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />
+        <span
+          className="h-2.5 w-2.5 shrink-0 rounded-full"
+          style={{ background: color }}
+        />
       ) : (
         <Target className="h-4 w-4 shrink-0" />
       )}
@@ -126,9 +155,18 @@ export default function LeadsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Leady</h1>
-          <p className="text-sm text-muted">Firmy so zastaralými webmi, pripravené na oslovenie.</p>
+          <p className="text-sm text-muted">
+            Firmy so zastaralými webmi, pripravené na oslovenie.
+          </p>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href="/leads/metriky"
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/40"
+          >
+            <BarChart3 className="h-4 w-4" />
+            Metriky
+          </Link>
           <Link
             href="/leads/kampane"
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/40"
@@ -151,7 +189,13 @@ export default function LeadsPage() {
         <aside className="hidden space-y-1 lg:block">
           <SegmentBtn id="all" name="Všetky segmenty" count={totalLeads} />
           {segments.map((s) => (
-            <SegmentBtn key={s.id} id={s.id} name={s.name} color={s.color} count={s.leadCount} />
+            <SegmentBtn
+              key={s.id}
+              id={s.id}
+              name={s.name}
+              color={s.color}
+              count={s.leadCount}
+            />
           ))}
         </aside>
 
@@ -160,7 +204,14 @@ export default function LeadsPage() {
           <div className="-mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-1 lg:hidden">
             <SegmentBtn id="all" name="Všetky" count={totalLeads} mobile />
             {segments.map((s) => (
-              <SegmentBtn key={s.id} id={s.id} name={s.name} color={s.color} count={s.leadCount} mobile />
+              <SegmentBtn
+                key={s.id}
+                id={s.id}
+                name={s.name}
+                color={s.color}
+                count={s.leadCount}
+                mobile
+              />
             ))}
           </div>
 
@@ -172,7 +223,9 @@ export default function LeadsPage() {
                 onClick={() => setStatus(t.value)}
                 className={cn(
                   "rounded-md px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer",
-                  status === t.value ? "bg-surface text-foreground shadow-sm" : "text-muted hover:text-foreground",
+                  status === t.value
+                    ? "bg-surface text-foreground shadow-sm"
+                    : "text-muted hover:text-foreground",
                 )}
               >
                 {t.label}
@@ -182,7 +235,9 @@ export default function LeadsPage() {
 
           {!loading && (
             <p className="mb-3 text-xs text-muted">
-              Zobrazených <span className="text-foreground">{leads.length}</span> z {total} leadov
+              Zobrazených{" "}
+              <span className="text-foreground">{leads.length}</span> z {total}{" "}
+              leadov
             </p>
           )}
 
@@ -198,8 +253,8 @@ export default function LeadsPage() {
                   <Target className="h-6 w-6" />
                 </div>
                 <p className="max-w-md text-sm text-muted">
-                  Žiadne leady. Spusti scan segmentu v nastaveniach — nájdeme firmy so zastaralými
-                  webmi.
+                  Žiadne leady. Spusti scan segmentu v nastaveniach — nájdeme
+                  firmy so zastaralými webmi.
                 </p>
                 <Link
                   href="/leads/settings"
@@ -220,7 +275,9 @@ export default function LeadsPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-foreground">{l.companyName}</p>
+                      <p className="truncate font-medium text-foreground">
+                        {l.companyName}
+                      </p>
                       {l.websiteUrl && (
                         <span className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted">
                           <Globe className="h-3 w-3" />
@@ -282,7 +339,9 @@ export default function LeadsPage() {
                   )}
 
                   <div className="mt-auto pt-1">
-                    <Badge variant={STATUS_VARIANT[l.status]}>{LEAD_STATUS_LABEL[l.status]}</Badge>
+                    <Badge variant={STATUS_VARIANT[l.status]}>
+                      {LEAD_STATUS_LABEL[l.status]}
+                    </Badge>
                   </div>
                 </Link>
               ))}
