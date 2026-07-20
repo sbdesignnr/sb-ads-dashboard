@@ -34,7 +34,12 @@ import { Button } from "@/components/ui/button";
 import { ScoreGauge } from "@/components/ai/ScoreGauge";
 import { copyToClipboard } from "@/lib/export";
 import { cn } from "@/lib/utils";
-import { type LeadDTO, type LeadEmailDTO, type LeadStatus, LEAD_STATUS_LABEL } from "@/lib/leads/types";
+import {
+  type LeadDTO,
+  type LeadEmailDTO,
+  type LeadStatus,
+  LEAD_STATUS_LABEL,
+} from "@/lib/leads/types";
 
 function relTime(iso: string | null): string {
   if (!iso) return "—";
@@ -53,9 +58,23 @@ function openColor(count: number): string {
   return "text-danger";
 }
 
-const STATUSES: LeadStatus[] = ["new", "contacted", "responded", "converted", "rejected"];
+const STATUSES: LeadStatus[] = [
+  "new",
+  "contacted",
+  "responded",
+  "converted",
+  "rejected",
+];
 
-function Row({ icon: Icon, label, children }: { icon: typeof Globe; label: string; children: React.ReactNode }) {
+function Row({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: typeof Globe;
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex items-start gap-2 text-sm">
       <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
@@ -121,17 +140,35 @@ function EditableRow({
             disabled={saving}
             className="min-w-0 flex-1 rounded-md border border-primary/40 bg-surface px-2 py-1 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
           />
-          <button onClick={save} disabled={saving} aria-label="Uložiť" className="text-success hover:opacity-80">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+          <button
+            onClick={save}
+            disabled={saving}
+            aria-label="Uložiť"
+            className="text-success hover:opacity-80"
+          >
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Check className="h-4 w-4" />
+            )}
           </button>
-          <button onClick={cancel} disabled={saving} aria-label="Zrušiť" className="text-danger hover:opacity-80">
+          <button
+            onClick={cancel}
+            disabled={saving}
+            aria-label="Zrušiť"
+            className="text-danger hover:opacity-80"
+          >
             <X className="h-4 w-4" />
           </button>
         </span>
       ) : (
         <span className="flex flex-wrap items-center gap-2">
           <span className={value ? "" : "text-muted"}>{value || "—"}</span>
-          <button onClick={start} aria-label={`Upraviť ${label}`} className="text-muted hover:text-foreground">
+          <button
+            onClick={start}
+            aria-label={`Upraviť ${label}`}
+            className="text-muted hover:text-foreground"
+          >
             <Pencil className="h-3.5 w-3.5" />
           </button>
           {extra}
@@ -151,13 +188,18 @@ export function LeadDetail({ id }: { id: string }) {
   const [notes, setNotes] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
 
-  const [brief, setBrief] = useState<{ summary: string; painPoint: string; opportunity: string } | null>(null);
+  const [brief, setBrief] = useState<{
+    summary: string;
+    painPoint: string;
+    opportunity: string;
+  } | null>(null);
   const [issues, setIssues] = useState<string[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
   const [email, setEmail] = useState("");
   const [emailing, setEmailing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [findingEmail, setFindingEmail] = useState(false);
+  const [enrichingOwner, setEnrichingOwner] = useState(false);
 
   useEffect(() => {
     fetch(`/api/leads/${id}`, { cache: "no-store" })
@@ -268,7 +310,9 @@ export function LeadDetail({ id }: { id: string }) {
   const findEmail = async () => {
     setFindingEmail(true);
     try {
-      const j = await fetch(`/api/leads/${id}/find-email`, { method: "POST" }).then((r) => r.json());
+      const j = await fetch(`/api/leads/${id}/find-email`, {
+        method: "POST",
+      }).then((r) => r.json());
       if (j.found && j.email) {
         setLead((prev) => (prev ? { ...prev, companyEmail: j.email } : prev));
         toast.success(`Email nájdený: ${j.email}`);
@@ -279,6 +323,43 @@ export function LeadDetail({ id }: { id: string }) {
       toast.error("Hľadanie zlyhalo");
     } finally {
       setFindingEmail(false);
+    }
+  };
+
+  // Dohľadá konateľa z obchodného registra (ORSR/ARES). Keď lead nemá IČO,
+  // ponúkne ho zadať ručne — presne to, čo si našiel na stránke GDPR / VOP.
+  const enrichOwner = async () => {
+    let ico: string | undefined;
+    if (!lead?.ico) {
+      const typed = window.prompt(
+        "Lead nemá IČO. Ak si ho našiel na stránke (GDPR / obchodné podmienky / pätička), zadaj ho — inak nechaj prázdne a skúsim zhodu podľa názvu firmy:",
+        "",
+      );
+      if (typed === null) return; // zrušené
+      ico = typed.replace(/\D/g, "") || undefined;
+    }
+    setEnrichingOwner(true);
+    try {
+      const res = await fetch(`/api/leads/${id}/enrich-owner`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ico ? { ico } : {}),
+      });
+      const j = await res.json();
+      if (res.ok && j.lead) {
+        setLead(j.lead);
+        if (j.found?.matched) toast.success(`Konateľ: ${j.found.ownerName}`);
+        else
+          toast(
+            `Firma overená v registri, ale konateľ sa nenašiel${j.found?.ico ? ` (IČO ${j.found.ico})` : ""}.`,
+          );
+      } else {
+        toast.error(j.message || j.error || "Register nič nenašiel");
+      }
+    } catch {
+      toast.error("Dohľadanie zlyhalo");
+    } finally {
+      setEnrichingOwner(false);
     }
   };
 
@@ -320,12 +401,17 @@ export function LeadDetail({ id }: { id: string }) {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
-        <Link href={backHref} className="inline-flex items-center gap-1 text-sm text-muted hover:text-foreground">
+        <Link
+          href={backHref}
+          className="inline-flex items-center gap-1 text-sm text-muted hover:text-foreground"
+        >
           <ArrowLeft className="h-4 w-4" />
           Späť
         </Link>
         <div className="min-w-0">
-          <h1 className="truncate text-xl font-semibold text-foreground">{lead.companyName}</h1>
+          <h1 className="truncate text-xl font-semibold text-foreground">
+            {lead.companyName}
+          </h1>
           <p className="text-sm text-muted">
             {segmentName ?? "Bez segmentu"}
             {lead.companyCity ? ` · ${lead.companyCity}` : ""}
@@ -349,7 +435,8 @@ export function LeadDetail({ id }: { id: string }) {
       {lead.companyActive === false && (
         <div className="flex items-center gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
           <Ban className="h-4 w-4 shrink-0" />
-          Firma je podľa registra neaktívna (vymazaná/v likvidácii) — pravdepodobne nemá zmysel ju oslovovať.
+          Firma je podľa registra neaktívna (vymazaná/v likvidácii) —
+          pravdepodobne nemá zmysel ju oslovovať.
         </div>
       )}
 
@@ -378,9 +465,14 @@ export function LeadDetail({ id }: { id: string }) {
           {/* Web Quality Score gauge */}
           <Card>
             <CardContent className="flex flex-col items-center gap-3 pt-6">
-              <ScoreGauge score={lead.websiteScore ?? 0} size={160} label="Web Quality" />
+              <ScoreGauge
+                score={lead.websiteScore ?? 0}
+                size={160}
+                label="Web Quality"
+              />
               <p className="text-center text-xs text-muted">
-                Vyššie skóre = zastaralejší web (lepší lead). Prah kvalifikácie 65.
+                Vyššie skóre = zastaralejší web (lepší lead). Prah kvalifikácie
+                65.
               </p>
               <div className="flex w-full justify-center gap-8 text-sm">
                 <div className="text-center">
@@ -406,7 +498,12 @@ export function LeadDetail({ id }: { id: string }) {
               )}
               {lead.websiteUrl && (
                 <div className="flex w-full gap-2">
-                  <a href={lead.websiteUrl} target="_blank" rel="noreferrer" className="flex-1">
+                  <a
+                    href={lead.websiteUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1"
+                  >
                     <Button variant="outline" size="sm" className="w-full">
                       <ExternalLink className="h-4 w-4" />
                       Otvoriť web
@@ -435,7 +532,12 @@ export function LeadDetail({ id }: { id: string }) {
             <CardContent className="space-y-2.5">
               {lead.websiteUrl && (
                 <Row icon={Globe} label="Web">
-                  <a href={lead.websiteUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                  <a
+                    href={lead.websiteUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary hover:underline"
+                  >
                     {lead.websiteUrl}
                   </a>
                 </Row>
@@ -445,16 +547,26 @@ export function LeadDetail({ id }: { id: string }) {
                 {lead.hasModernFramework ? " · moderný framework" : ""}
               </Row>
               <Row icon={Gauge} label="PageSpeed">
-                mobile {lead.pageSpeedMobile ?? "—"}/100 · desktop {lead.pageSpeedDesktop ?? "—"}/100
+                mobile {lead.pageSpeedMobile ?? "—"}/100 · desktop{" "}
+                {lead.pageSpeedDesktop ?? "—"}/100
               </Row>
-              <Row icon={lead.hasSsl ? ShieldCheck : ShieldOff} label="SSL (HTTPS)">
+              <Row
+                icon={lead.hasSsl ? ShieldCheck : ShieldOff}
+                label="SSL (HTTPS)"
+              >
                 {lead.hasSsl === null ? "neznáme" : lead.hasSsl ? "áno" : "nie"}
               </Row>
               <Row icon={Smartphone} label="Responzívny">
-                {lead.isMobileFriendly === null ? "neznáme" : lead.isMobileFriendly ? "áno" : "nie"}
+                {lead.isMobileFriendly === null
+                  ? "neznáme"
+                  : lead.isMobileFriendly
+                    ? "áno"
+                    : "nie"}
               </Row>
               {lead.websiteAge != null && (
-                <Row icon={Layers} label="Vek webu">~{lead.websiteAge} rokov (podľa copyrightu)</Row>
+                <Row icon={Layers} label="Vek webu">
+                  ~{lead.websiteAge} rokov (podľa copyrightu)
+                </Row>
               )}
             </CardContent>
           </Card>
@@ -466,7 +578,9 @@ export function LeadDetail({ id }: { id: string }) {
               </CardHeader>
               <CardContent className="space-y-3">
                 {lead.aiVisualReason && (
-                  <p className="text-sm leading-relaxed text-foreground">{lead.aiVisualReason}</p>
+                  <p className="text-sm leading-relaxed text-foreground">
+                    {lead.aiVisualReason}
+                  </p>
                 )}
                 {lead.visualIssues.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
@@ -492,7 +606,10 @@ export function LeadDetail({ id }: { id: string }) {
               <CardContent>
                 <ul className="space-y-1.5">
                   {issues.map((it, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-foreground">
+                    <li
+                      key={i}
+                      className="flex items-start gap-2 text-sm text-foreground"
+                    >
                       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
                       <span>{it}</span>
                     </li>
@@ -505,22 +622,37 @@ export function LeadDetail({ id }: { id: string }) {
           <Card>
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <CardTitle>Príležitosť (AI)</CardTitle>
-              <Button variant="secondary" size="sm" onClick={() => runAi("analysis")} disabled={analyzing}>
-                {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => runAi("analysis")}
+                disabled={analyzing}
+              >
+                {analyzing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
                 {brief ? "Prepočítať" : "Analyzovať"}
               </Button>
             </CardHeader>
             <CardContent className="space-y-3">
               {brief ? (
                 <>
-                  {brief.summary && <p className="text-sm leading-relaxed text-foreground">{brief.summary}</p>}
+                  {brief.summary && (
+                    <p className="text-sm leading-relaxed text-foreground">
+                      {brief.summary}
+                    </p>
+                  )}
                   {brief.painPoint && (
                     <div className="rounded-lg border border-danger/25 bg-danger/5 p-3">
                       <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-danger">
                         <TrendingDown className="h-3.5 w-3.5" />
                         Kde firma stráca
                       </p>
-                      <p className="text-sm leading-relaxed text-foreground">{brief.painPoint}</p>
+                      <p className="text-sm leading-relaxed text-foreground">
+                        {brief.painPoint}
+                      </p>
                     </div>
                   )}
                   {brief.opportunity && (
@@ -529,7 +661,9 @@ export function LeadDetail({ id }: { id: string }) {
                         <Lightbulb className="h-3.5 w-3.5" />
                         Čo vieme ponúknuť
                       </p>
-                      <p className="text-sm leading-relaxed text-foreground">{brief.opportunity}</p>
+                      <p className="text-sm leading-relaxed text-foreground">
+                        {brief.opportunity}
+                      </p>
                     </div>
                   )}
                   {lead.aiOutreachAngle && (
@@ -537,7 +671,9 @@ export function LeadDetail({ id }: { id: string }) {
                       <Compass className="mt-0.5 h-4 w-4 shrink-0 text-secondary" />
                       <span>
                         <span className="text-muted">Ako osloviť: </span>
-                        <span className="text-foreground">{lead.aiOutreachAngle}</span>
+                        <span className="text-foreground">
+                          {lead.aiOutreachAngle}
+                        </span>
                       </span>
                     </div>
                   )}
@@ -546,15 +682,18 @@ export function LeadDetail({ id }: { id: string }) {
                       <Clock className="mt-0.5 h-4 w-4 shrink-0 text-secondary" />
                       <span>
                         <span className="text-muted">Najlepší čas: </span>
-                        <span className="text-foreground">{lead.bestContactTime}</span>
+                        <span className="text-foreground">
+                          {lead.bestContactTime}
+                        </span>
                       </span>
                     </div>
                   )}
                 </>
               ) : (
                 <p className="py-2 text-sm text-muted">
-                  Klikni na „Analyzovať" — AI z konkrétnych nedostatkov pripraví pain point a príležitosť, na ktorej
-                  firme reálne pomôžeme (a zarobíme).
+                  Klikni na „Analyzovať" — AI z konkrétnych nedostatkov pripraví
+                  pain point a príležitosť, na ktorej firme reálne pomôžeme (a
+                  zarobíme).
                 </p>
               )}
             </CardContent>
@@ -574,7 +713,28 @@ export function LeadDetail({ id }: { id: string }) {
                 value={lead.ownerName}
                 placeholder="Meno konateľa"
                 onSave={(v) => patchField("ownerName", v)}
-                extra={lead.ownerPosition ? <span className="text-xs text-muted">({lead.ownerPosition})</span> : undefined}
+                extra={
+                  <span className="flex items-center gap-2">
+                    {lead.ownerPosition && (
+                      <span className="text-xs text-muted">
+                        ({lead.ownerPosition})
+                      </span>
+                    )}
+                    <button
+                      onClick={enrichOwner}
+                      disabled={enrichingOwner}
+                      className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-0.5 text-xs text-muted transition-colors hover:text-foreground disabled:opacity-50"
+                      title="Dohľadať konateľa z obchodného registra (ORSR / ARES) podľa IČO"
+                    >
+                      {enrichingOwner ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Search className="h-3 w-3" />
+                      )}
+                      Z registra
+                    </button>
+                  </span>
+                }
               />
               <EditableRow
                 icon={Mail}
@@ -589,7 +749,11 @@ export function LeadDetail({ id }: { id: string }) {
                     className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-0.5 text-xs text-muted transition-colors hover:text-foreground disabled:opacity-50"
                     title="Nájsť email scrapovaním webu"
                   >
-                    {findingEmail ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
+                    {findingEmail ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Search className="h-3 w-3" />
+                    )}
                     {lead.companyEmail ? "Hľadať znova" : "Hľadať email"}
                   </button>
                 }
@@ -601,17 +765,41 @@ export function LeadDetail({ id }: { id: string }) {
                 placeholder="+421…"
                 onSave={(v) => patchField("companyPhone", v)}
               />
-              <Row icon={Globe} label="Adresa">{lead.companyAddress ?? "—"}</Row>
-              <Row icon={Globe} label="IČO">{lead.ico ?? "—"}</Row>
-              <Row icon={Globe} label="Zdroj">{lead.source ?? "—"}</Row>
+              <Row icon={Globe} label="Adresa">
+                {lead.companyAddress ?? "—"}
+              </Row>
+              <EditableRow
+                icon={Globe}
+                label="IČO"
+                value={lead.ico}
+                placeholder="8 číslic"
+                onSave={(v) => patchField("ico", v)}
+              />
+              {lead.companyActive === false && (
+                <p className="rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-xs text-warning">
+                  ⚠ Firma je v registri neaktívna (zaniknutá / v likvidácii).
+                </p>
+              )}
+              <Row icon={Globe} label="Zdroj">
+                {lead.source ?? "—"}
+              </Row>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <CardTitle>Personalizovaný email</CardTitle>
-              <Button variant="secondary" size="sm" onClick={() => runAi("email")} disabled={emailing}>
-                {emailing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => runAi("email")}
+                disabled={emailing}
+              >
+                {emailing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Mail className="h-4 w-4" />
+                )}
                 {email ? "Znova" : "Vygenerovať"}
               </Button>
             </CardHeader>
@@ -625,14 +813,18 @@ export function LeadDetail({ id }: { id: string }) {
                     className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
                   />
                   <Button variant="outline" size="sm" onClick={copyEmail}>
-                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    {copied ? (
+                      <Check className="h-4 w-4" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
                     Kopírovať
                   </Button>
                 </>
               ) : (
                 <p className="py-2 text-sm text-muted">
-                  AI napíše krátky personalizovaný cold email pre túto firmu (meno konateľa, konkrétne
-                  problémy webu, CTA).
+                  AI napíše krátky personalizovaný cold email pre túto firmu
+                  (meno konateľa, konkrétne problémy webu, CTA).
                 </p>
               )}
             </CardContent>
@@ -647,13 +839,21 @@ export function LeadDetail({ id }: { id: string }) {
                 {emails
                   .filter((e) => e.status === "sent")
                   .map((e) => (
-                    <div key={e.id} className="rounded-lg border border-border bg-surface p-3">
-                      <p className="truncate text-sm font-medium text-foreground">{e.subject || "—"}</p>
+                    <div
+                      key={e.id}
+                      className="rounded-lg border border-border bg-surface p-3"
+                    >
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {e.subject || "—"}
+                      </p>
                       <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                         <span className="text-muted">
                           ✉️ Email odoslaný:{" "}
                           {e.sentAt
-                            ? new Date(e.sentAt).toLocaleString("sk-SK", { dateStyle: "short", timeStyle: "short" })
+                            ? new Date(e.sentAt).toLocaleString("sk-SK", {
+                                dateStyle: "short",
+                                timeStyle: "short",
+                              })
                             : "—"}
                         </span>
                         <span className={openColor(e.openCount)}>
@@ -673,7 +873,8 @@ export function LeadDetail({ id }: { id: string }) {
                       </div>
                       {e.clickCount >= 1 ? (
                         <div className="mt-2 inline-flex items-center gap-1 rounded-md border border-success/30 bg-success/10 px-2 py-1 text-xs text-success">
-                          🔥 Klikol na odkaz v podpise — silný signál, ideálny čas na follow-up
+                          🔥 Klikol na odkaz v podpise — silný signál, ideálny
+                          čas na follow-up
                         </div>
                       ) : e.openCount >= 2 ? (
                         <div className="mt-2 inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-xs text-warning">
@@ -698,8 +899,17 @@ export function LeadDetail({ id }: { id: string }) {
                 placeholder="Interné poznámky k leadu…"
                 className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
               />
-              <Button variant="secondary" size="sm" onClick={saveNotes} disabled={savingNotes}>
-                {savingNotes ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={saveNotes}
+                disabled={savingNotes}
+              >
+                {savingNotes ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
                 Uložiť poznámku
               </Button>
             </CardContent>

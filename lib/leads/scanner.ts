@@ -15,10 +15,14 @@ import { generateDossier } from "./ai";
 import { findEmailForLead } from "./email-finder";
 
 /** Guess whether a lead is a Czech company (routes ARES vs ORSR enrichment). */
-function isCzLead(lead: Pick<Lead, "source" | "companyCity" | "companyAddress">): boolean {
+export function isCzLead(
+  lead: Pick<Lead, "source" | "companyCity" | "companyAddress">,
+): boolean {
   if (lead.source?.endsWith("-cz")) return true;
   if (lead.companyCity && CZ_CITIES.includes(lead.companyCity)) return true;
-  return /(česk|czech|\bpraha\b|\bbrno\b|,\s*CZ\b)/i.test(lead.companyAddress ?? "");
+  return /(česk|czech|\bpraha\b|\bbrno\b|,\s*CZ\b)/i.test(
+    lead.companyAddress ?? "",
+  );
 }
 
 export interface ScanSummary {
@@ -32,14 +36,21 @@ export interface ScanSummary {
 function normalizeWebsite(url: string): string {
   try {
     const u = new URL(url);
-    return `${u.protocol}//${u.host.toLowerCase()}${u.pathname}`.replace(/\/+$/, "");
+    return `${u.protocol}//${u.host.toLowerCase()}${u.pathname}`.replace(
+      /\/+$/,
+      "",
+    );
   } catch {
     return url.trim().replace(/\/+$/, "");
   }
 }
 
 /** Run `fn` over `items` with at most `limit` in flight — keeps scans within Vercel's time budget. */
-async function mapPool<T>(items: T[], limit: number, fn: (item: T, index: number) => Promise<void>): Promise<void> {
+async function mapPool<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<void>,
+): Promise<void> {
   let cursor = 0;
   const worker = async () => {
     while (cursor < items.length) {
@@ -47,7 +58,9 @@ async function mapPool<T>(items: T[], limit: number, fn: (item: T, index: number
       await fn(items[idx], idx);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
 }
 
 /**
@@ -71,7 +84,10 @@ export async function enrichLead(
     // indicator), just note it; the next scan will retry.
     await prisma.lead.update({
       where: { id: leadId },
-      data: { disqualifyReason: "Analýza webu zlyhala.", lastScannedAt: new Date() },
+      data: {
+        disqualifyReason: "Analýza webu zlyhala.",
+        lastScannedAt: new Date(),
+      },
     });
     return { qualified: false, active: null };
   }
@@ -105,7 +121,9 @@ export async function enrichLead(
       data: {
         ...analysisData,
         disqualifyReason: analysis.disqualifyReason,
-        ...(analysis.hardDisqualified && lead.status === "new" ? { status: "rejected" } : {}),
+        ...(analysis.hardDisqualified && lead.status === "new"
+          ? { status: "rejected" }
+          : {}),
         lastScannedAt: new Date(),
       },
     });
@@ -156,10 +174,26 @@ export async function enrichLead(
       companyAddress: lead.companyAddress ?? registry?.address ?? undefined,
       companyCity: lead.companyCity ?? registry?.city ?? undefined,
       // Prefer real contact data the AI pulled from the site, then extractor, then ORSR.
-      ownerName: dossier?.ownerName ?? registry?.ownerName ?? lead.ownerName ?? undefined,
-      ownerPosition: dossier?.ownerRole ?? registry?.ownerPosition ?? lead.ownerPosition ?? undefined,
-      companyEmail: dossier?.email ?? analysis.extractedEmails[0] ?? lead.companyEmail ?? undefined,
-      companyPhone: dossier?.phone ?? lead.companyPhone ?? analysis.extractedPhones[0] ?? undefined,
+      ownerName:
+        dossier?.ownerName ??
+        registry?.ownerName ??
+        lead.ownerName ??
+        undefined,
+      ownerPosition:
+        dossier?.ownerRole ??
+        registry?.ownerPosition ??
+        lead.ownerPosition ??
+        undefined,
+      companyEmail:
+        dossier?.email ??
+        analysis.extractedEmails[0] ??
+        lead.companyEmail ??
+        undefined,
+      companyPhone:
+        dossier?.phone ??
+        lead.companyPhone ??
+        analysis.extractedPhones[0] ??
+        undefined,
       ...(dossier
         ? {
             aiSummary: dossier.summary || null,
@@ -174,10 +208,18 @@ export async function enrichLead(
   });
 
   // Still no contact e-mail? Try the dedicated finder (site scrape + Jina).
-  const emailNow = dossier?.email ?? analysis.extractedEmails[0] ?? lead.companyEmail ?? null;
+  const emailNow =
+    dossier?.email ?? analysis.extractedEmails[0] ?? lead.companyEmail ?? null;
   if (!emailNow) {
-    const found = await findEmailForLead(lead.websiteUrl, lead.companyName).catch(() => null);
-    if (found) await prisma.lead.update({ where: { id: leadId }, data: { companyEmail: found } });
+    const found = await findEmailForLead(
+      lead.websiteUrl,
+      lead.companyName,
+    ).catch(() => null);
+    if (found)
+      await prisma.lead.update({
+        where: { id: leadId },
+        data: { companyEmail: found },
+      });
   }
 
   return { qualified: true, active: registry?.active ?? null };
@@ -196,37 +238,72 @@ export async function scanSegment(
   // by the serverless time budget (screenshots + AI per candidate site).
   const maxDiscover = opts.maxDiscover ?? 24;
   const region = opts.region ?? "both";
-  const segment = await prisma.leadSegment.findUnique({ where: { id: segmentId } });
-  if (!segment) return { jobId: "", foundTotal: 0, foundQualified: 0, foundRejected: 0, error: "segment_not_found" };
+  const segment = await prisma.leadSegment.findUnique({
+    where: { id: segmentId },
+  });
+  if (!segment)
+    return {
+      jobId: "",
+      foundTotal: 0,
+      foundQualified: 0,
+      foundRejected: 0,
+      error: "segment_not_found",
+    };
 
   // Rotate a window of 3 regions (kraje) per scan so each run stays within the
   // serverless budget; the cursor is persisted so repeat scans sweep the rest.
   const allRegions = regionsFor(region);
-  const { window: regionsForThisScan, nextOffset } = regionWindow(allRegions, segment.scanOffset, 3);
+  const { window: regionsForThisScan, nextOffset } = regionWindow(
+    allRegions,
+    segment.scanOffset,
+    3,
+  );
   const regionNames = regionsForThisScan.map((r) => r.name);
 
   const job = await prisma.leadScanJob.create({
-    data: { segmentId, status: "running", startedAt: new Date(), regions: regionNames },
+    data: {
+      segmentId,
+      status: "running",
+      startedAt: new Date(),
+      regions: regionNames,
+    },
   });
 
   if (!placesConfigured()) {
     await prisma.leadScanJob.update({
       where: { id: job.id },
-      data: { status: "failed", errorMessage: "GOOGLE_PLACES_API_KEY nie je nastavený.", completedAt: new Date() },
+      data: {
+        status: "failed",
+        errorMessage: "GOOGLE_PLACES_API_KEY nie je nastavený.",
+        completedAt: new Date(),
+      },
     });
-    return { jobId: job.id, foundTotal: 0, foundQualified: 0, foundRejected: 0, error: "places_not_configured" };
+    return {
+      jobId: job.id,
+      foundTotal: 0,
+      foundQualified: 0,
+      foundRejected: 0,
+      error: "places_not_configured",
+    };
   }
 
   try {
     // Discover businesses in this scan's region window, upsert each and collect its
     // lead id — EVERY one is analyzed below, so nothing is left unanalyzed.
-    const keywords = segment.keywords.length ? segment.keywords : [segment.name];
-    const discovered = await discoverBusinessesByRegions(keywords, regionsForThisScan, { cap: maxDiscover });
+    const keywords = segment.keywords.length
+      ? segment.keywords
+      : [segment.name];
+    const discovered = await discoverBusinessesByRegions(
+      keywords,
+      regionsForThisScan,
+      { cap: maxDiscover },
+    );
     const leadIds: string[] = [];
     for (const b of discovered) {
       if (!b.website) continue;
       const norm = normalizeWebsite(b.website);
-      const source = b.country === "CZ" ? "google-places-cz" : "google-places-sk";
+      const source =
+        b.country === "CZ" ? "google-places-cz" : "google-places-sk";
       const lead = await prisma.lead.upsert({
         where: { websiteUrl: norm },
         update: { segmentId, source },
@@ -243,14 +320,20 @@ export async function scanSegment(
       });
       leadIds.push(lead.id);
     }
-    await prisma.leadScanJob.update({ where: { id: job.id }, data: { foundTotal: leadIds.length } });
+    await prisma.leadScanJob.update({
+      where: { id: job.id },
+      data: { foundTotal: leadIds.length },
+    });
 
     // Analyze every discovered lead now (technical + visual → qualify or reject).
     // Counts are written live so the UI progress bar updates in real time.
     let qualified = 0;
     let rejected = 0;
     await mapPool(leadIds, 4, async (leadId) => {
-      const r = await enrichLead(leadId, segment).catch(() => ({ qualified: false, active: null }));
+      const r = await enrichLead(leadId, segment).catch(() => ({
+        qualified: false,
+        active: null,
+      }));
       if (r?.qualified) qualified++;
       else rejected++;
       await prisma.leadScanJob.update({
@@ -274,13 +357,28 @@ export async function scanSegment(
       where: { id: segmentId },
       data: { scanOffset: nextOffset, lastScanRegions: regionNames },
     });
-    return { jobId: job.id, foundTotal: leadIds.length, foundQualified: qualified, foundRejected: rejected };
+    return {
+      jobId: job.id,
+      foundTotal: leadIds.length,
+      foundQualified: qualified,
+      foundRejected: rejected,
+    };
   } catch (e) {
     await prisma.leadScanJob.update({
       where: { id: job.id },
-      data: { status: "failed", errorMessage: (e as Error).message.slice(0, 300), completedAt: new Date() },
+      data: {
+        status: "failed",
+        errorMessage: (e as Error).message.slice(0, 300),
+        completedAt: new Date(),
+      },
     });
-    return { jobId: job.id, foundTotal: 0, foundQualified: 0, foundRejected: 0, error: (e as Error).message };
+    return {
+      jobId: job.id,
+      foundTotal: 0,
+      foundQualified: 0,
+      foundRejected: 0,
+      error: (e as Error).message,
+    };
   }
 }
 
@@ -305,7 +403,12 @@ export async function scanAllSources(
  */
 export async function scanDaily(
   opts: { targetNew?: number; segmentsPerRun?: number } = {},
-): Promise<{ scanned: number; addedQualified: number; newLeads: number; skipped: boolean }> {
+): Promise<{
+  scanned: number;
+  addedQualified: number;
+  newLeads: number;
+  skipped: boolean;
+}> {
   const target = opts.targetNew ?? 200;
   // Each run fully analyzes every discovered site, so keep the daily footprint
   // small enough to finish within the cron time budget.
@@ -316,12 +419,17 @@ export async function scanDaily(
     return { scanned: 0, addedQualified: 0, newLeads: before, skipped: true };
   }
 
-  const segments = await prisma.leadSegment.findMany({ orderBy: { createdAt: "asc" } });
-  if (!segments.length) return { scanned: 0, addedQualified: 0, newLeads: before, skipped: false };
+  const segments = await prisma.leadSegment.findMany({
+    orderBy: { createdAt: "asc" },
+  });
+  if (!segments.length)
+    return { scanned: 0, addedQualified: 0, newLeads: before, skipped: false };
 
   // Rotate which segments we scan each day so coverage spreads across all of them.
   const dayIndex = Math.floor(Date.now() / 86_400_000);
-  const offset = ((dayIndex * perRun) % segments.length + segments.length) % segments.length;
+  const offset =
+    (((dayIndex * perRun) % segments.length) + segments.length) %
+    segments.length;
   const todays = Array.from(
     { length: Math.min(perRun, segments.length) },
     (_, i) => segments[(offset + i) % segments.length],
