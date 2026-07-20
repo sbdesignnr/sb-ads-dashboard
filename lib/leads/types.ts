@@ -1,4 +1,5 @@
-export type LeadStatus = "new" | "contacted" | "responded" | "rejected" | "converted";
+export type LeadStatus =
+  "new" | "contacted" | "responded" | "rejected" | "converted";
 
 export interface SegmentDTO {
   id: string;
@@ -76,6 +77,7 @@ export interface LeadEmailDTO {
   companyName: string;
   companyEmail: string | null;
   companyCity: string | null;
+  ownerName: string | null;
   segmentId: string | null;
   segmentName: string | null;
   websiteUrl: string | null;

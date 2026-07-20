@@ -1,5 +1,18 @@
-import type { Lead, LeadSegment, LeadEmail, LeadCampaign } from "@prisma/client";
-import type { CampaignDTO, EmailStatus, EmailType, LeadDTO, LeadEmailDTO, LeadStatus, SegmentDTO } from "./types";
+import type {
+  Lead,
+  LeadSegment,
+  LeadEmail,
+  LeadCampaign,
+} from "@prisma/client";
+import type {
+  CampaignDTO,
+  EmailStatus,
+  EmailType,
+  LeadDTO,
+  LeadEmailDTO,
+  LeadStatus,
+  SegmentDTO,
+} from "./types";
 
 export function serializeLead(l: Lead): LeadDTO {
   return {
@@ -35,7 +48,15 @@ export function serializeLead(l: Lead): LeadDTO {
     companyPhone: l.companyPhone,
     companyAddress: l.companyAddress,
     companyCity: l.companyCity,
-    status: (["new", "contacted", "responded", "rejected", "converted"].includes(l.status) ? l.status : "new") as LeadStatus,
+    status: ([
+      "new",
+      "contacted",
+      "responded",
+      "rejected",
+      "converted",
+    ].includes(l.status)
+      ? l.status
+      : "new") as LeadStatus,
     notes: l.notes,
     source: l.source,
     createdAt: l.createdAt.toISOString(),
@@ -44,11 +65,21 @@ export function serializeLead(l: Lead): LeadDTO {
   };
 }
 
-type LeadLite = Pick<Lead, "companyName" | "companyEmail" | "companyCity" | "websiteUrl" | "segmentId"> & {
+type LeadLite = Pick<
+  Lead,
+  | "companyName"
+  | "companyEmail"
+  | "companyCity"
+  | "websiteUrl"
+  | "segmentId"
+  | "ownerName"
+> & {
   segment?: { name: string } | null;
 };
 
-export function serializeLeadEmail(e: LeadEmail & { lead?: LeadLite | null }): LeadEmailDTO {
+export function serializeLeadEmail(
+  e: LeadEmail & { lead?: LeadLite | null },
+): LeadEmailDTO {
   const iso = (d: Date | null) => (d ? d.toISOString() : null);
   return {
     id: e.id,
@@ -56,6 +87,7 @@ export function serializeLeadEmail(e: LeadEmail & { lead?: LeadLite | null }): L
     companyName: e.lead?.companyName ?? "—",
     companyEmail: e.lead?.companyEmail ?? null,
     companyCity: e.lead?.companyCity ?? null,
+    ownerName: e.lead?.ownerName ?? null,
     segmentId: e.lead?.segmentId ?? null,
     segmentName: e.lead?.segment?.name ?? null,
     websiteUrl: e.lead?.websiteUrl ?? null,
@@ -92,7 +124,9 @@ export function serializeCampaign(c: LeadCampaign): CampaignDTO {
   };
 }
 
-export function serializeSegment(s: LeadSegment & { _count?: { leads: number } }): SegmentDTO {
+export function serializeSegment(
+  s: LeadSegment & { _count?: { leads: number } },
+): SegmentDTO {
   return {
     id: s.id,
     name: s.name,

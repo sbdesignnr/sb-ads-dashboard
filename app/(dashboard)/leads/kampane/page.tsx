@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { TemplateBar } from "@/components/leads/TemplateBar";
 import {
   type LeadEmailDTO,
   type SegmentDTO,
@@ -1146,6 +1147,35 @@ function EmailEditor({
           >
             <X className="h-5 w-5" />
           </button>
+        </div>
+
+        <div className="mb-3">
+          <TemplateBar
+            subject={subject}
+            body={body}
+            vars={{
+              firma: email.companyName,
+              mesto: email.companyCity,
+              web: email.websiteUrl,
+              konatel: email.ownerName,
+            }}
+            onInsert={(s, b) => {
+              // Predmet nastavíme len ak je prázdny; telo vložíme na pozíciu kurzora
+              // (alebo nahradíme prázdne telo), nech sa neprepíše rozrobená práca.
+              if (s && !subject.trim()) setSubject(s);
+              const ta = bodyRef.current;
+              if (!body.trim() || !ta) {
+                setBody(b);
+              } else {
+                const start = ta.selectionStart ?? body.length;
+                setBody(
+                  body.slice(0, start) +
+                    b +
+                    body.slice(ta.selectionEnd ?? start),
+                );
+              }
+            }}
+          />
         </div>
 
         <label className="mb-1 block text-xs text-muted">Predmet</label>

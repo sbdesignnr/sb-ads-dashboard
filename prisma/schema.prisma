@@ -598,3 +598,19 @@ model Task {
   @@index([goalId])
   @@map("tasks")
 }
+
+// Uložené šablóny outreach mailov — dajú sa vložiť do ktoréhokoľvek mailu v kampani.
+// Podporujú tie isté zástupné značky ako generátor: {{firma}}, {{mesto}}, {{web}},
+// {{konatel}} — pri vložení sa nahradia údajmi daného leadu.
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  subject   String   @default("")
+  body      String   @db.Text
+  category  String   @default("") // voľná menovka, napr. "prvý kontakt" / "followup"
+  useCount  Int      @default(0) @map("use_count")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("email_templates")
+}
