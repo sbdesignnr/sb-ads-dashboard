@@ -48,6 +48,8 @@ export interface LeadDTO {
   companyCity: string | null;
   region: string | null;
   status: LeadStatus;
+  contactedAt: string | null; // najnovší odoslaný outreach (null = neoslovený cez appku)
+  emailsSent: number;
   notes: string | null;
   source: string | null;
   createdAt: string;

@@ -59,6 +59,8 @@ export function serializeLead(l: Lead): LeadDTO {
     ].includes(l.status)
       ? l.status
       : "new") as LeadStatus,
+    contactedAt: null,
+    emailsSent: 0,
     notes: l.notes,
     source: l.source,
     createdAt: l.createdAt.toISOString(),

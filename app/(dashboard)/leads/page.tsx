@@ -13,7 +13,9 @@ import {
   Gauge,
   Layers,
   Mail,
+  MailCheck,
   BarChart3,
+  Check,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -34,12 +36,21 @@ import {
 
 type StatusFilter = LeadStatus | "all";
 
+// Záložky filtrujú podľa oslovenosti (nie technického stavu) — reč používateľa.
+// „Oslovení" (value=contacted) na serveri pokrýva aj reagoval/konvertoval.
 const STATUS_TABS: { value: StatusFilter; label: string }[] = [
-  { value: "new", label: "Nové" },
-  { value: "contacted", label: "Kontaktované" },
-  { value: "converted", label: "Konvertované" },
-  { value: "all", label: "Všetky" },
+  { value: "new", label: "Neoslovení" },
+  { value: "contacted", label: "Oslovení" },
+  { value: "responded", label: "Reagovali" },
+  { value: "all", label: "Všetci" },
 ];
+
+/** Krátky dátum, napr. „14. 7.". */
+function shortDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return `${d.getDate()}. ${d.getMonth() + 1}.`;
+}
 
 const STATUS_VARIANT: Record<
   LeadStatus,
@@ -78,6 +89,7 @@ export default function LeadsPage() {
   const [regions, setRegions] = useState<
     { region: string | null; count: number }[]
   >([]);
+  const [contactedCount, setContactedCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   // Restore the segment filter from the URL (?segment=) so returning from a lead
@@ -104,6 +116,7 @@ export default function LeadsPage() {
       setLeads(j.leads ?? []);
       setTotal(j.total ?? 0);
       setRegions(j.regions ?? []);
+      setContactedCount(j.contactedCount ?? 0);
     } catch {
       setLeads([]);
       setTotal(0);
@@ -282,10 +295,25 @@ export default function LeadsPage() {
           </div>
 
           {!loading && (
-            <p className="mb-3 text-xs text-muted">
-              Zobrazených{" "}
-              <span className="text-foreground">{leads.length}</span> z {total}{" "}
-              leadov
+            <p className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+              <span>
+                Zobrazených{" "}
+                <span className="text-foreground">{leads.length}</span> z{" "}
+                {total} leadov
+              </span>
+              <span className="text-border">·</span>
+              <span className="inline-flex items-center gap-1 text-success">
+                <MailCheck className="h-3.5 w-3.5" />
+                oslovených <span className="font-medium">
+                  {contactedCount}
+                </span>{" "}
+                z {total}
+              </span>
+              {total > 0 && (
+                <span className="text-muted">
+                  ({Math.round((contactedCount / total) * 100)}%)
+                </span>
+              )}
             </p>
           )}
 
@@ -319,7 +347,14 @@ export default function LeadsPage() {
                 <Link
                   key={l.id}
                   href={`/leads/${l.id}?segment=${encodeURIComponent(segment)}`}
-                  className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4 transition-colors hover:border-primary/40"
+                  className={cn(
+                    "flex flex-col gap-3 rounded-xl border bg-surface p-4 transition-colors hover:border-primary/40",
+                    // Oslovené leady dostanú zelený ľavý pruh — v zmiešanom zozname
+                    // hneď vidno, ktoré sú vybavené a ktoré ešte čakajú.
+                    l.status !== "new"
+                      ? "border-border border-l-2 border-l-success"
+                      : "border-border",
+                  )}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -392,10 +427,22 @@ export default function LeadsPage() {
                     </p>
                   )}
 
-                  <div className="mt-auto pt-1">
-                    <Badge variant={STATUS_VARIANT[l.status]}>
-                      {LEAD_STATUS_LABEL[l.status]}
-                    </Badge>
+                  <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
+                    {l.status === "new" ? (
+                      <Badge variant="default">Neoslovený</Badge>
+                    ) : (
+                      <Badge variant="success">
+                        <Check className="h-3 w-3" />
+                        Oslovený
+                        {l.contactedAt ? ` · ${shortDate(l.contactedAt)}` : ""}
+                      </Badge>
+                    )}
+                    {/* Ďalší postup nad rámec „oslovený" zvýrazníme zvlášť. */}
+                    {(l.status === "responded" || l.status === "converted") && (
+                      <Badge variant={STATUS_VARIANT[l.status]}>
+                        {LEAD_STATUS_LABEL[l.status]}
+                      </Badge>
+                    )}
                   </div>
                 </Link>
               ))}
