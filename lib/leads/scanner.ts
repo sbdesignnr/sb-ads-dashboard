@@ -13,6 +13,7 @@ import { enrichCompany } from "./orsr";
 import { enrichCompanyAres } from "./ares";
 import { generateDossier } from "./ai";
 import { findEmailForLead } from "./email-finder";
+import { krajForLead } from "./regions-map";
 
 /** Guess whether a lead is a Czech company (routes ARES vs ORSR enrichment). */
 export function isCzLead(
@@ -304,9 +305,13 @@ export async function scanSegment(
       const norm = normalizeWebsite(b.website);
       const source =
         b.country === "CZ" ? "google-places-cz" : "google-places-sk";
+      const region = krajForLead({
+        companyCity: b.city,
+        companyAddress: b.address,
+      });
       const lead = await prisma.lead.upsert({
         where: { websiteUrl: norm },
-        update: { segmentId, source },
+        update: { segmentId, source, region },
         create: {
           segmentId,
           companyName: b.name,
@@ -314,6 +319,7 @@ export async function scanSegment(
           companyPhone: b.phone,
           companyAddress: b.address,
           companyCity: b.city,
+          region,
           status: "new",
           source,
         },

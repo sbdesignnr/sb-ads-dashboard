@@ -46,6 +46,7 @@ export interface LeadDTO {
   companyPhone: string | null;
   companyAddress: string | null;
   companyCity: string | null;
+  region: string | null;
   status: LeadStatus;
   notes: string | null;
   source: string | null;

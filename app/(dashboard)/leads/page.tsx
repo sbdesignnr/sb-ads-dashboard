@@ -17,6 +17,13 @@ import {
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   type LeadDTO,
@@ -67,6 +74,10 @@ export default function LeadsPage() {
   const [total, setTotal] = useState(0);
   const [segment, setSegment] = useState("all");
   const [status, setStatus] = useState<StatusFilter>("new");
+  const [region, setRegion] = useState("all");
+  const [regions, setRegions] = useState<
+    { region: string | null; count: number }[]
+  >([]);
   const [loading, setLoading] = useState(true);
 
   // Restore the segment filter from the URL (?segment=) so returning from a lead
@@ -87,18 +98,19 @@ export default function LeadsPage() {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/leads?segment=${encodeURIComponent(segment)}&status=${status}`,
+        `/api/leads?segment=${encodeURIComponent(segment)}&status=${status}&region=${encodeURIComponent(region)}`,
       );
       const j = await res.json();
       setLeads(j.leads ?? []);
       setTotal(j.total ?? 0);
+      setRegions(j.regions ?? []);
     } catch {
       setLeads([]);
       setTotal(0);
     } finally {
       setLoading(false);
     }
-  }, [segment, status]);
+  }, [segment, status, region]);
 
   useEffect(() => {
     loadLeads();
@@ -215,22 +227,58 @@ export default function LeadsPage() {
             ))}
           </div>
 
-          {/* Status filter */}
-          <div className="mb-4 inline-flex rounded-lg border border-border bg-surface-2 p-1">
-            {STATUS_TABS.map((t) => (
+          {/* Status filter + kraj */}
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-lg border border-border bg-surface-2 p-1">
+              {STATUS_TABS.map((t) => (
+                <button
+                  key={t.value}
+                  onClick={() => setStatus(t.value)}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer",
+                    status === t.value
+                      ? "bg-surface text-foreground shadow-sm"
+                      : "text-muted hover:text-foreground",
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            <Select value={region} onValueChange={setRegion}>
+              <SelectTrigger className="h-9 w-[210px]">
+                <SelectValue placeholder="Všetky kraje" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  Všetky kraje ({regions.reduce((a, r) => a + r.count, 0)})
+                </SelectItem>
+                {regions
+                  .filter((r) => r.region)
+                  .map((r) => (
+                    <SelectItem key={r.region} value={r.region as string}>
+                      {r.region} ({r.count})
+                    </SelectItem>
+                  ))}
+                {regions
+                  .filter((r) => !r.region)
+                  .map((r) => (
+                    <SelectItem key="__none__" value="none">
+                      Neznámy kraj ({r.count})
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+
+            {region !== "all" && (
               <button
-                key={t.value}
-                onClick={() => setStatus(t.value)}
-                className={cn(
-                  "rounded-md px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer",
-                  status === t.value
-                    ? "bg-surface text-foreground shadow-sm"
-                    : "text-muted hover:text-foreground",
-                )}
+                onClick={() => setRegion("all")}
+                className="text-xs text-muted underline-offset-2 hover:text-foreground hover:underline"
               >
-                {t.label}
+                zrušiť filter
               </button>
-            ))}
+            )}
           </div>
 
           {!loading && (
@@ -310,10 +358,16 @@ export default function LeadsPage() {
                         {l.companyPhone}
                       </p>
                     )}
-                    {l.companyCity && (
+                    {(l.companyCity || l.region) && (
                       <p className="flex items-center gap-1.5">
                         <MapPin className="h-3 w-3" />
                         {l.companyCity}
+                        {l.region && (
+                          <span className="text-muted/80">
+                            {l.companyCity ? " · " : ""}
+                            {l.region}
+                          </span>
+                        )}
                       </p>
                     )}
                     <p className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5">

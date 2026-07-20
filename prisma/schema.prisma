@@ -132,6 +132,7 @@ model Lead {
   companyPhone       String?      @map("company_phone")
   companyAddress     String?      @map("company_address")
   companyCity        String?      @map("company_city")
+  region             String? // kraj odvodený z mesta (lib/leads/regions-map.ts)
   status             String       @default("new") // new | contacted | rejected | converted
   notes              String?
   source             String?
@@ -140,6 +141,7 @@ model Lead {
   lastScannedAt      DateTime?    @map("last_scanned_at")
 
   @@index([segmentId, status])
+  @@index([region])
   @@map("leads")
 }
 

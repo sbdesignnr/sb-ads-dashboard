@@ -13,6 +13,7 @@ import type {
   LeadStatus,
   SegmentDTO,
 } from "./types";
+import { krajForLead } from "./regions-map";
 
 export function serializeLead(l: Lead): LeadDTO {
   return {
@@ -48,6 +49,7 @@ export function serializeLead(l: Lead): LeadDTO {
     companyPhone: l.companyPhone,
     companyAddress: l.companyAddress,
     companyCity: l.companyCity,
+    region: l.region ?? krajForLead(l),
     status: ([
       "new",
       "contacted",
