@@ -78,6 +78,19 @@ function fmtSchedule(iso: string | null): string {
   return `${d.getDate()}. ${d.getMonth() + 1}. o ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+/** Krátky dátum bez času, napr. „24. 7." (+ „dnes"/„zajtra"). */
+function fmtDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const today = new Date();
+  const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const diff = Math.round((day.getTime() - t0.getTime()) / 86_400_000);
+  if (diff <= 0) return "dnes";
+  if (diff === 1) return "zajtra";
+  return `${d.getDate()}. ${d.getMonth() + 1}.`;
+}
+
 function SummaryTile({
   label,
   value,
@@ -199,6 +212,8 @@ export default function CampaignsPage() {
   const [sent, setSent] = useState<LeadEmailDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [fuSelected, setFuSelected] = useState<Set<string>>(new Set());
+  const [fuBusy, setFuBusy] = useState(false);
   const [editing, setEditing] = useState<LeadEmailDTO | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [summary, setSummary] = useState<SegmentSummary | null>(null);
@@ -519,6 +534,88 @@ export default function CampaignsPage() {
       return n;
     });
 
+  // ── Follow-upy: výber + hromadné akcie ──────────────────────────────────────
+  const toggleFu = (id: string) =>
+    setFuSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const allFuSelected =
+    followups.length > 0 && fuSelected.size === followups.length;
+  const toggleAllFu = () =>
+    setFuSelected(
+      allFuSelected ? new Set() : new Set(followups.map((e) => e.id)),
+    );
+
+  /** Dogeneruje telá pre vybrané follow-upy, ktoré ho ešte nemajú. */
+  const ensureFuBodies = async (): Promise<void> => {
+    const missing = followups.filter(
+      (e) => fuSelected.has(e.id) && !e.body?.trim(),
+    );
+    for (const e of missing) {
+      const j = await fetch(`/api/leads/emails/${e.id}/generate`, {
+        method: "POST",
+      }).then((r) => r.json());
+      if (j.email)
+        setFollowups((q) => q.map((x) => (x.id === e.id ? j.email : x)));
+    }
+  };
+
+  const bulkApproveFollowups = async () => {
+    const ids = [...fuSelected];
+    if (!ids.length) return;
+    setFuBusy(true);
+    toast.loading("Pripravujem follow-upy…", { id: "fu" });
+    try {
+      await ensureFuBodies(); // najprv dogeneruj chýbajúce texty
+      await fetch("/api/leads/emails/bulk-approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emailIds: ids }),
+      });
+      setFuSelected(new Set());
+      toast.success(`Schválených ${ids.length} follow-upov`, { id: "fu" });
+      await loadQueues();
+      loadCampaigns();
+    } catch {
+      toast.error("Hromadné schválenie zlyhalo", { id: "fu" });
+    } finally {
+      setFuBusy(false);
+    }
+  };
+
+  const bulkSendFollowups = async () => {
+    const ids = followups
+      .filter((e) => fuSelected.has(e.id) && e.companyEmail)
+      .map((e) => e.id);
+    if (!ids.length) {
+      toast.error("Vybrané follow-upy nemajú e-mail.");
+      return;
+    }
+    setFuBusy(true);
+    toast.loading("Odosielam follow-upy…", { id: "fu" });
+    try {
+      await ensureFuBodies();
+      let sent = 0;
+      for (const id of ids) {
+        const j = await fetch(`/api/leads/emails/${id}/send`, {
+          method: "POST",
+        }).then((r) => r.json());
+        if (j.success) sent++;
+      }
+      setFuSelected(new Set());
+      toast.success(`Odoslaných ${sent} follow-upov`, { id: "fu" });
+      await loadQueues();
+      loadCampaigns();
+    } catch {
+      toast.error("Hromadné odoslanie zlyhalo", { id: "fu" });
+    } finally {
+      setFuBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
@@ -801,23 +898,63 @@ export default function CampaignsPage() {
 
       {/* Followup queue */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
           <CardTitle className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-muted" />
-            Followupy na schválenie ({followups.length})
+            Follow-upy ({followups.length})
           </CardTitle>
+          {fuSelected.size > 0 && (
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={bulkApproveFollowups}
+                disabled={fuBusy}
+              >
+                {fuBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCheck className="h-4 w-4" />
+                )}
+                Schváliť ({fuSelected.size})
+              </Button>
+              <Button size="sm" onClick={bulkSendFollowups} disabled={fuBusy}>
+                {fuBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                Odoslať ({fuSelected.size})
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {followups.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted">
-              Žiadne followupy nie sú momentálne na rade.
+              Žiadne follow-upy nie sú naplánované. Vytvoria sa automaticky po
+              oslovení leadu (1. po 3 dňoch, 2. po 7 dňoch).
             </p>
           ) : (
             <div className="space-y-1">
+              <div className="flex items-center gap-2 px-1 pb-1">
+                <input
+                  type="checkbox"
+                  checked={allFuSelected}
+                  onChange={toggleAllFu}
+                  className="h-4 w-4 accent-primary"
+                />
+                <span className="text-xs text-muted">
+                  Vybrať všetky · pri schválení sa follow-up odošle v
+                  naplánovaný deň
+                </span>
+              </div>
               {followups.map((e) => (
                 <EmailRow
                   key={e.id}
                   email={e}
+                  checked={fuSelected.has(e.id)}
+                  onCheck={() => toggleFu(e.id)}
                   onOpen={() => setEditing(e)}
                   onApprove={() => act(e, "approve")}
                   onReject={() => act(e, "reject")}
@@ -1092,6 +1229,12 @@ function EmailRow({
             >
               {EMAIL_TYPE_LABEL[email.emailType]}
             </Badge>
+          )}
+          {email.scheduledAt && (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">
+              <Clock className="h-3 w-3" />
+              odoslať {fmtDate(email.scheduledAt)}
+            </span>
           )}
           {!email.companyEmail && <Badge variant="danger">Chýba email</Badge>}
         </div>

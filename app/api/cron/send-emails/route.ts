@@ -133,13 +133,15 @@ async function handle(req: NextRequest) {
   if (skipped.length)
     console.log("[cron/send-emails] neodoslané:", skipped.join(" | "));
 
-  // Due follow-ups → generate bodies (if missing) so they appear in the queue.
+  // Follow-ups splatné do 3 dní → predgeneruj telo (ak chýba), nech sú vopred
+  // pripravené na kontrolu a schválenie, nie až v deň odoslania.
   let followupsReady = 0;
+  const soon = new Date(now.getTime() + 3 * 24 * 3_600_000);
   const dueFollowups = await prisma.leadEmail.findMany({
     where: {
       status: "draft",
       emailType: { in: ["followup1", "followup2"] },
-      scheduledAt: { lte: now },
+      scheduledAt: { lte: soon },
     },
     include: { lead: { include: { segment: true } } },
     take: 50,
