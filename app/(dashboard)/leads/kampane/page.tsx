@@ -1181,12 +1181,45 @@ function EmailEditor({
   const [subject, setSubject] = useState(email.subject);
   const [body, setBody] = useState(email.body);
   const [scheduled, setScheduled] = useState(toLocalInput(email.scheduledAt));
+  const [recipient, setRecipient] = useState(email.companyEmail ?? "");
+  const [savingRecipient, setSavingRecipient] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [preview, setPreview] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const downOnBackdrop = useRef(false);
   const isApproved = email.status === "approved";
+
+  // Zmena adresáta = zmena e-mailu LEADU (posiela sa naň). Uloží sa priamo tu,
+  // netreba ísť do detailu leadu. Prázdny vstup = zmazať e-mail.
+  const recipientDirty = recipient.trim() !== (email.companyEmail ?? "");
+  const saveRecipient = async () => {
+    if (!recipientDirty || savingRecipient) return;
+    const next = recipient.trim();
+    if (next && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next)) {
+      toast.error("Neplatný e-mail.");
+      return;
+    }
+    setSavingRecipient(true);
+    try {
+      const j = await fetch(`/api/leads/${email.leadId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyEmail: next }),
+      }).then((r) => r.json());
+      if (j.lead) {
+        // Premietni novú adresu do fronty (companyEmail na maile je z leadu).
+        onSaved({ ...email, companyEmail: j.lead.companyEmail });
+        toast.success("E-mail adresáta uložený");
+      } else {
+        toast.error(j.error || "Uloženie zlyhalo");
+      }
+    } catch {
+      toast.error("Uloženie zlyhalo");
+    } finally {
+      setSavingRecipient(false);
+    }
+  };
 
   /** Wrap the selected text in Markdown the sender renders (**bold**, *italic*, [text](url)). */
   const wrap = (before: string, after: string, placeholder: string) => {
@@ -1264,7 +1297,8 @@ function EmailEditor({
   const sendNow = async () => {
     setSending(true);
     try {
-      // Persist any edits first so the sent copy matches what's on screen.
+      // Ulož najprv adresáta (posiela sa naň) aj text, nech odoslaná kópia sedí.
+      if (recipientDirty) await saveRecipient();
       const updated = await save();
       if (updated) onSaved(updated);
       const j = await fetch(`/api/leads/emails/${email.id}/send`, {
@@ -1306,8 +1340,6 @@ function EmailEditor({
               {email.websiteUrl
                 ? ` · ${email.websiteUrl.replace(/^https?:\/\/(www\.)?/, "")}`
                 : ""}
-              {" · "}
-              {email.companyEmail ?? "chýba email"}
             </p>
           </div>
           <button
@@ -1316,6 +1348,39 @@ function EmailEditor({
           >
             <X className="h-5 w-5" />
           </button>
+        </div>
+
+        {/* Adresát — editovateľný priamo tu (napr. keď nájdeš mail na konateľa). */}
+        <div className="mb-3 flex items-center gap-2 rounded-lg border border-border bg-surface-2/40 px-3 py-2">
+          <Mail className="h-4 w-4 shrink-0 text-muted" />
+          <span className="shrink-0 text-xs text-muted">Komu:</span>
+          <input
+            type="email"
+            value={recipient}
+            onChange={(e) => setRecipient(e.target.value)}
+            onBlur={saveRecipient}
+            onKeyDown={(e) =>
+              e.key === "Enter" && (e.target as HTMLInputElement).blur()
+            }
+            placeholder="email@firma.sk"
+            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted"
+          />
+          {savingRecipient ? (
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted" />
+          ) : recipientDirty ? (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={saveRecipient}
+              className="shrink-0 rounded bg-primary px-2 py-0.5 text-xs font-medium text-white hover:bg-primary/90"
+            >
+              Uložiť
+            </button>
+          ) : email.companyEmail ? (
+            <Check className="h-4 w-4 shrink-0 text-success" />
+          ) : (
+            <span className="shrink-0 text-[11px] text-warning">chýba</span>
+          )}
         </div>
 
         <div className="mb-3">
