@@ -68,23 +68,36 @@ function Editor({
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Názov (napr. Prvý kontakt – reštaurácie)"
-        />
-        <Input
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-          placeholder="Predmet (voliteľný)"
-        />
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          rows={12}
-          placeholder="Text mailu…"
-          className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 font-mono text-sm leading-relaxed text-foreground outline-none focus:border-primary"
-        />
+        <div className="space-y-1">
+          <label className="text-xs text-muted">Názov šablóny</label>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="napr. Prvý kontakt – reštaurácie"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-muted">Predmet e-mailu</label>
+          <Input
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            placeholder="napr. Nový web pre {{firma}}"
+          />
+          <p className="text-[11px] text-muted">
+            Vyplní sa pri vložení šablóny. Nechaj prázdne, ak nechceš meniť
+            predmet mailu.
+          </p>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-muted">Text mailu</label>
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            rows={12}
+            placeholder="Text mailu…"
+            className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2 font-mono text-sm leading-relaxed text-foreground outline-none focus:border-primary"
+          />
+        </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           <span>Značky (nahradia sa údajmi leadu):</span>
           {TEMPLATE_PLACEHOLDERS.map((p) => (

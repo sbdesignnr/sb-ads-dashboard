@@ -1465,20 +1465,10 @@ function EmailEditor({
               // {{kraj}} sa dopočíta z mesta vo fillTemplate
             }}
             onInsert={(s, b) => {
-              // Predmet nastavíme len ak je prázdny; telo vložíme na pozíciu kurzora
-              // (alebo nahradíme prázdne telo), nech sa neprepíše rozrobená práca.
-              if (s && !subject.trim()) setSubject(s);
-              const ta = bodyRef.current;
-              if (!body.trim() || !ta) {
-                setBody(b);
-              } else {
-                const start = ta.selectionStart ?? body.length;
-                setBody(
-                  body.slice(0, start) +
-                    b +
-                    body.slice(ta.selectionEnd ?? start),
-                );
-              }
+              // Šablóna NAHRADÍ telo mailu (starý text sa zmaže). Predmet nastaví,
+              // ak ho šablóna má; ak šablóna predmet nemá, ponechá pôvodný.
+              setBody(b);
+              if (s) setSubject(s);
             }}
           />
         </div>
