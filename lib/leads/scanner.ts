@@ -303,6 +303,14 @@ export async function scanSegment(
     for (const b of discovered) {
       if (!b.website) continue;
       const norm = normalizeWebsite(b.website);
+      // Zamietnutý lead sa už nikdy nevracia — nepridáme ho späť ani ho
+      // znovu nespracujeme. Používateľ ho vyradil, tak ho necháme na pokoji.
+      const existing = await prisma.lead.findUnique({
+        where: { websiteUrl: norm },
+        select: { id: true, status: true },
+      });
+      if (existing?.status === "rejected") continue;
+
       const source =
         b.country === "CZ" ? "google-places-cz" : "google-places-sk";
       const region = krajForLead({

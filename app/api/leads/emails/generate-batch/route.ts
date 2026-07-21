@@ -33,13 +33,10 @@ export async function POST(req: NextRequest) {
     body.segmentId && body.segmentId !== "all" ? body.segmentId : undefined;
   const segFilter = segmentId ? { segmentId } : {};
 
-  // Lead je "už rozpracovaný" len ak má initial mail v AKTÍVNOM stave
-  // (koncept/schválený/odoslaný). Zamietnutý alebo zlyhaný initial NEBLOKUJE
-  // — inak by sa neoslovený lead so zahodeným konceptom už nikdy nedal osloviť.
-  const ACTIVE = ["draft", "approved", "sent"];
-  const noActiveInitial = {
-    emails: { none: { emailType: "initial", status: { in: ACTIVE } } },
-  } as const;
+  // Generujeme len pre neoslovených (status "new") leadov, ktorí ešte nemajú
+  // žiadny initial mail. Zamietnutie initialu teraz rejektne celý lead (nie je
+  // "new"), takže sa sem prirodzene nedostane a negeneruje sa mu nový.
+  const noInitial = { emails: { none: { emailType: "initial" } } } as const;
 
   // Diagnostics for "only 1 generated": how many "new" leads have/lack an email,
   // and how many already have an initial draft (so they're skipped here).
@@ -65,7 +62,7 @@ export async function POST(req: NextRequest) {
           status: "new",
           ...segFilter,
           companyEmail: { not: null },
-          emails: { some: { emailType: "initial", status: { in: ACTIVE } } },
+          emails: { some: { emailType: "initial" } },
         },
       }),
     ]);
@@ -74,7 +71,7 @@ export async function POST(req: NextRequest) {
     leadsWithEmail,
     "without:",
     leadsWithoutEmail,
-    "· already have active initial draft:",
+    "· already have initial:",
     alreadyHaveInitial,
   );
 
@@ -84,7 +81,7 @@ export async function POST(req: NextRequest) {
       companyEmail: { not: null },
       NOT: { companyEmail: "" }, // a lead with an empty e-mail can't be sent to
       ...(segmentId ? { segmentId } : {}),
-      ...noActiveInitial, // preskočíme len tie s aktívnym konceptom, nie zamietnuté
+      ...noInitial,
     },
     include: { segment: true },
     orderBy: { websiteScore: "desc" },
@@ -164,7 +161,7 @@ export async function POST(req: NextRequest) {
       companyEmail: { not: null },
       NOT: { companyEmail: "" },
       ...(segmentId ? { segmentId } : {}),
-      ...noActiveInitial,
+      ...noInitial,
     },
   });
 

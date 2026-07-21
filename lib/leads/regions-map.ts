@@ -3,11 +3,35 @@
 // práve jedného kraja. Pokrýva okresné mestá + väčšie obce SK a väčšie mestá ČR;
 // neznáme (malé obce) vrátia null a v UI spadnú pod „Neznámy kraj".
 
-import { SK_REGIONS, CZ_REGIONS } from "./google-places";
-
-/** Kanonické názvy krajov (rovnaké ako v skenovaní). */
-export const SK_KRAJE = SK_REGIONS.map((r) => r.name);
-export const CZ_KRAJE = CZ_REGIONS.map((r) => r.name);
+// Kanonické názvy krajov (rovnaké ako v skenovaní `google-places.ts`). Držíme ich
+// tu natvrdo, aby tento modul nezávisel od google-places — inak by sa server-only
+// kód (node:fs) dostal do klientskeho balíka cez šablóny.
+export const SK_KRAJE = [
+  "Bratislavský kraj",
+  "Trnavský kraj",
+  "Trenčiansky kraj",
+  "Nitriansky kraj",
+  "Žilinský kraj",
+  "Banskobystrický kraj",
+  "Prešovský kraj",
+  "Košický kraj",
+];
+export const CZ_KRAJE = [
+  "Praha",
+  "Středočeský kraj",
+  "Jihočeský kraj",
+  "Plzeňský kraj",
+  "Karlovarský kraj",
+  "Ústecký kraj",
+  "Liberecký kraj",
+  "Královéhradecký kraj",
+  "Pardubický kraj",
+  "Kraj Vysočina",
+  "Jihomoravský kraj",
+  "Olomoucký kraj",
+  "Zlínský kraj",
+  "Moravskoslezský kraj",
+];
 export const ALL_KRAJE = [...SK_KRAJE, ...CZ_KRAJE];
 
 // Mestá/obce → kraj. Kľúče píšeme čitateľne; normalizujú sa pri načítaní modulu.
@@ -334,4 +358,136 @@ export function krajForLead(lead: {
   companyAddress?: string | null;
 }): string | null {
   return krajForCity(lead.companyCity) ?? krajFromAddress(lead.companyAddress);
+}
+
+// ── Lokál mesta („v Košiciach") ──────────────────────────────────────────────
+// Slovenský lokál je nepravidelný, preto máme ručný zoznam pre reálne mestá +
+// heuristiku pre zvyšok. Hodnota obsahuje aj predložku (v / vo).
+
+const CITY_LOCATIVE: Record<string, string> = {};
+const L = (city: string, form: string) => {
+  CITY_LOCATIVE[norm(city)] = form;
+};
+L("Bratislava", "v Bratislave");
+L("Malacky", "v Malackách");
+L("Pezinok", "v Pezinku");
+L("Senec", "v Senci");
+L("Stupava", "v Stupave");
+L("Svätý Jur", "vo Svätom Jure");
+L("Modra", "v Modre");
+L("Trnava", "v Trnave");
+L("Dunajská Streda", "v Dunajskej Strede");
+L("Galanta", "v Galante");
+L("Hlohovec", "v Hlohovci");
+L("Piešťany", "v Piešťanoch");
+L("Senica", "v Senici");
+L("Skalica", "v Skalici");
+L("Sereď", "v Seredi");
+L("Holíč", "v Holíči");
+L("Šamorín", "v Šamoríne");
+L("Trenčín", "v Trenčíne");
+L("Prievidza", "v Prievidzi");
+L("Nové Mesto nad Váhom", "v Novom Meste nad Váhom");
+L("Považská Bystrica", "v Považskej Bystrici");
+L("Púchov", "v Púchove");
+L("Partizánske", "v Partizánskom");
+L("Dubnica nad Váhom", "v Dubnici nad Váhom");
+L("Handlová", "v Handlovej");
+L("Bojnice", "v Bojniciach");
+L("Bánovce nad Bebravou", "v Bánovciach nad Bebravou");
+L("Nováky", "v Novákoch");
+L("Myjava", "na Myjave");
+L("Nitra", "v Nitre");
+L("Nové Zámky", "v Nových Zámkoch");
+L("Komárno", "v Komárne");
+L("Levice", "v Leviciach");
+L("Šaľa", "v Šali");
+L("Topoľčany", "v Topoľčanoch");
+L("Zlaté Moravce", "v Zlatých Moravciach");
+L("Štúrovo", "v Štúrove");
+L("Šurany", "v Šuranoch");
+L("Vráble", "vo Vrábľoch");
+L("Žilina", "v Žiline");
+L("Martin", "v Martine");
+L("Čadca", "v Čadci");
+L("Dolný Kubín", "v Dolnom Kubíne");
+L("Liptovský Mikuláš", "v Liptovskom Mikuláši");
+L("Ružomberok", "v Ružomberku");
+L("Námestovo", "v Námestove");
+L("Kysucké Nové Mesto", "v Kysuckom Novom Meste");
+L("Bytča", "v Bytči");
+L("Tvrdošín", "v Tvrdošíne");
+L("Trstená", "v Trstenej");
+L("Vrútky", "vo Vrútkach");
+L("Terchová", "v Terchovej");
+L("Rajec", "v Rajci");
+L("Liptovský Hrádok", "v Liptovskom Hrádku");
+L("Turčianske Teplice", "v Turčianskych Tepliciach");
+L("Banská Bystrica", "v Banskej Bystrici");
+L("Zvolen", "vo Zvolene");
+L("Žiar nad Hronom", "v Žiari nad Hronom");
+L("Lučenec", "v Lučenci");
+L("Rimavská Sobota", "v Rimavskej Sobote");
+L("Brezno", "v Brezne");
+L("Detva", "v Detve");
+L("Krupina", "v Krupine");
+L("Revúca", "v Revúcej");
+L("Veľký Krtíš", "vo Veľkom Krtíši");
+L("Banská Štiavnica", "v Banskej Štiavnici");
+L("Nová Baňa", "v Novej Bani");
+L("Fiľakovo", "vo Fiľakove");
+L("Prešov", "v Prešove");
+L("Poprad", "v Poprade");
+L("Humenné", "v Humennom");
+L("Bardejov", "v Bardejove");
+L("Kežmarok", "v Kežmarku");
+L("Stará Ľubovňa", "v Starej Ľubovni");
+L("Snina", "v Snine");
+L("Svidník", "vo Svidníku");
+L("Vranov nad Topľou", "vo Vranove nad Topľou");
+L("Sabinov", "v Sabinove");
+L("Levoča", "v Levoči");
+L("Stropkov", "v Stropkove");
+L("Svit", "vo Svite");
+L("Vysoké Tatry", "vo Vysokých Tatrách");
+L("Štrba", "v Štrbe");
+L("Košice", "v Košiciach");
+L("Michalovce", "v Michalovciach");
+L("Spišská Nová Ves", "v Spišskej Novej Vsi");
+L("Trebišov", "v Trebišove");
+L("Rožňava", "v Rožňave");
+L("Sobrance", "v Sobranciach");
+L("Gelnica", "v Gelnici");
+L("Moldava nad Bodvou", "v Moldave nad Bodvou");
+L("Kráľovský Chlmec", "v Kráľovskom Chlmci");
+L("Medzev", "v Medzeve");
+L("Praha", "v Prahe");
+L("Brno", "v Brne");
+L("Ostrava", "v Ostrave");
+L("Plzeň", "v Plzni");
+L("Liberec", "v Liberci");
+L("Olomouc", "v Olomouci");
+L("Zlín", "v Zlíne");
+L("Karlovy Vary", "v Karlových Varoch");
+
+/**
+ * Mesto v lokáli s predložkou, napr. „v Košiciach", „vo Zvolene". Známe mestá
+ * z ručného zoznamu; pre ostatné jednoduchá heuristika. Keď si istá nie je,
+ * vráti „v <mesto>".
+ */
+export function cityLocative(city: string | null | undefined): string {
+  if (!city) return "";
+  const clean = city.replace(/\s+[IVX]+$/i, "").trim(); // odstráň mestskú časť „Košice I"
+  const key = norm(clean);
+  if (CITY_LOCATIVE[key]) return CITY_LOCATIVE[key];
+
+  const lower = clean.toLowerCase();
+  if (/ov$/.test(lower)) return `v ${clean}e`; // Prešov → v Prešove
+  if (/[íi]n$/.test(lower)) return `v ${clean}e`; // Trenčín → v Trenčíne
+  if (/ok$/.test(lower)) return `v ${clean.slice(0, -2)}ku`; // Ružomberok → v Ružomberku
+  if (/ca$/.test(lower)) return `v ${clean.slice(0, -1)}i`; // Senica → v Senici
+  if (/[čšž]a$/.test(lower)) return `v ${clean.slice(0, -1)}i`; // Bytča → v Bytči
+  if (/a$/.test(lower)) return `v ${clean.slice(0, -1)}e`; // Nitra → v Nitre
+  if (/o$/.test(lower)) return `v ${clean.slice(0, -1)}e`; // Brezno → v Brezne
+  return `v ${clean}`;
 }

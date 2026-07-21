@@ -589,7 +589,12 @@ export default function CampaignsPage() {
               </Select>
             </label>
             <label className="space-y-1">
-              <span className="text-xs text-muted">Emailov denne</span>
+              <span
+                className="text-xs text-muted"
+                title="Maximálny počet schválených mailov, ktoré appka odošle za jeden deň"
+              >
+                Emailov denne
+              </span>
               <input
                 type="number"
                 min={1}
@@ -602,15 +607,28 @@ export default function CampaignsPage() {
                 }
                 className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
               />
+              <span className="block text-[11px] leading-tight text-muted">
+                Max. koľko schválených mailov sa odošle za deň. Zvyšné počkajú
+                na ďalší deň.
+              </span>
             </label>
             <label className="space-y-1">
-              <span className="text-xs text-muted">Čas odoslania</span>
+              <span
+                className="text-xs text-muted"
+                title="Denný čas, o ktorom sa odošlú schválené maily bez vlastného naplánovania"
+              >
+                Čas odoslania
+              </span>
               <input
                 type="time"
                 value={sendTime}
                 onChange={(e) => setSendTime(e.target.value)}
                 className="h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
               />
+              <span className="block text-[11px] leading-tight text-muted">
+                O tomto čase sa denne odošlú schválené maily (ak nemajú vlastný
+                čas).
+              </span>
             </label>
           </div>
 
@@ -1167,6 +1185,7 @@ function EmailEditor({
   const [sending, setSending] = useState(false);
   const [preview, setPreview] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const downOnBackdrop = useRef(false);
   const isApproved = email.status === "approved";
 
   /** Wrap the selected text in Markdown the sender renders (**bold**, *italic*, [text](url)). */
@@ -1265,12 +1284,17 @@ function EmailEditor({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
+      // Zavrieť len na SKUTOČNOM kliknutí na pozadie — teda keď stlačenie začalo
+      // aj skončilo na pozadí. Keď ťaháš myšou (napr. označuješ text) a omylom
+      // vyjdeš mimo okna, stlačenie začalo vnútri → nezavrie sa a postup ostane.
+      onMouseDown={(e) => {
+        downOnBackdrop.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && downOnBackdrop.current) onClose();
+      }}
     >
-      <div
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border bg-surface p-5 shadow-xl"
-        onClick={(ev) => ev.stopPropagation()}
-      >
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border bg-surface p-5 shadow-xl">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="truncate text-lg font-semibold text-foreground">
@@ -1303,6 +1327,7 @@ function EmailEditor({
               mesto: email.companyCity,
               web: email.websiteUrl,
               konatel: email.ownerName,
+              // {{kraj}} sa dopočíta z mesta vo fillTemplate
             }}
             onInsert={(s, b) => {
               // Predmet nastavíme len ak je prázdny; telo vložíme na pozíciu kurzora
