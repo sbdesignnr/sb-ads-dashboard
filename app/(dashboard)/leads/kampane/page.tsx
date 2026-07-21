@@ -1281,8 +1281,15 @@ function EmailEditor({
     try {
       const updated = await save();
       if (updated) onSaved(updated);
-      await fetch(`/api/leads/emails/${email.id}/approve`, { method: "PATCH" });
-      toast.success("Uložené a schválené");
+      const j = await fetch(`/api/leads/emails/${email.id}/approve`, {
+        method: "PATCH",
+      }).then((r) => r.json());
+      // Povedz presne, kedy sa odošle — nech nie je prekvapenie.
+      toast.success(
+        j.scheduledAt
+          ? `Schválené — odošle sa ${fmtSchedule(j.scheduledAt)}`
+          : "Uložené a schválené",
+      );
       onApproved(email.id);
     } finally {
       setSaving(false);
