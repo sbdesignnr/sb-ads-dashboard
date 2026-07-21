@@ -33,6 +33,14 @@ export async function POST(req: NextRequest) {
     body.segmentId && body.segmentId !== "all" ? body.segmentId : undefined;
   const segFilter = segmentId ? { segmentId } : {};
 
+  // Lead je "už rozpracovaný" len ak má initial mail v AKTÍVNOM stave
+  // (koncept/schválený/odoslaný). Zamietnutý alebo zlyhaný initial NEBLOKUJE
+  // — inak by sa neoslovený lead so zahodeným konceptom už nikdy nedal osloviť.
+  const ACTIVE = ["draft", "approved", "sent"];
+  const noActiveInitial = {
+    emails: { none: { emailType: "initial", status: { in: ACTIVE } } },
+  } as const;
+
   // Diagnostics for "only 1 generated": how many "new" leads have/lack an email,
   // and how many already have an initial draft (so they're skipped here).
   const [leadsWithEmail, leadsWithoutEmail, alreadyHaveInitial] =
@@ -57,7 +65,7 @@ export async function POST(req: NextRequest) {
           status: "new",
           ...segFilter,
           companyEmail: { not: null },
-          emails: { some: { emailType: "initial" } },
+          emails: { some: { emailType: "initial", status: { in: ACTIVE } } },
         },
       }),
     ]);
@@ -66,7 +74,7 @@ export async function POST(req: NextRequest) {
     leadsWithEmail,
     "without:",
     leadsWithoutEmail,
-    "· already have initial draft:",
+    "· already have active initial draft:",
     alreadyHaveInitial,
   );
 
@@ -76,7 +84,7 @@ export async function POST(req: NextRequest) {
       companyEmail: { not: null },
       NOT: { companyEmail: "" }, // a lead with an empty e-mail can't be sent to
       ...(segmentId ? { segmentId } : {}),
-      emails: { none: { emailType: "initial" } }, // don't regenerate ones already drafted
+      ...noActiveInitial, // preskočíme len tie s aktívnym konceptom, nie zamietnuté
     },
     include: { segment: true },
     orderBy: { websiteScore: "desc" },
@@ -156,7 +164,7 @@ export async function POST(req: NextRequest) {
       companyEmail: { not: null },
       NOT: { companyEmail: "" },
       ...(segmentId ? { segmentId } : {}),
-      emails: { none: { emailType: "initial" } },
+      ...noActiveInitial,
     },
   });
 
