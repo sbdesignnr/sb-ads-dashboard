@@ -18,6 +18,7 @@ import {
   Search,
   Link2 as LinkIcon,
   AlertTriangle,
+  User,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1183,6 +1184,8 @@ function EmailEditor({
   const [scheduled, setScheduled] = useState(toLocalInput(email.scheduledAt));
   const [recipient, setRecipient] = useState(email.companyEmail ?? "");
   const [savingRecipient, setSavingRecipient] = useState(false);
+  const [owner, setOwner] = useState(email.ownerName ?? "");
+  const [savingOwner, setSavingOwner] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [preview, setPreview] = useState(false);
@@ -1218,6 +1221,30 @@ function EmailEditor({
       toast.error("Uloženie zlyhalo");
     } finally {
       setSavingRecipient(false);
+    }
+  };
+
+  // Konateľ = ownerName leadu. Používa sa v šablónach ({{konatel}}/{{meno}}/{{pan}}),
+  // preto ho vieš upraviť rovno tu — vložená šablóna hneď použije túto hodnotu.
+  const ownerDirty = owner.trim() !== (email.ownerName ?? "");
+  const saveOwner = async () => {
+    if (!ownerDirty || savingOwner) return;
+    setSavingOwner(true);
+    try {
+      const j = await fetch(`/api/leads/${email.leadId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ownerName: owner.trim() }),
+      }).then((r) => r.json());
+      if (j.lead) {
+        onSaved({ ...email, ownerName: j.lead.ownerName });
+      } else {
+        toast.error(j.error || "Uloženie zlyhalo");
+      }
+    } catch {
+      toast.error("Uloženie zlyhalo");
+    } finally {
+      setSavingOwner(false);
     }
   };
 
@@ -1306,6 +1333,7 @@ function EmailEditor({
     try {
       // Ulož najprv adresáta (posiela sa naň) aj text, nech odoslaná kópia sedí.
       if (recipientDirty) await saveRecipient();
+      if (ownerDirty) await saveOwner();
       const updated = await save();
       if (updated) onSaved(updated);
       const j = await fetch(`/api/leads/emails/${email.id}/send`, {
@@ -1357,37 +1385,72 @@ function EmailEditor({
           </button>
         </div>
 
-        {/* Adresát — editovateľný priamo tu (napr. keď nájdeš mail na konateľa). */}
-        <div className="mb-3 flex items-center gap-2 rounded-lg border border-border bg-surface-2/40 px-3 py-2">
-          <Mail className="h-4 w-4 shrink-0 text-muted" />
-          <span className="shrink-0 text-xs text-muted">Komu:</span>
-          <input
-            type="email"
-            value={recipient}
-            onChange={(e) => setRecipient(e.target.value)}
-            onBlur={saveRecipient}
-            onKeyDown={(e) =>
-              e.key === "Enter" && (e.target as HTMLInputElement).blur()
-            }
-            placeholder="email@firma.sk"
-            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted"
-          />
-          {savingRecipient ? (
-            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted" />
-          ) : recipientDirty ? (
-            <button
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={saveRecipient}
-              className="shrink-0 rounded bg-primary px-2 py-0.5 text-xs font-medium text-white hover:bg-primary/90"
-            >
-              Uložiť
-            </button>
-          ) : email.companyEmail ? (
-            <Check className="h-4 w-4 shrink-0 text-success" />
-          ) : (
-            <span className="shrink-0 text-[11px] text-warning">chýba</span>
-          )}
+        {/* Adresát + konateľ — editovateľné priamo tu (mail na konateľa nájdeš
+            a hneď zmeníš; konateľa použije vložená šablóna cez {{konatel}}). */}
+        <div className="mb-3 grid gap-2 sm:grid-cols-2">
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-2/40 px-3 py-2">
+            <Mail className="h-4 w-4 shrink-0 text-muted" />
+            <span className="shrink-0 text-xs text-muted">Komu:</span>
+            <input
+              type="email"
+              value={recipient}
+              onChange={(e) => setRecipient(e.target.value)}
+              onBlur={saveRecipient}
+              onKeyDown={(e) =>
+                e.key === "Enter" && (e.target as HTMLInputElement).blur()
+              }
+              placeholder="email@firma.sk"
+              className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted"
+            />
+            {savingRecipient ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted" />
+            ) : recipientDirty ? (
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={saveRecipient}
+                className="shrink-0 rounded bg-primary px-2 py-0.5 text-xs font-medium text-white hover:bg-primary/90"
+              >
+                Uložiť
+              </button>
+            ) : email.companyEmail ? (
+              <Check className="h-4 w-4 shrink-0 text-success" />
+            ) : (
+              <span className="shrink-0 text-[11px] text-warning">chýba</span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-2/40 px-3 py-2">
+            <User className="h-4 w-4 shrink-0 text-muted" />
+            <span className="shrink-0 text-xs text-muted">Konateľ:</span>
+            <input
+              type="text"
+              value={owner}
+              onChange={(e) => setOwner(e.target.value)}
+              onBlur={saveOwner}
+              onKeyDown={(e) =>
+                e.key === "Enter" && (e.target as HTMLInputElement).blur()
+              }
+              placeholder="napr. Ing. Peter Novák"
+              className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted"
+            />
+            {savingOwner ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted" />
+            ) : ownerDirty ? (
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={saveOwner}
+                className="shrink-0 rounded bg-primary px-2 py-0.5 text-xs font-medium text-white hover:bg-primary/90"
+              >
+                Uložiť
+              </button>
+            ) : email.ownerName ? (
+              <Check className="h-4 w-4 shrink-0 text-success" />
+            ) : (
+              <span className="shrink-0 text-[11px] text-warning">chýba</span>
+            )}
+          </div>
         </div>
 
         <div className="mb-3">
@@ -1398,7 +1461,7 @@ function EmailEditor({
               firma: email.companyName,
               mesto: email.companyCity,
               web: email.websiteUrl,
-              konatel: email.ownerName,
+              konatel: owner, // živá hodnota z poľa Konateľ (aj neuložená)
               // {{kraj}} sa dopočíta z mesta vo fillTemplate
             }}
             onInsert={(s, b) => {
