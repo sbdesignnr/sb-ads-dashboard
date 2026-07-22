@@ -57,9 +57,15 @@ export async function POST(
       previousSubject,
       previousBody,
     });
+    // Follow-up ide ako ODPOVEĎ → predmet je „Re: <pôvodný predmet>", nech to tak
+    // vidno aj vo fronte (odoslanie to potvrdí aj vláknením).
+    const subject =
+      type !== "initial" && previousSubject
+        ? `Re: ${previousSubject.replace(/^\s*(re\s*:\s*)+/i, "").trim()}`
+        : out.subject;
     const updated = await prisma.leadEmail.update({
       where: { id },
-      data: { subject: out.subject, body: out.body },
+      data: { subject, body: out.body },
       include: { lead: { include: { segment: { select: { name: true } } } } },
     });
     return NextResponse.json({ email: serializeLeadEmail(updated) });

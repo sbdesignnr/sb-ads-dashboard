@@ -164,9 +164,13 @@ async function handle(req: NextRequest) {
         previousSubject: initial?.subject,
         previousBody: initial?.body,
       });
+      // Follow-up ide ako odpoveď → „Re: <pôvodný predmet>".
+      const subject = initial?.subject
+        ? `Re: ${initial.subject.replace(/^\s*(re\s*:\s*)+/i, "").trim()}`
+        : out.subject;
       await prisma.leadEmail.update({
         where: { id: f.id },
-        data: { subject: out.subject, body: out.body },
+        data: { subject, body: out.body },
       });
       followupsReady++;
     } catch {
