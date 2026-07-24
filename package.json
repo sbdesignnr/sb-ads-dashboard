@@ -46,7 +46,7 @@
     "google-auth-library": "^9.15.1",
     "imapflow": "^1.4.7",
     "lucide-react": "^0.469.0",
-    "next": "^15.1.6",
+    "next": "^15.5.21",
     "next-auth": "5.0.0-beta.25",
     "nodemailer": "^6.10.1",
     "react": "^19.0.0",
