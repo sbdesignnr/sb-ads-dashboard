@@ -11,6 +11,9 @@ import {
   ArrowDown,
   Check,
   Loader2,
+  Camera,
+  X,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +29,224 @@ function words(html: string): number {
     .replace(/&[a-z]+;/gi, "")
     .trim();
   return t ? t.split(/\s+/).length : 0;
+}
+
+const MAX_PHOTOS = 15;
+
+/**
+ * Zmenší fotku na max 1568 px (dlhšia strana) a prekonvertuje na JPEG blob — text
+ * na strane knihy ostane čitateľný, ale payload je malý (bez base64 nafúknutia,
+ * lebo posielame multipart). Vráti null, keď sa obrázok nedá načítať (napr. HEIC
+ * na desktope).
+ */
+async function resizePhoto(
+  file: File,
+  maxEdge = 1568,
+  quality = 0.72,
+): Promise<Blob | null> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => reject(new Error("load_failed"));
+      im.src = url;
+    });
+    const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, w, h);
+    return await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", quality),
+    );
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Panel na nahranie fotiek strán knihy → AI z nich spraví poznámky (kapitolu). */
+function PhotoImport({
+  bookId,
+  onCreated,
+  onClose,
+}: {
+  bookId: string;
+  onCreated: (note: BookNoteDTO) => void;
+  onClose: () => void;
+}) {
+  const [files, setFiles] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const addFiles = (list: FileList | null) => {
+    if (!list) return;
+    const imgs = Array.from(list).filter((f) => f.type.startsWith("image/"));
+    setFiles((prev) => {
+      const merged = [...prev, ...imgs].slice(0, MAX_PHOTOS);
+      if (prev.length + imgs.length > MAX_PHOTOS)
+        toast(`Naraz max ${MAX_PHOTOS} fotiek.`);
+      return merged;
+    });
+    setPreviews((prev) =>
+      [...prev, ...imgs.map((f) => URL.createObjectURL(f))].slice(
+        0,
+        MAX_PHOTOS,
+      ),
+    );
+  };
+
+  const removeAt = (i: number) => {
+    setFiles((f) => f.filter((_, idx) => idx !== i));
+    setPreviews((p) => {
+      URL.revokeObjectURL(p[i]);
+      return p.filter((_, idx) => idx !== i);
+    });
+  };
+
+  const submit = async () => {
+    if (!files.length) return toast.error("Pridaj aspoň jednu fotku.");
+    setBusy(true);
+    const id = "photo-notes";
+    toast.loading(`Zmenšujem ${files.length} fotiek…`, { id });
+    try {
+      const form = new FormData();
+      if (title.trim()) form.append("title", title.trim());
+      let ok = 0;
+      for (const f of files) {
+        const blob = await resizePhoto(f);
+        if (blob) {
+          form.append("photos", blob, `page-${ok + 1}.jpg`);
+          ok++;
+        }
+      }
+      if (!ok) {
+        toast.error("Fotky sa nepodarilo spracovať (skús JPG/PNG).", { id });
+        return;
+      }
+      toast.loading("AI číta fotky a píše poznámky… (môže to chvíľu trvať)", {
+        id,
+      });
+      const r = await fetch(`/api/learning/${bookId}/notes/from-photos`, {
+        method: "POST",
+        body: form,
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        toast.error(
+          j.message || j.error || "Nepodarilo sa vytvoriť poznámky.",
+          { id },
+        );
+        return;
+      }
+      toast.success("Poznámky vytvorené!", { id });
+      previews.forEach((u) => URL.revokeObjectURL(u));
+      onCreated(j.note);
+    } catch {
+      toast.error("Nepodarilo sa vytvoriť poznámky.", { id });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+          <Camera className="h-4 w-4 text-primary" />
+          Poznámky z fotiek
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded p-1 text-muted hover:text-foreground"
+          aria-label="Zavrieť"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <p className="mb-2 text-xs text-muted">
+        Odfoť strany knihy so zvýraznenými pasážami (max {MAX_PHOTOS} naraz) a
+        AI z nich spraví premakané poznámky aj s krokmi, ako to použiť v
+        biznise. Pre ďalšiu kapitolu pošli novú dávku.
+      </p>
+
+      <Input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Názov kapitoly / téma (nepovinné) — napr. „1. kapitola: Návyky"
+        className="mb-2"
+      />
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          addFiles(e.target.files);
+          e.target.value = ""; // nech sa dá pridať tá istá fotka znova
+        }}
+      />
+
+      {previews.length > 0 && (
+        <div className="mb-2 grid grid-cols-4 gap-2 sm:grid-cols-6">
+          {previews.map((src, i) => (
+            <div
+              key={src}
+              className="group relative aspect-[3/4] overflow-hidden rounded border border-border"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={src}
+                alt={`strana ${i + 1}`}
+                className="h-full w-full object-cover"
+              />
+              <button
+                type="button"
+                onClick={() => removeAt(i)}
+                className="absolute right-0.5 top-0.5 rounded bg-black/60 p-0.5 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                aria-label="Odobrať"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => inputRef.current?.click()}
+          disabled={busy}
+        >
+          <Camera className="h-3.5 w-3.5" />
+          {previews.length
+            ? `Pridať ďalšie (${previews.length}/${MAX_PHOTOS})`
+            : "Vybrať fotky"}
+        </Button>
+        <Button size="sm" onClick={submit} disabled={busy || !files.length}>
+          {busy ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Sparkles className="h-3.5 w-3.5" />
+          )}
+          Vytvoriť poznámky
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 type SaveState = "idle" | "saving" | "saved";
@@ -182,6 +403,7 @@ export function BookNotes({ bookId }: { bookId: string }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [photoMode, setPhotoMode] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -288,20 +510,43 @@ export function BookNotes({ bookId }: { bookId: string }) {
             </span>
           )}
         </p>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={addChapter}
-          disabled={adding}
-        >
-          {adding ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Plus className="h-3.5 w-3.5" />
-          )}
-          Pridať kapitolu
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            onClick={() => setPhotoMode((v) => !v)}
+            disabled={adding}
+          >
+            <Camera className="h-3.5 w-3.5" />Z fotiek
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={addChapter}
+            disabled={adding}
+          >
+            {adding ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Plus className="h-3.5 w-3.5" />
+            )}
+            Pridať kapitolu
+          </Button>
+        </div>
       </div>
+
+      {photoMode && (
+        <div className="mb-3">
+          <PhotoImport
+            bookId={bookId}
+            onClose={() => setPhotoMode(false)}
+            onCreated={(note) => {
+              setNotes((n) => [...n, note]);
+              setOpenId(note.id);
+              setPhotoMode(false);
+            }}
+          />
+        </div>
+      )}
 
       {loading ? (
         <div className="h-16 animate-pulse rounded-lg bg-surface-2" />

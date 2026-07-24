@@ -220,3 +220,108 @@ export async function recommendBooks(
       takeaways: Array.isArray(b.takeaways) ? b.takeaways.slice(0, 5) : [],
     }));
 }
+
+// ── Poznámky z fotiek strán knihy (Claude vision) ────────────────────────────
+
+export interface PhotoNotes {
+  title: string; // navrhnutý názov kapitoly/sekcie
+  html: string; // bohaté HTML poznámky (h2/h3/p/ul/ol/li/strong/em/mark/blockquote)
+}
+
+export interface PhotoInput {
+  mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+  data: string; // base64 (bez data: prefixu)
+}
+
+const PHOTO_NOTES_SYSTEM = `Si špičkový mentor a "book coach" pre Samuela — podnikateľa, ktorý vedie SB Design (tvorba webov + výkonnostný marketing, solo podnikateľ v Nitre). Dostaneš fotografie strán z knihy, na ktorých má Samuel zvýraznené/podčiarknuté pasáže, ktoré ho zaujali.
+
+Úloha: z fotiek (najmä zo ZVÝRAZNENÝCH častí) vytvor brutálne premakané, praktické poznámky po slovensky, ktoré:
+1. jasne a jednoducho vysvetlia hlavné myšlienky (pochopí to aj laik),
+2. povedia, PREČO na tom záleží,
+3. a hlavne ukážu KONKRÉTNE, ako to Samuel aplikuje vo svojom podnikaní (SB Design) — reálne kroky, čísla, príklady z jeho brandže (weby, kampane, klienti, cenotvorba, akvizícia), nie frázy.
+
+Pravidlá:
+- Píš po slovensky, konkrétne, bez vaty. Žiadne "je dôležité byť produktívny".
+- Sústreď sa na to, čo je zvýraznené/podčiarknuté; okolitý text použi len na pochopenie kontextu.
+- Ak je časť textu na fotke nečitateľná, preskoč ju (nevymýšľaj si).
+- Výstup je LEN HTML (žiadne \`\`\` ani markdown), použi VÝHRADNE tieto značky: <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <mark>, <blockquote>.
+- <mark> daj na tú NAJDÔLEŽITEJŠIU akčnú vetu v každej sekcii.
+- Kľúčovú myšlienku knihy odcituj cez <blockquote>, ak sa dá.
+
+Štruktúra HTML:
+- <p> krátky úvod: o čom tieto strany sú (1-2 vety).
+- Pre každú hlavnú myšlienku (podľa fotiek, zvyčajne 2-6):
+    <h3>názov myšlienky</h3>
+    <p><strong>Čo to znamená:</strong> …</p>
+    <p><strong>Prečo na tom záleží:</strong> …</p>
+    <p><strong>Ako to použiť v SB Design:</strong></p>
+    <ol> konkrétne kroky </ol>
+    (jednu najdôležitejšiu vetu obal do <mark>)
+- Na záver: <h2>Akčný plán</h2> a <ol> 3-7 úplne konkrétnych krokov (čo, ako, dokedy), zoradených podľa priority.
+
+Buď konkrétny až bolestivo. Radšej menej myšlienok, ale do hĺbky a s reálnou aplikáciou.`;
+
+/**
+ * Z fotiek strán knihy vytvorí premakané poznámky (HTML) cez Claude vision.
+ * `chapterHint` je voliteľná téma/kapitola, ktorú zadal používateľ.
+ */
+export async function notesFromPhotos(
+  photos: PhotoInput[],
+  bookTitle: string,
+  chapterHint: string,
+): Promise<PhotoNotes> {
+  const client = new Anthropic();
+  const content: Anthropic.ContentBlockParam[] = [
+    {
+      type: "text",
+      text:
+        `Kniha: „${bookTitle}".` +
+        (chapterHint ? ` Kapitola/téma: ${chapterHint}.` : "") +
+        `\n\nNižšie je ${photos.length} fotografií strán z tejto knihy s mojimi zvýrazneniami. ` +
+        `Vytvor z nich premakané poznámky podľa pravidiel.`,
+    },
+    ...photos.map((p): Anthropic.ImageBlockParam => ({
+      type: "image",
+      source: { type: "base64", media_type: p.mediaType, data: p.data },
+    })),
+  ];
+
+  const msg = await client.messages.create({
+    model: "claude-opus-4-8",
+    max_tokens: 8000,
+    system: PHOTO_NOTES_SYSTEM,
+    tools: [
+      {
+        name: "poznamky",
+        description: "Premakané poznámky z fotiek strán knihy.",
+        input_schema: {
+          type: "object",
+          properties: {
+            title: {
+              type: "string",
+              description:
+                "Krátky výstižný názov kapitoly/sekcie (max 8 slov).",
+            },
+            html: {
+              type: "string",
+              description:
+                "Poznámky ako HTML (h2/h3/p/ul/ol/li/strong/em/mark/blockquote).",
+            },
+          },
+          required: ["title", "html"],
+        },
+      },
+    ],
+    tool_choice: { type: "tool", name: "poznamky" },
+    messages: [{ role: "user", content }],
+  });
+
+  const block = msg.content.find(
+    (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
+  );
+  if (!block) throw new Error("AI nevrátila poznámky.");
+  const out = block.input as { title?: string; html?: string };
+  const html = (out.html ?? "").trim();
+  if (!html) throw new Error("AI vrátila prázdne poznámky.");
+  return { title: (out.title ?? "").trim(), html };
+}
