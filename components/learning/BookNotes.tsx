@@ -118,40 +118,71 @@ function PhotoImport({
     const id = "photo-notes";
     toast.loading(`Zmenšujem ${files.length} fotiek…`, { id });
     try {
-      const form = new FormData();
-      if (title.trim()) form.append("title", title.trim());
-      let ok = 0;
-      for (const f of files) {
-        const blob = await resizePhoto(f);
-        if (blob) {
-          form.append("photos", blob, `page-${ok + 1}.jpg`);
-          ok++;
+      // Adaptívne: zmenšuj, kým celok nie je pod rozpočtom (Vercel má limit ~4,5 MB
+      // na telo requestu). Text na strane pritom ostane čitateľný.
+      const BUDGET = 3.6 * 1024 * 1024;
+      const STEPS = [
+        { edge: 1500, q: 0.72 },
+        { edge: 1500, q: 0.6 },
+        { edge: 1400, q: 0.52 },
+        { edge: 1280, q: 0.45 },
+      ];
+      let blobs: Blob[] = [];
+      for (let s = 0; s < STEPS.length; s++) {
+        blobs = [];
+        for (const f of files) {
+          const b = await resizePhoto(f, STEPS[s].edge, STEPS[s].q);
+          if (b) blobs.push(b);
         }
+        const total = blobs.reduce((sum, b) => sum + b.size, 0);
+        if (total <= BUDGET || s === STEPS.length - 1) break;
       }
-      if (!ok) {
+      if (!blobs.length) {
         toast.error("Fotky sa nepodarilo spracovať (skús JPG/PNG).", { id });
         return;
       }
-      toast.loading("AI číta fotky a píše poznámky… (môže to chvíľu trvať)", {
-        id,
-      });
+
+      const form = new FormData();
+      if (title.trim()) form.append("title", title.trim());
+      blobs.forEach((b, i) => form.append("photos", b, `page-${i + 1}.jpg`));
+
+      toast.loading(
+        `AI číta ${blobs.length} fotiek a píše poznámky… (môže to trvať aj 1-2 minúty)`,
+        { id },
+      );
       const r = await fetch(`/api/learning/${bookId}/notes/from-photos`, {
         method: "POST",
         body: form,
       });
-      const j = await r.json();
+
+      // Chyba nemusí byť JSON (413 od platformy, 504 timeout) — prečítaj bezpečne.
+      const ct = r.headers.get("content-type") ?? "";
+      const j = ct.includes("application/json")
+        ? await r.json().catch(() => null)
+        : null;
       if (!r.ok) {
-        toast.error(
-          j.message || j.error || "Nepodarilo sa vytvoriť poznámky.",
-          { id },
-        );
+        const msg =
+          j?.message ||
+          j?.error ||
+          (r.status === 413
+            ? "Fotky sú príliš veľké. Skús menej fotiek naraz."
+            : r.status === 504 || r.status === 502
+              ? "Trvalo to príliš dlho. Skús menej fotiek naraz (napr. 6-8)."
+              : `Nepodarilo sa vytvoriť poznámky (chyba ${r.status}).`);
+        toast.error(msg, { id });
+        return;
+      }
+      if (!j?.note) {
+        toast.error("Server vrátil neočakávanú odpoveď.", { id });
         return;
       }
       toast.success("Poznámky vytvorené!", { id });
       previews.forEach((u) => URL.revokeObjectURL(u));
       onCreated(j.note);
-    } catch {
-      toast.error("Nepodarilo sa vytvoriť poznámky.", { id });
+    } catch (e) {
+      toast.error(`Nepodarilo sa vytvoriť poznámky: ${(e as Error).message}`, {
+        id,
+      });
     } finally {
       setBusy(false);
     }

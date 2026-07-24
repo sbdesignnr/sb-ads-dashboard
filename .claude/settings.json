@@ -8,7 +8,10 @@
       "Bash(node -e 'console.log\\(\"sanitize-html:\", require\\(\"./package.json\"\\).dependencies[\"sanitize-html\"]\\)')",
       "Bash(curl -s -m 20 -H \"Accept: application/json\" \"https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty-vr/27082440\" -o /tmp/ares_vr.json)",
       "Bash(node -e 'const p=require\\(\"./package.json\"\\);console.log\\(Object.keys\\(p.dependencies\\).filter\\(k=>/recharts|chart|d3|visx|nivo|victory/i.test\\(k\\)\\).join\\(\", \"\\)||\"\\(žiadna chart knižnica\\)\"\\)')",
-      "Bash(python3 -c \"import PIL; print\\('PIL ✓', PIL.__version__\\)\")"
+      "Bash(python3 -c \"import PIL; print\\('PIL ✓', PIL.__version__\\)\")",
+      "Bash(node -e 'const p=require\\(\"./package.json\"\\);console.log\\(\"next:\",p.dependencies.next,\"| eslint-config-next:\",\\(p.devDependencies||{}\\)[\"eslint-config-next\"]||p.dependencies[\"eslint-config-next\"]||\"\\(none\\)\"\\)')",
+      "Bash(node -e 'let s=\"\";process.stdin.on\\(\"data\",d=>s+=d\\).on\\(\"end\",\\(\\)=>{const v=JSON.parse\\(s\\).filter\\(x=>/^15\\\\./.test\\(x\\)\\);console.log\\(v.slice\\(-12\\).join\\(\", \"\\)\\)}\\)')",
+      "Bash(node -e 'console.log\\(\"next:\",require\\(\"./package.json\"\\).dependencies.next\\)')"
     ]
   }
 }
