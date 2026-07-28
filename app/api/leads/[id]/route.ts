@@ -84,3 +84,22 @@ export async function PATCH(
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 }
+
+// Natvrdo zmaže lead (a jeho e-maily cez onDelete: Cascade). Používa sa, keď je
+// lead nepotrebný (napr. má úplne v poriadku web) a netreba ho držať ani ako
+// zamietnutý.
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const session = await auth();
+  if (!session?.user)
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const { id } = await params;
+  try {
+    await prisma.lead.delete({ where: { id } });
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ error: "not_found" }, { status: 404 });
+  }
+}

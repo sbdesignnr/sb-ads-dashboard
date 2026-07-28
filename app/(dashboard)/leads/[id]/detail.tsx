@@ -28,6 +28,7 @@ import {
   Search,
   Pencil,
   X,
+  Trash2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -187,6 +188,7 @@ export function LeadDetail({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const [brief, setBrief] = useState<{
     summary: string;
@@ -252,6 +254,28 @@ export function LeadDetail({ id }: { id: string }) {
       body: JSON.stringify({ status }),
     });
     router.refresh();
+  };
+
+  // Natvrdo zmaže lead a vráti späť na zoznam. Na rozdiel od „Zamietnutý" tu
+  // nezostane žiadny záznam — pre leady, ktoré sú zbytočné (napr. web v poriadku).
+  const deleteLead = async () => {
+    if (!lead) return;
+    if (
+      !confirm(
+        `Naozaj natrvalo vymazať lead „${lead.companyName}"? Túto akciu nie je možné vrátiť.`,
+      )
+    )
+      return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/leads/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      toast.success("Lead vymazaný");
+      router.push(backHref);
+    } catch {
+      toast.error("Vymazanie zlyhalo");
+      setDeleting(false);
+    }
   };
 
   const saveNotes = async () => {
@@ -430,6 +454,19 @@ export function LeadDetail({ id }: { id: string }) {
         >
           {lead.websiteScore ?? "—"}
         </span>
+        <button
+          onClick={deleteLead}
+          disabled={deleting}
+          title="Natrvalo vymazať lead"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-muted transition-colors hover:border-danger/40 hover:text-danger disabled:opacity-60"
+        >
+          {deleting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2 className="h-4 w-4" />
+          )}
+          Vymazať
+        </button>
       </div>
 
       {lead.companyActive === false && (
