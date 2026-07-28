@@ -19,6 +19,7 @@ import {
   Check,
   Upload,
   Sparkles,
+  EyeOff,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -89,11 +90,13 @@ export default function LeadsPage() {
   const [segment, setSegment] = useState("all");
   const [status, setStatus] = useState<StatusFilter>("new");
   const [region, setRegion] = useState("all");
+  const [quality, setQuality] = useState("all"); // all | bad | good | unscored
   const [regions, setRegions] = useState<
     { region: string | null; count: number }[]
   >([]);
   const [contactedCount, setContactedCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [hiding, setHiding] = useState(false);
 
   // CSV import + následná analýza importovaných leadov.
   const fileRef = useRef<HTMLInputElement>(null);
@@ -125,7 +128,7 @@ export default function LeadsPage() {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/leads?segment=${encodeURIComponent(segment)}&status=${status}&region=${encodeURIComponent(region)}`,
+        `/api/leads?segment=${encodeURIComponent(segment)}&status=${status}&region=${encodeURIComponent(region)}&quality=${quality}`,
       );
       const j = await res.json();
       setLeads(j.leads ?? []);
@@ -138,7 +141,7 @@ export default function LeadsPage() {
     } finally {
       setLoading(false);
     }
-  }, [segment, status, region]);
+  }, [segment, status, region, quality]);
 
   useEffect(() => {
     loadLeads();
@@ -216,6 +219,35 @@ export default function LeadsPage() {
       toast.error("Analýza zlyhala", { id: tid });
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  // Hromadné skrytie leadov s dobrým webom (skóre < 65) v aktuálnom segmente.
+  const hideGoodWebs = async () => {
+    const scope =
+      segment === "all" ? "vo všetkých segmentoch" : "v tomto segmente";
+    if (
+      !confirm(
+        `Skryť neoslovené leady s dobrým webom (skóre < 65) ${scope}? Označia sa ako zamietnuté — zmiznú zo zoznamu, ale ostanú v databáze a dajú sa vrátiť.`,
+      )
+    )
+      return;
+    setHiding(true);
+    const tid = toast.loading("Skrývam…");
+    try {
+      const res = await fetch("/api/leads/bulk-reject", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ segment, maxScore: 65 }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error();
+      toast.success(`✅ Skrytých ${j.rejected} leadov`, { id: tid });
+      await Promise.all([loadSegments(), loadLeads()]);
+    } catch {
+      toast.error("Skrytie zlyhalo", { id: tid });
+    } finally {
+      setHiding(false);
     }
   };
 
@@ -399,6 +431,35 @@ export default function LeadsPage() {
                 className="text-xs text-muted underline-offset-2 hover:text-foreground hover:underline"
               >
                 zrušiť filter
+              </button>
+            )}
+
+            {/* Filter podľa kvality webu (skóre zastaralosti) */}
+            <Select value={quality} onValueChange={setQuality}>
+              <SelectTrigger className="h-9 w-[220px]">
+                <SelectValue placeholder="Kvalita webu" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Všetky weby</SelectItem>
+                <SelectItem value="bad">Len zlé weby (skóre ≥ 65)</SelectItem>
+                <SelectItem value="good">Web v poriadku (&lt; 65)</SelectItem>
+                <SelectItem value="unscored">Nezanalyzované</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Hromadné skrytie „dobrých webov" — len keď je na ne nastavený filter */}
+            {quality === "good" && leads.length > 0 && (
+              <button
+                onClick={hideGoodWebs}
+                disabled={hiding}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-muted transition-colors hover:border-danger/40 hover:text-danger disabled:opacity-60"
+              >
+                {hiding ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <EyeOff className="h-4 w-4" />
+                )}
+                Skryť tieto ({leads.length})
               </button>
             )}
           </div>

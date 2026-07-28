@@ -14,6 +14,23 @@ const KNOWN_STATUSES = [
   "rejected",
 ];
 
+// Prah kvalifikácie: skóre ≥ 65 = zastaralý web = „reálny" lead na oslovenie.
+const QUALIFY_SCORE = 65;
+
+// Filter podľa kvality webu (skóre zastaralosti). „bad" = leady, ktoré chceme.
+function qualityWhere(quality: string | null): Prisma.LeadWhereInput {
+  switch (quality) {
+    case "bad": // zlé weby — kvalifikované
+      return { websiteScore: { gte: QUALIFY_SCORE } };
+    case "good": // web v poriadku — nekvalifikované (analyzované, pod prahom)
+      return { websiteScore: { lt: QUALIFY_SCORE } };
+    case "unscored": // ešte nezanalyzované
+      return { websiteScore: null };
+    default:
+      return {};
+  }
+}
+
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user)
@@ -23,6 +40,7 @@ export async function GET(req: NextRequest) {
   const segment = sp.get("segment"); // segmentId | "all" | "none"
   const status = sp.get("status") ?? "all"; // status | "all"
   const region = sp.get("region"); // názov kraja | "all" | "none" (Neznámy)
+  const quality = sp.get("quality"); // all | bad | good | unscored
 
   const segmentWhere: Prisma.LeadWhereInput = {};
   if (segment && segment !== "all")
@@ -45,7 +63,12 @@ export async function GET(req: NextRequest) {
   // quality indicator on the card, not a display filter. Only leads that are
   // explicitly rejected are hidden (and only from the default / "Všetky" view;
   // an explicit "rejected" tab still shows them).
-  const where: Prisma.LeadWhereInput = { ...segmentWhere, ...statusWhere };
+  const scoreWhere = qualityWhere(quality);
+  const where: Prisma.LeadWhereInput = {
+    ...segmentWhere,
+    ...statusWhere,
+    ...scoreWhere,
+  };
   if (region && region !== "all")
     where.region = region === "none" ? null : region;
 
@@ -65,7 +88,7 @@ export async function GET(req: NextRequest) {
     // vidno všetky kraje aj po výbere jedného).
     prisma.lead.groupBy({
       by: ["region"],
-      where: { ...segmentWhere, ...statusWhere },
+      where: { ...segmentWhere, ...statusWhere, ...scoreWhere },
       _count: { _all: true },
     }),
   ]);
