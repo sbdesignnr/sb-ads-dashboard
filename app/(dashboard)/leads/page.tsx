@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import toast from "react-hot-toast";
 import {
   Target,
   Settings,
@@ -16,6 +17,8 @@ import {
   MailCheck,
   BarChart3,
   Check,
+  Upload,
+  Sparkles,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -92,6 +95,12 @@ export default function LeadsPage() {
   const [contactedCount, setContactedCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
+  // CSV import + následná analýza importovaných leadov.
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [analyzeAsk, setAnalyzeAsk] = useState<number | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+
   // Restore the segment filter from the URL (?segment=) so returning from a lead
   // detail lands back on the same segment.
   useEffect(() => {
@@ -99,12 +108,18 @@ export default function LeadsPage() {
     if (s) setSegment(s);
   }, []);
 
-  useEffect(() => {
-    fetch("/api/leads/segments")
-      .then((r) => r.json())
-      .then((j) => setSegments(j.segments ?? []))
-      .catch(() => {});
+  const loadSegments = useCallback(async () => {
+    try {
+      const j = await fetch("/api/leads/segments").then((r) => r.json());
+      setSegments(j.segments ?? []);
+    } catch {
+      /* ponecháme staré segmenty */
+    }
   }, []);
+
+  useEffect(() => {
+    loadSegments();
+  }, [loadSegments]);
 
   const loadLeads = useCallback(async () => {
     setLoading(true);
@@ -128,6 +143,81 @@ export default function LeadsPage() {
   useEffect(() => {
     loadLeads();
   }, [loadLeads]);
+
+  // Nahranie CSV z TrustedLeads → parsovanie na serveri → refresh + ponuka analýzy.
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // aby sa dal ten istý súbor vybrať znova
+    if (!file) return;
+    setImporting(true);
+    const tid = toast.loading("Importujem…");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/leads/import-csv", {
+        method: "POST",
+        body: form,
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "import_failed");
+      toast.success(
+        `✅ Importovaných ${j.imported} | ⏭ Preskočených ${j.skipped} | 🔄 Duplikátov ${j.duplicates}`,
+        { id: tid, duration: 7000 },
+      );
+      await Promise.all([loadSegments(), loadLeads()]);
+      if (j.imported > 0) setAnalyzeAsk(j.imported);
+    } catch (err) {
+      toast.error(
+        err instanceof Error && err.message !== "import_failed"
+          ? `Import zlyhal: ${err.message}`
+          : "Import zlyhal",
+        { id: tid },
+      );
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // Po importe: analyzuj weby po dávkach, kým nie je hotovo (server volá enrichLead).
+  const runAnalyze = async () => {
+    setAnalyzeAsk(null);
+    setAnalyzing(true);
+    const tid = toast.loading("Spúšťam analýzu…");
+    try {
+      const first = await fetch("/api/leads/analyze-bulk").then((r) =>
+        r.json(),
+      );
+      const total: number = first.remaining ?? 0;
+      if (!total) {
+        toast.success("Nič na analýzu.", { id: tid });
+        return;
+      }
+      let remaining = total;
+      let guard = 0;
+      while (remaining > 0 && guard < 5000) {
+        guard++;
+        const r = await fetch("/api/leads/analyze-bulk", {
+          method: "POST",
+        }).then((x) => x.json());
+        if (!r || typeof r.remaining !== "number" || r.processed === 0) break;
+        remaining = r.remaining;
+        toast.loading(`Analyzujem weby… ${total - remaining}/${total}`, {
+          id: tid,
+        });
+        // Priebežný refresh každých pár dávok (nie zakaždým, nech zoznam nebliká).
+        if (guard % 4 === 0) await loadLeads();
+      }
+      toast.success(`✅ Analýza dokončená (${total} webov)`, {
+        id: tid,
+        duration: 6000,
+      });
+      await Promise.all([loadSegments(), loadLeads()]);
+    } catch {
+      toast.error("Analýza zlyhala", { id: tid });
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   const totalLeads = useMemo(
     () => segments.reduce((a, s) => a + s.leadCount, 0),
@@ -185,6 +275,25 @@ export default function LeadsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,.tsv,text/csv,text/tab-separated-values"
+            onChange={onFile}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={importing || analyzing}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/40 disabled:opacity-60"
+          >
+            {importing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4" />
+            )}
+            {importing ? "Importujem…" : "Importovať CSV"}
+          </button>
           <Link
             href="/leads/metriky"
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/40"
@@ -450,6 +559,39 @@ export default function LeadsPage() {
           )}
         </div>
       </div>
+
+      {/* Ponuka spustenia analýzy po úspešnom importe */}
+      {analyzeAsk !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-surface p-6 shadow-xl">
+            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <h2 className="text-base font-semibold text-foreground">
+              Importovaných {analyzeAsk} leadov
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              Chcete spustiť automatickú analýzu webov? Ohodnotíme zastaralosť a
+              pripravíme leady na oslovenie. Môže to chvíľu trvať.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setAnalyzeAsk(null)}
+                className="rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium text-muted transition-colors hover:text-foreground"
+              >
+                Nie, neskôr
+              </button>
+              <button
+                onClick={runAnalyze}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+              >
+                <Sparkles className="h-4 w-4" />
+                Áno, analyzovať
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
