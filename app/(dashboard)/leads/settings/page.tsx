@@ -22,8 +22,16 @@ import { cn } from "@/lib/utils";
 import { type SegmentDTO } from "@/lib/leads/types";
 
 const PALETTE = [
-  "#3b82f6", "#8b5cf6", "#ec4899", "#ef4444", "#f97316",
-  "#eab308", "#22c55e", "#14b8a6", "#06b6d4", "#64748b",
+  "#3b82f6",
+  "#8b5cf6",
+  "#ec4899",
+  "#ef4444",
+  "#f97316",
+  "#eab308",
+  "#22c55e",
+  "#14b8a6",
+  "#06b6d4",
+  "#64748b",
 ];
 
 interface JobRow {
@@ -41,9 +49,19 @@ interface JobRow {
 }
 
 // Total kraje per region filter (SK 8 + CZ 14 = 22) — for the "(3 z 22)" hint.
-const REGION_TOTALS: Record<"both" | "SK" | "CZ", number> = { both: 22, SK: 8, CZ: 14 };
+const REGION_TOTALS: Record<"both" | "SK" | "CZ", number> = {
+  both: 22,
+  SK: 8,
+  CZ: 14,
+};
 
-const JOB_STATUS: Record<string, { label: string; variant: "default" | "info" | "warning" | "success" | "danger" }> = {
+const JOB_STATUS: Record<
+  string,
+  {
+    label: string;
+    variant: "default" | "info" | "warning" | "success" | "danger";
+  }
+> = {
   pending: { label: "Čaká", variant: "default" },
   running: { label: "Beží", variant: "info" },
   completed: { label: "Hotovo", variant: "success" },
@@ -53,10 +71,21 @@ const JOB_STATUS: Record<string, { label: string; variant: "default" | "info" | 
 function fmt(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  return d.toLocaleString("sk-SK", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString("sk-SK", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
-function ColorPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
+function ColorPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (c: string) => void;
+}) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {PALETTE.map((c) => (
@@ -82,13 +111,18 @@ function SegmentRow({
   onDeleted,
   onScan,
   scanning,
+  regionTotal,
 }: {
   seg: SegmentDTO;
   onSaved: (s: SegmentDTO) => void;
   onDeleted: (id: string) => void;
   onScan: (id: string) => void;
   scanning: boolean;
+  regionTotal: number;
 }) {
+  // Koľko krajov v aktuálnom cykle ešte zostáva pokryť (scan berie 3 naraz).
+  const regionsLeft = regionTotal - (seg.scanOffset % regionTotal);
+  const scansLeft = Math.ceil(regionsLeft / 3);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(seg.name);
   const [color, setColor] = useState(seg.color);
@@ -98,7 +132,12 @@ function SegmentRow({
   const [resetting, setResetting] = useState(false);
 
   const resetOffset = async () => {
-    if (!confirm(`Resetovať rotáciu krajov pre „${seg.name}"? Ďalší scan začne od prvého kraja.`)) return;
+    if (
+      !confirm(
+        `Resetovať rotáciu krajov pre „${seg.name}"? Ďalší scan začne od prvého kraja.`,
+      )
+    )
+      return;
     setResetting(true);
     try {
       const res = await fetch(`/api/leads/segments/${seg.id}`, {
@@ -128,7 +167,10 @@ function SegmentRow({
         body: JSON.stringify({
           name: name.trim(),
           color,
-          keywords: keywords.split(",").map((k) => k.trim()).filter(Boolean),
+          keywords: keywords
+            .split(",")
+            .map((k) => k.trim())
+            .filter(Boolean),
           communicationStyle: comm,
         }),
       });
@@ -146,8 +188,13 @@ function SegmentRow({
   };
 
   const del = async () => {
-    if (!confirm(`Zmazať segment „${seg.name}"? Leady zostanú, ale bez segmentu.`)) return;
-    const res = await fetch(`/api/leads/segments/${seg.id}`, { method: "DELETE" });
+    if (
+      !confirm(`Zmazať segment „${seg.name}"? Leady zostanú, ale bez segmentu.`)
+    )
+      return;
+    const res = await fetch(`/api/leads/segments/${seg.id}`, {
+      method: "DELETE",
+    });
     if (res.ok) {
       onDeleted(seg.id);
       toast.success("Segment zmazaný");
@@ -181,7 +228,11 @@ function SegmentRow({
         />
         <div className="flex gap-2">
           <Button size="sm" onClick={save} disabled={saving}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Check className="h-4 w-4" />
+            )}
             Uložiť
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
@@ -195,7 +246,10 @@ function SegmentRow({
 
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface p-4">
-      <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: seg.color }} />
+      <span
+        className="h-3 w-3 shrink-0 rounded-full"
+        style={{ background: seg.color }}
+      />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="font-medium text-foreground">{seg.name}</span>
@@ -204,12 +258,17 @@ function SegmentRow({
         {seg.keywords.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
             {seg.keywords.slice(0, 6).map((k) => (
-              <span key={k} className="rounded bg-surface-2 px-1.5 py-0.5 text-xs text-muted">
+              <span
+                key={k}
+                className="rounded bg-surface-2 px-1.5 py-0.5 text-xs text-muted"
+              >
                 {k}
               </span>
             ))}
             {seg.keywords.length > 6 && (
-              <span className="text-xs text-muted">+{seg.keywords.length - 6}</span>
+              <span className="text-xs text-muted">
+                +{seg.keywords.length - 6}
+              </span>
             )}
           </div>
         )}
@@ -218,10 +277,26 @@ function SegmentRow({
             ? `🗺 Naposledy skenované: ${seg.lastScanRegions.join(" · ")}`
             : "🗺 Zatiaľ neskenované — ďalší scan začne od prvého kraja"}
         </p>
+        <p className="mt-0.5 text-xs text-muted">
+          ⏳ Do konca cyklu ostáva{" "}
+          <span className="font-medium text-foreground">
+            {regionsLeft} z {regionTotal} krajov
+          </span>{" "}
+          (≈ {scansLeft} {scansLeft === 1 ? "scan" : "scanov"})
+        </p>
       </div>
       <div className="flex items-center gap-1.5">
-        <Button size="sm" variant="secondary" onClick={() => onScan(seg.id)} disabled={scanning}>
-          {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => onScan(seg.id)}
+          disabled={scanning}
+        >
+          {scanning ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Play className="h-4 w-4" />
+          )}
           Scan teraz
         </Button>
         <Button
@@ -232,9 +307,18 @@ function SegmentRow({
           aria-label="Resetovať rotáciu krajov"
           title="Resetovať a začať odznova"
         >
-          {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+          {resetting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RotateCcw className="h-4 w-4" />
+          )}
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => setEditing(true)} aria-label="Upraviť">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => setEditing(true)}
+          aria-label="Upraviť"
+        >
           <Pencil className="h-4 w-4" />
         </Button>
         <Button size="sm" variant="ghost" onClick={del} aria-label="Zmazať">
@@ -300,7 +384,10 @@ export default function LeadsSettingsPage() {
         body: JSON.stringify({
           name: newName.trim(),
           color: newColor,
-          keywords: newKeywords.split(",").map((k) => k.trim()).filter(Boolean),
+          keywords: newKeywords
+            .split(",")
+            .map((k) => k.trim())
+            .filter(Boolean),
           communicationStyle: newComm,
         }),
       });
@@ -354,13 +441,20 @@ export default function LeadsSettingsPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
-        <Link href="/leads" className="inline-flex items-center gap-1 text-sm text-muted hover:text-foreground">
+        <Link
+          href="/leads"
+          className="inline-flex items-center gap-1 text-sm text-muted hover:text-foreground"
+        >
           <ArrowLeft className="h-4 w-4" />
           Späť
         </Link>
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Nastavenia leadov</h1>
-          <p className="text-sm text-muted">Spravuj segmenty a spúšťaj skenovanie.</p>
+          <h1 className="text-xl font-semibold text-foreground">
+            Nastavenia leadov
+          </h1>
+          <p className="text-sm text-muted">
+            Spravuj segmenty a spúšťaj skenovanie.
+          </p>
         </div>
       </div>
 
@@ -393,8 +487,16 @@ export default function LeadsSettingsPage() {
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <ColorPicker value={newColor} onChange={setNewColor} />
-            <Button size="sm" onClick={create} disabled={creating || !newName.trim()}>
-              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            <Button
+              size="sm"
+              onClick={create}
+              disabled={creating || !newName.trim()}
+            >
+              {creating ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
               Pridať segment
             </Button>
           </div>
@@ -413,7 +515,9 @@ export default function LeadsSettingsPage() {
                 onClick={() => setRegion(r)}
                 className={cn(
                   "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                  region === r ? "bg-primary text-white" : "text-muted hover:text-foreground",
+                  region === r
+                    ? "bg-primary text-white"
+                    : "text-muted hover:text-foreground",
                 )}
               >
                 {r === "both" ? "SK + CZ" : r}
@@ -429,16 +533,24 @@ export default function LeadsSettingsPage() {
               <span className="text-foreground">Skenovanie beží…</span>
               {runningJob && runningJob.regions.length > 0 && (
                 <span className="text-muted">
-                  Skenujem: <span className="text-foreground">{runningJob.regions.join(", ")}</span> (
-                  {runningJob.regions.length} z {REGION_TOTALS[region]} krajov)
+                  Skenujem:{" "}
+                  <span className="text-foreground">
+                    {runningJob.regions.join(", ")}
+                  </span>{" "}
+                  ({runningJob.regions.length} z {REGION_TOTALS[region]} krajov)
                 </span>
               )}
             </div>
             {runningJob && (
               <div className="mt-1 text-muted">
-                Skenované: {runningJob.foundQualified + runningJob.foundRejected}/{runningJob.foundTotal || "?"} ·
-                Kvalifikovaných: <span className="text-success">{runningJob.foundQualified}</span> ·
-                Odmietnutých: <span className="text-muted">{runningJob.foundRejected}</span>
+                Skenované:{" "}
+                {runningJob.foundQualified + runningJob.foundRejected}/
+                {runningJob.foundTotal || "?"} · Kvalifikovaných:{" "}
+                <span className="text-success">
+                  {runningJob.foundQualified}
+                </span>{" "}
+                · Odmietnutých:{" "}
+                <span className="text-muted">{runningJob.foundRejected}</span>
               </div>
             )}
           </div>
@@ -450,7 +562,9 @@ export default function LeadsSettingsPage() {
             Načítavam…
           </div>
         ) : segments.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted">Zatiaľ žiadne segmenty.</p>
+          <p className="py-6 text-center text-sm text-muted">
+            Zatiaľ žiadne segmenty.
+          </p>
         ) : (
           segments.map((s) => (
             <SegmentRow
@@ -458,8 +572,13 @@ export default function LeadsSettingsPage() {
               seg={s}
               scanning={scanningId === s.id}
               onScan={runScan}
-              onSaved={(u) => setSegments((prev) => prev.map((x) => (x.id === u.id ? u : x)))}
-              onDeleted={(id) => setSegments((prev) => prev.filter((x) => x.id !== id))}
+              regionTotal={REGION_TOTALS[region]}
+              onSaved={(u) =>
+                setSegments((prev) => prev.map((x) => (x.id === u.id ? u : x)))
+              }
+              onDeleted={(id) =>
+                setSegments((prev) => prev.filter((x) => x.id !== id))
+              }
             />
           ))
         )}
@@ -469,34 +588,53 @@ export default function LeadsSettingsPage() {
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0">
           <CardTitle>Log skenovaní</CardTitle>
-          <Button size="sm" variant="ghost" onClick={loadJobs} aria-label="Obnoviť">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={loadJobs}
+            aria-label="Obnoviť"
+          >
             <RotateCw className="h-4 w-4" />
           </Button>
         </CardHeader>
         <CardContent>
           {jobs.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted">Žiadne skenovania.</p>
+            <p className="py-4 text-center text-sm text-muted">
+              Žiadne skenovania.
+            </p>
           ) : (
             <div className="space-y-1.5">
               {jobs.map((j) => {
-                const st = JOB_STATUS[j.status] ?? { label: j.status, variant: "default" as const };
+                const st = JOB_STATUS[j.status] ?? {
+                  label: j.status,
+                  variant: "default" as const,
+                };
                 return (
                   <div
                     key={j.id}
                     className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm"
                   >
                     <Badge variant={st.variant}>{st.label}</Badge>
-                    <span className="font-medium text-foreground">{j.segmentName}</span>
-                    <span className="text-muted">
-                      <span className="text-success">{j.foundQualified}</span> kvalifik. ·{" "}
-                      {j.foundRejected} odmiet. · {j.foundTotal} spolu
+                    <span className="font-medium text-foreground">
+                      {j.segmentName}
                     </span>
-                    <span className="ml-auto text-xs text-muted">{fmt(j.completedAt ?? j.createdAt)}</span>
+                    <span className="text-muted">
+                      <span className="text-success">{j.foundQualified}</span>{" "}
+                      kvalifik. · {j.foundRejected} odmiet. · {j.foundTotal}{" "}
+                      spolu
+                    </span>
+                    <span className="ml-auto text-xs text-muted">
+                      {fmt(j.completedAt ?? j.createdAt)}
+                    </span>
                     {j.regions.length > 0 && (
-                      <span className="w-full text-xs text-muted">🗺 {j.regions.join(" · ")}</span>
+                      <span className="w-full text-xs text-muted">
+                        🗺 {j.regions.join(" · ")}
+                      </span>
                     )}
                     {j.errorMessage && (
-                      <span className="w-full text-xs text-danger">{j.errorMessage}</span>
+                      <span className="w-full text-xs text-danger">
+                        {j.errorMessage}
+                      </span>
                     )}
                   </div>
                 );

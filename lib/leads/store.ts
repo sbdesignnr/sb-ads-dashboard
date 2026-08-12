@@ -77,6 +77,9 @@ type LeadLite = Pick<
   | "websiteUrl"
   | "segmentId"
   | "ownerName"
+  | "ico"
+  | "country"
+  | "region"
 > & {
   segment?: { name: string } | null;
 };
@@ -95,6 +98,9 @@ export function serializeLeadEmail(
     segmentId: e.lead?.segmentId ?? null,
     segmentName: e.lead?.segment?.name ?? null,
     websiteUrl: e.lead?.websiteUrl ?? null,
+    ico: e.lead?.ico ?? null,
+    country: e.lead?.country ?? null,
+    region: e.lead?.region ?? null,
     subject: e.subject,
     body: e.body,
     emailType: e.emailType as EmailType,

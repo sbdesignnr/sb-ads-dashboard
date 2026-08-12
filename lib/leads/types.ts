@@ -84,6 +84,9 @@ export interface LeadEmailDTO {
   segmentId: string | null;
   segmentName: string | null;
   websiteUrl: string | null;
+  ico: string | null;
+  country: string | null;
+  region: string | null;
   subject: string;
   body: string;
   emailType: EmailType;

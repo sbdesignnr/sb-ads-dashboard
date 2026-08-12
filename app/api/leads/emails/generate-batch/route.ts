@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateOutreachEmail } from "@/lib/leads/ai";
+import { fillTemplate } from "@/lib/leads/templates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,19 +14,28 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user)
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return NextResponse.json(
-      { error: "AI nie je nakonfigurované." },
-      { status: 503 },
-    );
-  }
 
-  let body: { segmentId?: string; limit?: number } = {};
+  let body: { segmentId?: string; limit?: number; templateId?: string } = {};
   try {
     body = await req.json();
   } catch {
     /* defaults */
   }
+
+  // Ak je zvolená šablóna, generujeme deterministicky z nej (bez AI) — mail
+  // vyzerá presne ako šablóna so značkami nahradenými údajmi leadu.
+  const template = body.templateId
+    ? await prisma.emailTemplate.findUnique({ where: { id: body.templateId } })
+    : null;
+  if (body.templateId && !template)
+    return NextResponse.json({ error: "template_not_found" }, { status: 404 });
+
+  // Bez šablóny sa generuje cez AI — tá musí byť nakonfigurovaná.
+  if (!template && !process.env.ANTHROPIC_API_KEY)
+    return NextResponse.json(
+      { error: "AI nie je nakonfigurované." },
+      { status: 503 },
+    );
   // Koľko vygenerovať v JEDNOM behu (kvôli časovému limitu funkcie). UI volá
   // opakovane, kým `remaining` neklesne na 0 — tak sa „načítajú všetky zvyšné".
   const limit = Math.min(Math.max(1, Number(body.limit) || 30), 40);
@@ -106,28 +116,52 @@ export async function POST(req: NextRequest) {
     await Promise.all(
       batch.map(async (lead) => {
         try {
-          const email = await generateOutreachEmail({
-            lead,
-            segmentName: lead.segment?.name ?? "firma",
-            type: "initial",
-          });
-          if (email.skipReason) {
-            skippedSegment++;
-            details.push(
-              `${lead.companyName}: preskočený (${email.skipReason})`,
-            );
-            return;
-          }
-          if (!email.subject || !email.body) {
-            failed++;
-            details.push(`${lead.companyName}: prázdny email`);
-            return;
+          let subject: string;
+          let bodyText: string;
+          if (template) {
+            // Deterministické vyplnenie zvolenej šablóny údajmi leadu.
+            const vars = {
+              firma: lead.companyName,
+              mesto: lead.companyCity,
+              web: lead.websiteUrl,
+              konatel: lead.ownerName,
+              kraj: lead.region,
+            };
+            subject =
+              fillTemplate(template.subject, vars).trim() ||
+              `Návrh pre ${lead.companyName}`;
+            bodyText = fillTemplate(template.body, vars).trim();
+            if (!bodyText) {
+              failed++;
+              details.push(`${lead.companyName}: prázdna šablóna`);
+              return;
+            }
+          } else {
+            const email = await generateOutreachEmail({
+              lead,
+              segmentName: lead.segment?.name ?? "firma",
+              type: "initial",
+            });
+            if (email.skipReason) {
+              skippedSegment++;
+              details.push(
+                `${lead.companyName}: preskočený (${email.skipReason})`,
+              );
+              return;
+            }
+            if (!email.subject || !email.body) {
+              failed++;
+              details.push(`${lead.companyName}: prázdny email`);
+              return;
+            }
+            subject = email.subject;
+            bodyText = email.body;
           }
           await prisma.leadEmail.create({
             data: {
               leadId: lead.id,
-              subject: email.subject,
-              body: email.body,
+              subject,
+              body: bodyText,
               emailType: "initial",
               status: "draft",
             },
@@ -143,6 +177,15 @@ export async function POST(req: NextRequest) {
       }),
     );
   }
+
+  // Zaráta použitie šablóny (na zoradenie „najpoužívanejšie").
+  if (template && generated > 0)
+    await prisma.emailTemplate
+      .update({
+        where: { id: template.id },
+        data: { useCount: { increment: generated } },
+      })
+      .catch(() => {});
 
   // New leads in scope we couldn't queue because they have no e-mail.
   const missingEmail = await prisma.lead.count({

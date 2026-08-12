@@ -19,6 +19,9 @@ import {
   Link2 as LinkIcon,
   AlertTriangle,
   User,
+  Globe,
+  Landmark,
+  Trash2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,6 +36,8 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { TemplateBar } from "@/components/leads/TemplateBar";
+import { registerLink } from "@/lib/leads/registers";
+import { type EmailTemplateDTO } from "@/lib/leads/templates";
 import {
   type LeadEmailDTO,
   type SegmentDTO,
@@ -206,6 +211,10 @@ export default function CampaignsPage() {
   const [generating, setGenerating] = useState(false);
   const [findingEmails, setFindingEmails] = useState(false);
 
+  // Šablóna zvolená pre generovanie mailov v tomto segmente ("__ai__" = AI).
+  const [templates, setTemplates] = useState<EmailTemplateDTO[]>([]);
+  const [templateId, setTemplateId] = useState("__ai__");
+
   const [queue, setQueue] = useState<LeadEmailDTO[]>([]);
   const [followups, setFollowups] = useState<LeadEmailDTO[]>([]);
   const [approved, setApproved] = useState<LeadEmailDTO[]>([]);
@@ -286,6 +295,21 @@ export default function CampaignsPage() {
     loadSummary();
   }, [loadQueues, loadSummary]);
 
+  // Načítaj šablóny pre aktívny segment (+ univerzálne). Ak zvolená šablóna už
+  // nepatrí do nového zoznamu, prepni späť na AI.
+  useEffect(() => {
+    fetch(`/api/leads/templates?segment=${encodeURIComponent(segmentId)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        const list: EmailTemplateDTO[] = j.templates ?? [];
+        setTemplates(list);
+        setTemplateId((cur) =>
+          cur !== "__ai__" && !list.some((t) => t.id === cur) ? "__ai__" : cur,
+        );
+      })
+      .catch(() => setTemplates([]));
+  }, [segmentId]);
+
   const selectCampaign = (id: string) => {
     if (id === "__new__") {
       setCampaignId(null);
@@ -360,7 +384,10 @@ export default function CampaignsPage() {
         const j = await fetch("/api/leads/emails/generate-batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ segmentId }),
+          body: JSON.stringify({
+            segmentId,
+            ...(templateId !== "__ai__" ? { templateId } : {}),
+          }),
         }).then((r) => r.json());
         if (j.error) {
           toast.error(j.error, { id: "gen" });
@@ -519,7 +546,7 @@ export default function CampaignsPage() {
     );
     setQueue((q) => q.filter((e) => !selected.has(e.id)));
     setSelected(new Set());
-    toast.success(`Zamietnutých ${ids.length}`);
+    toast.success(`Vyhodených ${ids.length} leadov`);
     loadCampaigns();
   };
 
@@ -730,6 +757,42 @@ export default function CampaignsPage() {
             </label>
           </div>
 
+          {/* Šablóna pre generovanie mailov v tomto segmente */}
+          <div className="flex flex-wrap items-end gap-2 rounded-lg border border-border bg-surface-2/40 p-3">
+            <label className="space-y-1">
+              <span className="text-xs text-muted">
+                Šablóna pre generovanie
+              </span>
+              <Select value={templateId} onValueChange={setTemplateId}>
+                <SelectTrigger className="h-9 w-auto min-w-[240px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__ai__">
+                    ✨ AI – generovať automaticky
+                  </SelectItem>
+                  {templates.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                      {t.segmentName ? "" : " · univerzálna"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+            <p className="flex-1 text-[11px] leading-tight text-muted">
+              {templateId === "__ai__"
+                ? "Maily napíše AI na mieru každému leadu."
+                : "Maily sa vygenerujú presne z tejto šablóny (značky nahradené údajmi leadu)."}{" "}
+              <Link
+                href="/leads/sablony"
+                className="text-primary hover:underline"
+              >
+                Spravovať šablóny
+              </Link>
+            </p>
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-3">
             <label className="flex items-center gap-2 text-sm text-foreground">
               <Switch checked={isActive} onCheckedChange={toggleActive} />
@@ -849,9 +912,14 @@ export default function CampaignsPage() {
                 <CheckCheck className="h-4 w-4" />
                 Schváliť ({selected.size})
               </Button>
-              <Button size="sm" variant="ghost" onClick={bulkReject}>
-                <X className="h-4 w-4" />
-                Zamietnuť
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={bulkReject}
+                className="text-danger hover:text-danger"
+              >
+                <Trash2 className="h-4 w-4" />
+                Vyhodiť ({selected.size})
               </Button>
             </div>
           )}
@@ -1248,6 +1316,28 @@ function EmailRow({
         </p>
       </button>
       <div className="flex shrink-0 items-center gap-1">
+        {email.websiteUrl && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => window.open(email.websiteUrl!, "_blank", "noopener")}
+            aria-label="Otvoriť web"
+            title="Otvoriť web leadu (nová karta)"
+          >
+            <Globe className="h-4 w-4" />
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() =>
+            window.open(registerLink(email).url, "_blank", "noopener")
+          }
+          aria-label="Obchodný register"
+          title={`Overiť konateľa v registri (${registerLink(email).label})`}
+        >
+          <Landmark className="h-4 w-4" />
+        </Button>
         {onGenerate && (
           <Button
             size="sm"

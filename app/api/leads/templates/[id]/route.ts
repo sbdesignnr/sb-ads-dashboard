@@ -32,6 +32,7 @@ export async function PATCH(
       const t = await prisma.emailTemplate.update({
         where: { id },
         data: { useCount: { increment: 1 } },
+        include: { segment: { select: { name: true } } },
       });
       return NextResponse.json({ template: serializeTemplate(t) });
     } catch {
@@ -47,11 +48,21 @@ export async function PATCH(
   if (typeof b.body === "string" && b.body.trim()) data.body = b.body;
   if (typeof b.category === "string")
     data.category = b.category.trim().slice(0, 60);
+  // segmentId: reťazec = priradiť segment, prázdny reťazec / null = univerzálna.
+  if ("segmentId" in b)
+    data.segmentId =
+      typeof b.segmentId === "string" && b.segmentId.trim()
+        ? b.segmentId.trim()
+        : null;
   if (!Object.keys(data).length)
     return NextResponse.json({ error: "nothing_to_update" }, { status: 400 });
 
   try {
-    const t = await prisma.emailTemplate.update({ where: { id }, data });
+    const t = await prisma.emailTemplate.update({
+      where: { id },
+      data,
+      include: { segment: { select: { name: true } } },
+    });
     return NextResponse.json({ template: serializeTemplate(t) });
   } catch {
     return NextResponse.json({ error: "not_found" }, { status: 404 });

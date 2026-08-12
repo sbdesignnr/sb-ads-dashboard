@@ -6,13 +6,28 @@ import { serializeTemplate } from "@/lib/leads/templates";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** GET /api/leads/templates — najčastejšie používané prvé. */
-export async function GET() {
+/**
+ * GET /api/leads/templates — najčastejšie používané prvé.
+ * `?segment=<id>` vráti šablóny pre daný segment + univerzálne (segmentId=null).
+ */
+export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user)
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const seg = req.nextUrl.searchParams.get("segment");
+  const where =
+    seg && seg !== "all"
+      ? { OR: [{ segmentId: seg }, { segmentId: null }] }
+      : {};
   const templates = await prisma.emailTemplate.findMany({
-    orderBy: [{ useCount: "desc" }, { updatedAt: "desc" }],
+    where,
+    include: { segment: { select: { name: true } } },
+    // Šablóny pre segment najprv, potom univerzálne; v rámci toho najpoužívanejšie.
+    orderBy: [
+      { segmentId: "desc" },
+      { useCount: "desc" },
+      { updatedAt: "desc" },
+    ],
   });
   return NextResponse.json({ templates: templates.map(serializeTemplate) });
 }
@@ -37,6 +52,11 @@ export async function POST(req: NextRequest) {
   if (!body)
     return NextResponse.json({ error: "missing_body" }, { status: 400 });
 
+  const segmentId =
+    typeof b.segmentId === "string" && b.segmentId.trim()
+      ? b.segmentId.trim()
+      : null;
+
   const template = await prisma.emailTemplate.create({
     data: {
       name: name.slice(0, 120),
@@ -47,7 +67,9 @@ export async function POST(req: NextRequest) {
       category: String(b.category ?? "")
         .trim()
         .slice(0, 60),
+      segmentId,
     },
+    include: { segment: { select: { name: true } } },
   });
   return NextResponse.json(
     { template: serializeTemplate(template) },

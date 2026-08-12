@@ -7,17 +7,23 @@ export interface EmailTemplateDTO {
   subject: string;
   body: string;
   category: string;
+  segmentId: string | null;
+  segmentName: string | null;
   useCount: number;
   updatedAt: string;
 }
 
-export function serializeTemplate(t: EmailTemplate): EmailTemplateDTO {
+export function serializeTemplate(
+  t: EmailTemplate & { segment?: { name: string } | null },
+): EmailTemplateDTO {
   return {
     id: t.id,
     name: t.name,
     subject: t.subject,
     body: t.body,
     category: t.category,
+    segmentId: t.segmentId ?? null,
+    segmentName: t.segment?.name ?? null,
     useCount: t.useCount,
     updatedAt: t.updatedAt.toISOString(),
   };

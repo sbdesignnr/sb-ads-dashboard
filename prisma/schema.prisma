@@ -93,6 +93,7 @@ model LeadSegment {
   createdAt          DateTime      @default(now()) @map("created_at")
   leads              Lead[]
   scanJobs           LeadScanJob[]
+  templates          EmailTemplate[]
 
   @@map("lead_segments")
 }
@@ -606,15 +607,18 @@ model Task {
 // Podporujú tie isté zástupné značky ako generátor: {{firma}}, {{mesto}}, {{web}},
 // {{konatel}} — pri vložení sa nahradia údajmi daného leadu.
 model EmailTemplate {
-  id        String   @id @default(cuid())
+  id        String       @id @default(cuid())
   name      String
-  subject   String   @default("")
-  body      String   @db.Text
-  category  String   @default("") // voľná menovka, napr. "prvý kontakt" / "followup"
-  useCount  Int      @default(0) @map("use_count")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  subject   String       @default("")
+  body      String       @db.Text
+  category  String       @default("") // voľná menovka, napr. "prvý kontakt" / "followup"
+  segmentId String?      @map("segment_id") // šablóna pre konkrétny segment (null = univerzálna)
+  segment   LeadSegment? @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  useCount  Int          @default(0) @map("use_count")
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
 
+  @@index([segmentId])
   @@map("email_templates")
 }
 

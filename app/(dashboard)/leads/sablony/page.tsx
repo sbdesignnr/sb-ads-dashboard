@@ -16,22 +16,34 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   TEMPLATE_PLACEHOLDERS,
   type EmailTemplateDTO,
 } from "@/lib/leads/templates";
+import { type SegmentDTO } from "@/lib/leads/types";
+import { cn } from "@/lib/utils";
 
 function Editor({
   template,
+  segments,
   onSaved,
   onCancel,
 }: {
   template: EmailTemplateDTO | null;
+  segments: SegmentDTO[];
   onSaved: () => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(template?.name ?? "");
   const [subject, setSubject] = useState(template?.subject ?? "");
   const [body, setBody] = useState(template?.body ?? "");
+  const [segmentId, setSegmentId] = useState(template?.segmentId ?? "__all__");
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -45,7 +57,12 @@ function Editor({
       const r = await fetch(url, {
         method: template ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), subject, body }),
+        body: JSON.stringify({
+          name: name.trim(),
+          subject,
+          body,
+          segmentId: segmentId === "__all__" ? "" : segmentId,
+        }),
       });
       if (!r.ok) throw new Error();
       toast.success(template ? "Uložené" : "Šablóna vytvorená");
@@ -75,6 +92,27 @@ function Editor({
             onChange={(e) => setName(e.target.value)}
             placeholder="napr. Prvý kontakt – reštaurácie"
           />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-muted">Segment</label>
+          <Select value={segmentId} onValueChange={setSegmentId}>
+            <SelectTrigger className="h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">
+                Univerzálna (pre všetky segmenty)
+              </SelectItem>
+              {segments.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-[11px] text-muted">
+            Priradením k segmentu sa šablóna zjaví v kampani pre daný segment.
+          </p>
         </div>
         <div className="space-y-1">
           <label className="text-xs text-muted">Predmet e-mailu</label>
@@ -129,6 +167,7 @@ function Editor({
 
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState<EmailTemplateDTO[]>([]);
+  const [segments, setSegments] = useState<SegmentDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<EmailTemplateDTO | null | "new">(null);
 
@@ -144,6 +183,10 @@ export default function TemplatesPage() {
 
   useEffect(() => {
     load();
+    fetch("/api/leads/segments")
+      .then((r) => r.json())
+      .then((j) => setSegments(j.segments ?? []))
+      .catch(() => {});
   }, [load]);
 
   const remove = async (t: EmailTemplateDTO) => {
@@ -180,6 +223,7 @@ export default function TemplatesPage() {
       {editing !== null && (
         <Editor
           template={editing === "new" ? null : editing}
+          segments={segments}
           onSaved={() => {
             setEditing(null);
             load();
@@ -215,6 +259,16 @@ export default function TemplatesPage() {
                 <div className="flex items-center gap-2">
                   <span className="truncate font-medium text-foreground">
                     {t.name}
+                  </span>
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-full px-1.5 py-0.5 text-[11px]",
+                      t.segmentName
+                        ? "bg-primary/10 text-primary"
+                        : "bg-surface-2 text-muted",
+                    )}
+                  >
+                    {t.segmentName ?? "univerzálna"}
                   </span>
                   {t.useCount > 0 && (
                     <span className="shrink-0 text-xs text-muted">
