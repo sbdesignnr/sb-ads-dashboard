@@ -1248,6 +1248,31 @@ export default function CampaignsPage() {
   );
 }
 
+/**
+ * Otvorí URL v NOVEJ karte na POZADÍ — fokus ostane na fronte leadov (nehodí ťa
+ * to na novú kartu). `window.open` novú kartu popredie; simulovaný Ctrl/Cmd+klik
+ * na <a> ju prehliadač otvorí na pozadí (rešpektuje to ako „otvoriť v novej
+ * karte"). Ctrl na Windows/Linux, Cmd (meta) na macOS.
+ */
+function openInBackground(url: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  const isMac = /Mac|iPod|iPhone|iPad/.test(
+    navigator.platform || navigator.userAgent,
+  );
+  a.dispatchEvent(
+    new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      ctrlKey: !isMac,
+      metaKey: isMac,
+    }),
+  );
+}
+
 function EmailRow({
   email,
   checked,
@@ -1320,9 +1345,9 @@ function EmailRow({
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => window.open(email.websiteUrl!, "_blank", "noopener")}
+            onClick={() => openInBackground(email.websiteUrl!)}
             aria-label="Otvoriť web"
-            title="Otvoriť web leadu (nová karta)"
+            title="Otvoriť web leadu (nová karta na pozadí)"
           >
             <Globe className="h-4 w-4" />
           </Button>
@@ -1330,9 +1355,7 @@ function EmailRow({
         <Button
           size="sm"
           variant="ghost"
-          onClick={() =>
-            window.open(registerLink(email).url, "_blank", "noopener")
-          }
+          onClick={() => openInBackground(registerLink(email).url)}
           aria-label="Obchodný register"
           title={`Overiť konateľa v registri (${registerLink(email).label})`}
         >
