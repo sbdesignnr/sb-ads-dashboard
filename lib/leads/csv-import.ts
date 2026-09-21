@@ -173,13 +173,21 @@ const SEGMENT_RULES: { keys: string[]; names: string[] }[] = [
 
 export const OTHER_SEGMENT_NAME = "Ostatné";
 
+// Kľúčové slovo musí sedieť ako CELÉ slovo (s voliteľným množným „s"), nie ako
+// podreťazec - inak „Transportation" padne pod „sport" a „Lawn Care" pod „law".
+// Viacslovné kľúče („real estate") sa hľadajú ako celá fráza.
+const RULE_PATTERNS = SEGMENT_RULES.map((rule) => ({
+  names: rule.names,
+  patterns: rule.keys.map((k) => new RegExp(`\\b${k}s?\\b`)),
+}));
+
 /** Kandidátske názvy segmentu pre daný Industry (name[0] = na vytvorenie). */
 export function resolveSegmentNames(
   industry: string | null | undefined,
 ): string[] {
   const s = (industry ?? "").toLowerCase();
-  for (const rule of SEGMENT_RULES) {
-    if (rule.keys.some((k) => s.includes(k))) return rule.names;
+  for (const rule of RULE_PATTERNS) {
+    if (rule.patterns.some((p) => p.test(s))) return rule.names;
   }
   return [OTHER_SEGMENT_NAME];
 }

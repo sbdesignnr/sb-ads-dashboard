@@ -138,6 +138,7 @@ model Lead {
   status             String       @default("new") // new | contacted | rejected | converted
   notes              String?
   source             String?
+  industry           String? // pôvodné pole Industry z CSV importu (TrustedLeads)
   createdAt          DateTime     @default(now()) @map("created_at")
   updatedAt          DateTime     @updatedAt @map("updated_at")
   lastScannedAt      DateTime?    @map("last_scanned_at")

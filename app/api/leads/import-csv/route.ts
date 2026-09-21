@@ -133,6 +133,7 @@ export async function POST(req: NextRequest) {
       companyCity: l.companyCity,
       region: krajForCity(l.companyCity) ?? l.stateRaw,
       country: l.country,
+      industry: l.industry || null,
       source: "trusted-leads",
       status: "new",
     });
