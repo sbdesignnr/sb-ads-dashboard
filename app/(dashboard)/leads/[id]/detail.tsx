@@ -307,12 +307,16 @@ export function LeadDetail({ id }: { id: string }) {
       } else if (res.ok && type === "analysis" && j.lead) {
         setLead(j.lead);
         setIssues(j.lead.websiteIssues ?? []);
-        setBrief({
-          summary: j.lead.aiSummary ?? "",
-          painPoint: j.lead.aiPainPoint ?? "",
-          opportunity: j.lead.aiOpportunity ?? "",
-        });
-        toast.success("Analýza aktualizovaná");
+        if (!j.lead.aiSummary && !j.lead.aiPainPoint && !j.lead.aiOpportunity) {
+          toast.error("AI nevrátila žiadny výsledok, skús to znova.");
+        } else {
+          setBrief({
+            summary: j.lead.aiSummary ?? "",
+            painPoint: j.lead.aiPainPoint ?? "",
+            opportunity: j.lead.aiOpportunity ?? "",
+          });
+          toast.success("Analýza aktualizovaná");
+        }
       } else {
         toast.error(j.error || "Generovanie zlyhalo");
       }
