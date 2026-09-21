@@ -62,11 +62,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // nepočítame druhýkrát.
     const hasDossier = Boolean(current.aiSummary || current.aiPainPoint || current.aiOpportunity);
     if (!(needsScan && hasDossier)) {
-      const issues = [
-        ...(current.websiteIssues ?? []),
-        ...(current.visualIssues ?? []).map((v) => `Vizuálne: ${v}`),
-        ...(current.aiVisualReason ? [`Vizuálne hodnotenie: ${current.aiVisualReason}`] : []),
-      ];
       const dossier = await generateDossier({
         companyName: current.companyName,
         segmentName: seg.name,
@@ -86,7 +81,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         pageSpeedDesktop: current.pageSpeedDesktop,
         hasSsl: current.hasSsl,
         isMobileFriendly: current.isMobileFriendly,
-        issues,
+        issues: current.websiteIssues ?? [],
+        visualIssues: current.visualIssues ?? [],
+        visualReason: current.aiVisualReason,
         // Text webu sa pri skene neukladá — nech AI nemyslí, že sa web nenačítal.
         pageText: "(Text webu nie je uložený — vychádzaj z technických údajov a zistených nedostatkov vyššie.)",
       });

@@ -37,6 +37,8 @@ export interface DossierInput {
   hasSsl?: boolean | null;
   isMobileFriendly?: boolean | null;
   issues?: string[];
+  visualIssues?: string[]; // AI-detected visual problems (screenshot analysis)
+  visualReason?: string | null; // AI's overall visual impression
   pageText?: string;
 }
 
@@ -74,6 +76,11 @@ SSL/HTTPS: ${yes(f.hasSsl)}  | Responzívny: ${yes(f.isMobileFriendly)}
 Zistené nedostatky:
 ${issues}
 
+VIZUÁLNE HODNOTENIE (AI, zo screenshotu)
+Celkový dojem: ${f.visualReason ?? "—"}
+Vizuálne problémy:
+${f.visualIssues && f.visualIssues.length ? f.visualIssues.map((i) => `- ${i}`).join("\n") : "- (žiadne konkrétne zistené)"}
+
 TEXT Z WEBU (úryvok, home + kontakt/o-nás)
 ${f.pageText ? f.pageText.slice(0, 4500) : "(web sa nepodarilo načítať)"}`;
 }
@@ -83,10 +90,11 @@ const DOSSIER_SYSTEM = `Si senior konzultant a obchodník SB Design (weby a digi
 Zásady:
 - KONTAKTY (dôležité, NEVYMÝŠĽAJ): e-mail vyber IBA zo zoznamu "E-maily" nižšie – ak je prázdny, daj null. Telefón vyber IBA zo zoznamu "Telefóny" alebo z "Telefón (Google)" – inak null. NIKDY nevymýšľaj e-mail ani číslo. Meno majiteľa/konateľa urči z textu webu alebo ORSR (uprednostni konkrétnu osobu pred generickým info@); ak sa nedá, null.
 - ANALÝZA (summary): 2–4 vety, MAX ~80 slov. Posúď stručne to najdôležitejšie – vek/modernosť dizajnu, responzívnosť, rýchlosť, konverzné prvky (rezervácia, formulár, CTA), SEO, dôveryhodnosť. Konkrétne, žiadna vata.
-- PAIN: 1 najsilnejší pain point – čo to firmu reálne stojí (stratení klienti/rezervácie/tržby/dôvera/Google návštevnosť). Ak sa dá, naznač dopad. Max ~50 slov.
+- PAIN: 1 najsilnejší pain point – čo to firmu reálne stojí (stratení klienti/rezervácie/tržby/dôvera/Google návštevnosť). Ak sa dá, naznač dopad – kvalitatívne (pozri pravidlo o číslach nižšie). Max ~50 slov.
 - OPPORTUNITY: 1 konkrétna vec, ktorú postavíme, + ako mu pomôže zarobiť/ušetriť. Hmatateľné a relevantné pre jeho typ podnikania. Max ~50 slov.
 - BEST CONTACT TIME: konkrétne dni + hodinové okno + krátky dôvod, podľa typu profesie. Max ~40 slov.
-- OUTREACH ANGLE: ako a akým tónom osloviť tohto človeka – prispôsob typu podnikania (advokát = formálne, vecne; fitness tréner = neformálne, energicky). Bez nátlaku. Max ~40 slov.
+- OUTREACH ANGLE: aký tón a spôsob oslovenia zvoliť pri tomto človeku – prispôsob typu podnikania a titulu (advokát/lekár/odborník = formálne, vecne, s rešpektom k titulu; fitness tréner = uvoľnenejšie, energicky). Bez nátlaku. Toto pole slúži na nastavenie tónu a oslovenia v e-maile, preto NEPÍŠ hotové vety ani obsah e-mailu, len tón a spôsob oslovenia. Max ~40 slov.
+- ČÍSLA A ODHADY (dôležité, NEVYMÝŠĽAJ): konkrétne čísla, sumy a odhady (cena za sedenie/službu, počet stratených klientov alebo objednávok, tržby, percentá, konverzia…) uveď IBA ak sa dajú odvodiť zo vstupných údajov – najmä zo sekcií "Zistené nedostatky" a "Vizuálne hodnotenie" a z technických údajov o webe (PageSpeed, vek webu…). Inak zostaň pri kvalitatívnom opise dôsledku (napr. "časť klientov si radšej vyberie konkurenciu") bez vymyslených čísel. Ak už musíš uviesť sumu alebo odhad, ktorý zo vstupov nevyplýva, výslovne ho označ ako "všeobecný trhový odhad" (nie údaj z ich webu). Platí pre VŠETKY polia (summary, painPoint, opportunity…).
 - Píš po slovensky, vecne, bez marketingových fráz a superlatívov. VYPLŇ VŠETKY polia.
 
 Ak je firma NEAKTÍVNA v registri, jasne to spomeň v summary (nemá zmysel ju oslovovať).
@@ -326,6 +334,22 @@ Ak sa v budúcnosti rozhodnete pre obnovu webovej stránky, budem rád, ak sa na
 S pozdravom,
 Samuel Bibeň"`;
 
+// Appended to the INITIAL-email system prompt when the lead already has an AI
+// brief ("Príležitosť (AI)"). The brief is a finished input: the email must be
+// built from it instead of re-deriving its own problem/offer/tone.
+const BRIEF_ADDENDUM = `
+
+--- REŽIM: HOTOVÝ PODKLAD Z ANALÝZY ---
+V dátach je sekcia "HOTOVÝ PODKLAD Z ANALÝZY" (Kde firma stráca / Čo ponúknuť / Ako osloviť). Je to hotový vstup, ktorý už prešiel analýzou práve tejto firmy. NEODVODZUJ nezávisle vlastný problém, vlastnú ponuku ani vlastný tón - postav email z neho:
+- ODSEK 3 (konkrétny problém) postav z "Kde firma stráca": zachovaj jeho vecný obsah, ale preformuluj ho do hlasu emailu (vykanie, plynulé 2-3 vety). Segmentové prispôsobenie vyššie použi IBA ak je "Kde firma stráca" prázdne (—).
+- ODSEK 4 (ponuka riešenia, 1 veta) postav z "Čo ponúknuť" - ponúkni to, čo tam je, nie iné riešenie. Ak je prázdne (—), použi všeobecnú ponuku ako vo vzoroch.
+- TÓN A OSLOVENIE nastav podľa "Ako osloviť": formálny/odborný tón (odborník, titul, rešpekt) = formálny variant oslovenia z tabuľky ("Vážený pán/Vážená pani ...") a podpis "S úctou,"; vecný/bežný tón = "Dobrý deň, pán/pani ..." a podpis "S pozdravom,". Vykanie ostáva vždy, aj pri uvoľnenejšom tóne.
+- Podklad môže obsahovať frázy, ktoré sú v emaile ZAKÁZANÉ (napr. "moderný web", "profesionálny web", "online prítomnosť"). Nikdy ich neprevezmi doslova - pri preformulovaní ich nahraď vecným opisom (napr. "nový web s online objednávaním").
+- Meno v oslovení použi len z "Konateľ/kontakt"; ak meno nepoznáš, meno nevymýšľaj.
+- Z "Ako osloviť" preber IBA tón a spôsob oslovenia - nekopíruj z neho vety ani štruktúru. Štruktúra 4 odsekov, vykanie, mužský rod pisateľa, zákaz pozitívneho hodnotenia webu a zakázané frázy majú vždy prednosť. Ak podklad hodnotí web pozitívne, túto časť ignoruj.
+- NEPRIDÁVAJ NIČ NAD PODKLAD: nevymýšľaj tvrdenia o správaní firmy (napr. že nezdvíhajú telefón) ani mieru dopadu (napr. "väčšina klientov odíde", "polovica dopytov"). Drž sa miery z podkladu - ak tam je "časť klientov" alebo "niektorí", nepíš "väčšina".
+- ČÍSLA: nepridávaj žiadne čísla, sumy ani odhady, ktoré nie sú v dátach. Čísla z analýzy (PageSpeed, skóre) necituj - opíš dôsledok slovami. Sumu alebo odhad označený ako "všeobecný trhový odhad" do emailu neprenášaj, drž sa kvalitatívneho opisu dôsledku.`;
+
 const OUTREACH_TOOL: Anthropic.Tool = {
   name: "uloz_email",
   description: "Uloží predmet a telo cold emailu. Pre nevhodný segment nechaj subject aj body prázdne a vyplň skipReason.",
@@ -367,18 +391,30 @@ export async function generateOutreachEmail(input: {
           ? "zastaraný vizuálny dizajn"
           : "celkovo zastaraný web";
 
+  // Initial email of a lead that already has an AI brief → the brief is the input
+  // (problem, offer, tone); the heuristic `mainProblem` would be an independent
+  // second derivation, so it is dropped in that case.
+  const useBrief = type === "initial" && Boolean(lead.aiPainPoint?.trim() || lead.aiOpportunity?.trim());
+
+  const briefBlock = useBrief
+    ? `
+HOTOVÝ PODKLAD Z ANALÝZY (použi ako vstup, neodvodzuj vlastný):
+Kde firma stráca: ${lead.aiPainPoint?.trim() || "—"}
+Čo ponúknuť: ${lead.aiOpportunity?.trim() || "—"}
+Ako osloviť (len tón a oslovenie): ${lead.aiOutreachAngle?.trim() || "—"}`
+    : `
+Pain point: ${lead.aiPainPoint ?? "—"}
+Príležitosť (čo vieme spraviť): ${lead.aiOpportunity ?? "—"}`;
+
   const facts = `DÁTA O FIRME (použi konkrétne, nevymýšľaj; surové skóre/čísla z analýzy necituj):
 Firma: ${lead.companyName}
 Segment (odvetvie): ${segmentName}
 Web: ${lead.websiteUrl ?? "—"}
 Mesto: ${lead.companyCity ?? "—"}
-Konateľ/kontakt: ${lead.ownerName ?? "neznámy"}${lead.ownerPosition ? ` (${lead.ownerPosition})` : ""}
-Hlavný problém webu (použi ako uhol emailu): ${mainProblem}
+Konateľ/kontakt: ${lead.ownerName ?? "neznámy"}${lead.ownerPosition ? ` (${lead.ownerPosition})` : ""}${useBrief ? "" : `\nHlavný problém webu (použi ako uhol emailu): ${mainProblem}`}
 Vizuálny dojem (AI): ${lead.aiVisualReason ?? "—"}
 Hlavné vizuálne problémy: ${(lead.visualIssues ?? []).slice(0, 4).join("; ") || "—"}
-Ďalšie nedostatky webu: ${(lead.websiteIssues ?? []).slice(0, 5).join("; ") || "—"}
-Pain point: ${lead.aiPainPoint ?? "—"}
-Príležitosť (čo vieme spraviť): ${lead.aiOpportunity ?? "—"}
+Ďalšie nedostatky webu: ${(lead.websiteIssues ?? []).slice(0, 5).join("; ") || "—"}${briefBlock}
 Zhrnutie stavu webu: ${lead.aiSummary ?? "—"}`;
 
   const instruction =
@@ -399,7 +435,7 @@ Zhrnutie stavu webu: ${lead.aiSummary ?? "—"}`;
   const msg = await client.messages.create({
     model: MODEL,
     max_tokens: 700,
-    system: (type === "initial" ? OUTREACH_SYSTEM : OUTREACH_SYSTEM + FOLLOWUP_ADDENDUM) + bookingRule,
+    system: (type === "initial" ? OUTREACH_SYSTEM + (useBrief ? BRIEF_ADDENDUM : "") : OUTREACH_SYSTEM + FOLLOWUP_ADDENDUM) + bookingRule,
     tools: [OUTREACH_TOOL],
     tool_choice: { type: "tool", name: "uloz_email" },
     messages: [{ role: "user", content: `${facts}\n\n${instruction}` }],

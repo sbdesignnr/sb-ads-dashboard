@@ -161,6 +161,8 @@ export async function enrichLead(
         hasSsl: analysis.hasSsl,
         isMobileFriendly: analysis.isMobileFriendly,
         issues: analysis.issues,
+        visualIssues: analysis.visualIssues,
+        visualReason: analysis.aiVisualReason,
         pageText: analysis.pageText,
       }).catch(() => null)
     : null;
