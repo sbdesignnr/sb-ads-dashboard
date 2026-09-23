@@ -9,11 +9,12 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 // Koľko leadov analyzujeme na jedno volanie (klient volá v slučke, kým remaining>0).
-// enrichLead je drahé (PageSpeed + AI vizuál + register) — držíme malú dávku.
-// Znížené zo 6 na 4 potom, čo sa PageSpeed timeout predĺžil na 35s (reálne
-// Lighthouse behy bežne trvajú 15-30s) — 4 × 35s bezpečne zmestí pod 300s limit
-// funkcie aj v takmer-worst-case scenári (všetky v dávke naraz timeoutnú).
-const BATCH = 4;
+// enrichLead je drahé (PageSpeed + screenshot + AI vizuál + register) — držíme
+// malú dávku. Znížené zo 6 na 4 (PageSpeed timeout 35s) a potom na 3, keď
+// pribudol krok screenshotu (až ~25s naviac na ten istý lead) — worst-case na
+// lead: ~35s PageSpeed/load + ~25s screenshot + ~15s AI vizuál/dossier ≈ 75s;
+// 3 × 75s bezpečne pod 300s limit funkcie aj takmer-worst-case.
+const BATCH = 3;
 
 // Importované, ešte nezanalyzované leady: majú web, nie sú zamietnuté a
 // lastScannedAt je null (enrichLead ho vždy nastaví — úspech aj zlyhanie).

@@ -39,10 +39,18 @@ export async function captureScreenshot(url: string): Promise<Screenshot | null>
     // hodnotenie, než odfotená chybová stránka, ktorú AI vyhodnotí ako "zlý
     // dizajn" — meria sa tým nesprávna vec (chvíľková chyba, nie reálny web),
     // čo je horšie než jasne nízka istota pri fallbacku na text.
+    //
+    // delay: bez neho (default 0s) appka fotí OKAMŽITE po evente "load", ešte
+    // pred dokončením CSS/fontov/obrázkov — reálne to spôsobovalo screenshoty
+    // nenaštýlovanej/rozbitej stránky (napr. holý odkaz "Přeskočit na obsah",
+    // chýbajúce logo), ktoré AI vyhodnotila ako zlý dizajn, hoci to bola len
+    // chyba časovania snímky, nie skutočný vzhľad webu.
+    delay: "2",
+    navigation_timeout: "15",
     // Cache aggressively so re-scanning the same site doesn't re-bill the service.
     cache: "true",
     cache_ttl: "2592000", // 30 days
-    timeout: "10",
+    timeout: "20",
   });
 
   try {
