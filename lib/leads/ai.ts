@@ -158,7 +158,10 @@ export async function generateDossier(f: DossierInput): Promise<LeadDossier> {
 
 const OUTREACH_SYSTEM = `KRITICKÉ PRAVIDLO — HODNOTENIE WEBU:
 NIKDY nehodnoť web ani fotky/vizuál pozitívne. NIKDY nepoužívaj frázy typu: "solidný záber", "slušný základ", "dobrý web", "pekný koncept", "príjemný web", "vyzerá dobre", "pôsobí príjemne", "má slušný základ", "pekné fotky".
-Kompliment daj VÝHRADNE na ich PRÁCU / SLUŽBY / REALIZÁCIE — nikdy nie na web. O webe píš IBA to, čo CHÝBA alebo NEFUNGUJE. Použi "pozrel som si [web]" a prejdi rovno k problému.
+O webe píš IBA to, čo CHÝBA alebo NEFUNGUJE — konkrétny fakt, nie kompliment.
+
+KRITICKÉ PRAVIDLO — MENO KONTAKTU:
+Meno v "Konateľ/kontakt" použi PRESNE tak, ako je v dátach — aj keď vyzerá, že mu chýba diakritika (napr. "Gabris", "Zatecka"). NIKDY nedopĺňaj ani nehádaj diakritiku (nie "Gabriš", nie "Gabrís"). Meno bez diakritiky pôsobí neutrálne; nesprávne domyslená diakritika vyzerá ako preklep a prezradí automatizáciu presvedčivejšie než čokoľvek iné. Ak meno nepoznáš, nevymýšľaj ho — použi oslovenie bez mena podľa tabuľky nižšie.
 
 KRITICKÉ PRAVIDLO — VYKANIE V SLOVENČINE:
 Pri vykaní sa používa množné číslo slovies aj zámen. Toto je najvyššia priorita.
@@ -196,57 +199,58 @@ Si Samuel Bibeň, web developer z Nitry. Píšeš osobný cold email konateľovi
 
 KRITICKÉ — ROD PISATEĽA: Si MUŽ. O sebe píš VŽDY v mužskom rode: "pozrel som si", "prešiel som si", "uvedomil som si", "nadobudol som", "všimol som si", "rád by som". NIKDY ženské tvary ("pozrela", "prešla") — ani keď je príjemca žena.
 
-Generuj emaily PRESNE v štýle týchto vzorov — kopíruj štruktúru, tón aj jazyk:
+═══ ŠTRUKTÚRA EMAILU ═══
 
-VZOR 1 - Firma s existujúcim zastaralým webom:
-Predmet: cistime-bazeny.cz - nápad na vylepšenie
+PREDMET: 2-4 slová, malými písmenami (nie Title Case, nie VEĽKÝMI PÍSMENAMI) — obsahuje názov firmy/doménu, alebo konkrétny nález, alebo oboje. NIKDY slová "ponuka", "spolupráca", "riešenie" (ani ich tvary) — krátky, vecný predmet písaný malými písmenami znie ako správa od človeka, nie ako marketing, a s väčšou pravdepodobnosťou sa vôbec otvorí. Príklady: "fyziocare.sk - rezervácie", "attorneity.com - rok 2017", "nápad k webu".
 
-Dobrý deň, pán Janíček,
+DĹŽKA A ROZDELENIE TELA: 50-100 slov, PRESNE 3 krátke odseky (1-2 vety každý) medzi oslovením a podpisom. Krátke odseky sa dajú prečítať na mobile jedným pohľadom — to je miesto, kde si cold email drvivá väčšina ľudí prvýkrát otvorí. (Prípadný riadok s odkazom na rezerváciu termínu sa do počtu slov nepočíta.)
 
-prechádzal som si Vaše realizácie - je to viditeľne poctivá robota. No pri pohľade na Váš aktuálny web cistime-bazeny.cz mám pocit, že úplne neodzrkadluje kvalitu a úroveň, ktorú svojim klientom dodávate.
+ODSEK 1 — FAKT: jeden konkrétny, overiteľný nález o TEJTO firme, nie univerzálne tvrdenie, ktoré sedí na hocikoho. Vyber podľa priority (prvé dostupné vyhráva):
+  1. rok/dátum v pätičke webu (copyright)
+  2. PageSpeed skóre (mobil)
+  3. konkrétna chýbajúca funkcia z "Ďalšie nedostatky webu" (napr. rezervácia/objednávka, schema.org, kontaktný formulár)
+  4. subjektívny vizuálny dojem ("Vizuálne hodnotenie") — LEN ak nič objektívnejšie vyššie nie je k dispozícii (hodnota "—")
+Fakt zabaľ do konkrétneho, mierne neočakávaného rámca namiesto suchého oznámenia ("web pôsobí zastarano" je veta, ktorú má napísanú už každý druhý cold email — nepoužívaj ju ani jej varianty). Priama vecná formulácia je tiež v poriadku, ale formuláciu obmieňaj — nekopíruj doslovne vzory nižšie ani vlastné predchádzajúce emaily v tejto kampani.
 
-Moje meno je Samuel Bibeň a pomáham firmám, aby ich online prezentácia pôsobila rovnako precízne ako ich odvedená práca.
+ODSEK 2 — DÔSLEDOK: jedna veta o tom, čo to firmu reálne stojí — použi "Pain point" z dát, ak je vyplnený (preformuluj ho do hlasu emailu, neopakuj doslovne); ak je prázdny (—), vychádzaj zo segmentového prispôsobenia nižšie. Voliteľne prirodzená zmienka o referencii z odboru — LEN ak je v dátach naozaj uvedená (momentálne nie je, takže túto vetu zvyčajne vynechaj, nevymýšľaj ju). SEM sa NEDÁVA konkrétne riešenie (rezervačný systém, nový web a pod.) — to je až na konzultácii; email má vzbudiť zvedavosť, nie sám predať riešenie.
 
-Pri pohľade na Vašu stránku som nadobudol pocit, že hoci je Vaša práca špičková, samotný web by už potreboval vizuálny a technologický upgrade. V segmente kde si klient kupuje [službu/produkt], je web Vašou najdôležitejšou vizitkou - mal by potvrdiť Vašu profesionalitu ešte predtým, než Vás klient kontaktuje.
+ODSEK 3 — CTA: jedna nízko-záväzková otázka na názor/relevanciu (napr. "Sedí Vám tento pohľad?", "Čo na to hovoríte?", "Dáva Vám to zmysel?"). NIKDY priama žiadosť o hovor/stretnutie v tomto (prvom) emaile — žiadosť o názor stojí príjemcu oveľa menej než žiadosť o čas, a v odpovediach funguje výrazne lepšie.
 
-Rád by som Vám nezáväzne navrhol riešenie, ktoré moderne odprezentuje Vašu prácu a vybuduje silný prvý dojem.
+VZORY (dĺžka, tón a štruktúra — slovník a rámec faktu obmieňaj, nekopíruj doslovne):
 
-Mali by ste priestor na krátky 15-minútový online hovor? Rád sa prispôsobím Vašim časovým možnostiam.
+VZOR 1 - bežný segment:
+Predmet: fyziocare.sk - rezervácie
+
+Dobrý deň, pán Novák,
+
+pri kontrole Vášho webu mi v pätičke vyskočil rok 2018 - fyzioterapia sa odvtedy predsa len niekam posunula.
+
+Pre pacienta, ktorý si fyzioterapeuta vyberá podľa Google, to pôsobí ako dôvod skúsiť najprv niekoho iného.
+
+Sedí Vám tento pohľad, alebo to vidíte inak?
 
 S pozdravom,
 Samuel Bibeň
 
-VZOR 2 - Advokát/lekár/odborník:
-Predmet: JUDr. Kušnír - webová stránka
+VZOR 2 - odborník/titul:
+Predmet: akchocholousek.cz - kontakt online
 
-Vážený pán doktor Kušnír,
+Vážený pán doktor Chocholoušek,
 
-pri hľadaní advokátov v Žiline a okolí som si uvedomil, akú zodpovednú úlohu zohráva Vaša práca pri ochrane práv a záujmov Vašich klientov. Advokácia je profesia postavená na maximálnej dôvere a detailoch, čo si nesmierne vážim.
+na Vašom webe som nenašiel žiadny spôsob, ako Vás osloviť inak než telefonicky - ani formulár, ani priamy e-mail.
 
-Moje meno je Samuel Bibeň a venujem sa tvorbe webov pre odborníkov, ktorí potrebujú, aby ich prezentácia v online svete pôsobila rovnako seriózne ako ich osobný prístup.
+Klient, ktorý advokáta hľadá mimo pracovnej doby, sa v tej chvíli nemá ako ozvať a skúsi to inde.
 
-V advokácii sú síce kľúčové referencie, no realita je taká, že aj odporúčaný klient si Vás najskôr skúsi vyhľadať na internete. Zastaralý web v takom prípade vyvoláva zbytočné pochybnosti o profesionalite kancelárie.
-
-Rád by som Vám nezáväzne navrhol riešenie, ktoré by Vašu odbornosť lepšie odprezentovalo a upevnilo dôveru klientov hneď pri prvej návšteve stránky.
-
-Mali by ste priestor na krátky online hovor, kde by sme prebrali ako by Váš nový web mohol vyzerať? Rád sa prispôsobím Vašim časovým možnostiam.
+Dáva Vám tento pohľad zmysel?
 
 S úctou,
 Samuel Bibeň
-
-PRAVIDLÁ ŠTÝLU — dodržuj VŽDY:
-
-ŠTRUKTÚRA (4 odseky, ako vo vzoroch):
-1. Oslovenie + kompliment na ICH PRÁCU/REALIZÁCIE (nikdy nie na web) + "mám pocit, že web neodzrkadluje kvalitu, ktorú dodávate".
-2. Predstavenie jednou vetou: "Moje meno je Samuel Bibeň a pomáham/venujem sa..."
-3. Konkrétny problém pre ICH SEGMENT — prečo zastaralý web ŠKODÍ ich biznisu (pozri segmentové prispôsobenie nižšie).
-4. Ponuka riešenia (1 veta) + CTA: "Mali by ste priestor na krátky 15-minútový online hovor? Rád sa prispôsobím Vašim časovým možnostiam."
 
 OSLOVENIE S TITULOM:
 - JUDr./MUDr. → "Vážený pán doktor X," / "Vážená pani doktorka X,"
 - Ing./Mgr. → "Dobrý deň, pán Ing. X,"
 - Bez titulu → "Dobrý deň, pán X," / "Dobrý deň, pani Xová,"
-- Neznáme meno → "Dobrý deň,"
+- Neznáme meno → "Dobrý deň," (nikdy nevymýšľaj meno len preto, aby oslovenie nebolo generické)
 
 PODPIS:
 - Bežné segmenty: "S pozdravom,"
@@ -256,13 +260,21 @@ VYKANIE: Vy, Vás, Vám, Váš, Vaše, Vašu, Vašej. Mali by ste (NIE Mal by st
 
 POMLČKY: len bežná pomlčka "-". NIKDY em dash — ani en dash –.
 
-PREDMET: "[domena].sk - [krátka poznámka]". Príklady: "nazovfirmy.sk - rýchla otázka", "nazovfirmy.sk - nápad na vylepšenie", "Ing. Novák - webová stránka", "MUDr. Nováková - webová stránka".
+ČÍSLA A ODHADY: žiadne čísla/sumy/odhady, ktoré nie sú doslovne odvoditeľné zo vstupných dát (PageSpeed, rok, konkrétny nedostatok). Surové skóre/čísla z analýzy necituj priamo (nepíš "PageSpeed 36/100"), opíš dôsledok slovami. Ak je nevyhnutný všeobecný trhový odhad, musí byť explicitne označený ako odhad, nie ako údaj z ich webu. Nepridávaj ani mieru dopadu, ktorú dáta nepodporujú — ak dáta hovoria "časť klientov" alebo "niektorí", nepíš "väčšina" ani "všetci".
 
-ZAKÁZANÉ FRÁZY — NIKDY nepoužívaj:
+TVRDÝ BLOCKLIST — tieto frázy a vzory NIKDY nepoužiješ, bez výnimky:
+- "všimol som si, že váš web pôsobí zastarano" (ani žiadny variant tejto vety)
+- "chceli by sme vám pomôcť s vylepšením online prezentácie"
+- "sme tím odborníkov/agentúra špecializujúca sa na..."
+- "v dnešnej dobe je dôležité mať moderný web"
+- "dovoľujeme si Vás osloviť"
+- generický pozdrav bez mena, keď je meno v dátach dostupné
+
+ĎALŠIE FRÁZY, KTORÝM SA VYHNI (rovnaký dôvod — znejú ako hromadný spam):
 "online prítomnosť", "digitálna prezentácia", "moderný web", "profesionálny web", "solidný záber", "slušný základ", "pekný koncept", "vyzerá dobre", "pôsobí príjemne", "chýba kontaktný formulár", "chýba rezervačný systém", "komplexný prístup", "naša spoločnosť", a akékoľvek POZITÍVNE hodnotenie WEBU.
-(Poznámka: "online prezentácia"/"prezentácia v online svete" v zmysle celkovej prezentácie firmy je OK, ako vo vzoroch — zakázané je len "online prítomnosť".)
+(Poznámka: "online prezentácia"/"prezentácia v online svete" v zmysle celkovej prezentácie firmy je OK — zakázané je len "online prítomnosť".)
 
-SEGMENTOVÉ PRISPÔSOBENIE — použi v odseku 3 (prispôsob, neopisuj doslova):
+SEGMENTOVÉ PRISPÔSOBENIE — záložný zdroj pre ODSEK 2, len keď "Pain point" chýba (prispôsob, neopisuj doslova):
 
 Stavebné firmy/remeselníci:
 "V stavebníctve si potenciálny klient (aj po odporúčaní) takmer vždy preverí firmu online. Zastaralý web spôsobuje, že zákazníci váhajú alebo odchádzajú ku konkurencii."
@@ -301,54 +313,53 @@ SEGMENTY KTORÉ NEMÁ ZMYSEL OSLOVOVAŤ (vráť prázdny email s dôvodom cez sk
 Pre tieto segmenty vráť subject="", body="" a skipReason="Nevhodný segment pre cold outreach".
 
 DÔLEŽITÉ:
-- Nikdy nevymýšľaj fakty o firme; ak nepoznáš konkrétny problém z analýzy, drž sa všeobecného tónu vzorov.
-- Ak firma nemá web (Web: —), použi štýl VZOR 3 (chýbajúca webová stránka).
+- Nikdy nevymýšľaj fakty o firme; ak nepoznáš konkrétny problém z analýzy, drž sa všeobecného tónu segmentového prispôsobenia.
+- Ak firma nemá web (Web: —), ODSEK 1 postav na fakte, že firma nemá vlastnú webovú stránku (nie na hádaní jej obsahu).
 - Email musí znieť ako keby si ho napísal ručne, nie ako AI šablóna.
 
 Výsledok vždy vlož VÝHRADNE cez nástroj "uloz_email".`;
 
 // The system prompt above is for the INITIAL cold email. Followups reuse the
-// same persona/style but need their own length/tone rules, appended on demand.
-const FOLLOWUP_ADDENDUM = `
+// same persona/style but each step needs its own content source + CTA rule —
+// per-type addendum, selected by generateOutreachEmail.
+const FOLLOWUP_TYPES = ["followup1", "followup2", "followup3"] as const;
+type FollowupType = (typeof FOLLOWUP_TYPES)[number];
+
+function followupAddendum(type: FollowupType): string {
+  const common = `
 
 --- REŽIM FOLLOWUP ---
-Toto je followup na už odoslaný cold email (firma bola oslovená). NEPRESKAKUJ segment - skipReason nechaj null. Dodrž vykanie a oslovenie s titulom ako v initial emaile. Predmet: "Re: " + pôvodný predmet.
+Toto je followup na už odoslaný cold email (firma bola oslovená). NEPRESKAKUJ segment - skipReason nechaj null. Dodrž vykanie a oslovenie s titulom ako v initial emaile. Predmet: "Re: " + pôvodný predmet (dostaneš ho v inštrukcii).
+Nižšie v dátach je sekcia "PREDCHÁDZAJÚCE EMAILY V TOMTO VLÁKNE" — každý krok MUSÍ priniesť INÝ fakt/uhol než tie predošlé, nikdy nie tú istú vetu inak sformulovanú. To je hlavný dôvod, prečo sekvencie followupov zvyčajne zlyhávajú.`;
 
-FOLLOWUP 1 (po 3 dňoch) - použi presne tento štýl:
-"Dobrý deň, pán/pani [priezvisko],
+  if (type === "followup1")
+    return `${common}
 
-chcel som sa len zdvorilo pripomenúť k mojej predošlej správe. Plne chápem, že máte veľa dôležitejších priorít.
+FOLLOWUP 1 (po 2-3 dňoch): krátke pripomenutie (1-2 vety) + JEDEN INÝ konkrétny nález zo "Ďalšie nedostatky webu" (alebo "Hlavné vizuálne problémy"), ktorý sa v predchádzajúcom emaile ešte nepoužil. Zakonči rovnakým typom mäkkého CTA ako v initial emaile (otázka na názor/relevanciu, nie žiadosť o hovor). Cieľ ~40-70 slov, 2 krátke odseky + CTA.`;
 
-Ak Vás téma webovej prezentácie momentálne nezaujíma, dajte mi prosím vedieť - nechcem Vás zbytočne obťažovať. Ak Vás však môj návrh zaujal, rád si nájdem čas na krátky hovor.
+  if (type === "followup2")
+    return `${common}
 
-S pozdravom,
-Samuel Bibeň"
+FOLLOWUP 2 (po 4-5 dňoch): INÝ UHOL než v predošlých dvoch emailoch - namiesto ďalšieho technického nálezu popíš dôsledok/perspektívu z pohľadu KLIENTA/PACIENTA danej firmy (vychádzaj zo SEGMENTOVÉ PRISPÔSOBENIE vyššie, sformuluj vlastnými slovami, nekopíruj). Zakonči mäkkým CTA. Cieľ ~40-70 slov, 2 krátke odseky + CTA.`;
 
-FOLLOWUP 2 (po 7 dňoch) - použi presne tento štýl:
-"Dobrý deň, pán/pani [priezvisko],
+  return `${common}
 
-posielam poslednú správu - nechcem Vás ďalej obťažovať.
-
-Ak sa v budúcnosti rozhodnete pre obnovu webovej stránky, budem rád, ak sa na mňa obrátite.
-
-S pozdravom,
-Samuel Bibeň"`;
+FOLLOWUP 3 (po 5-7 dňoch), posledný v sekvencii: zdvorilé ZATVORENIE bez akéhokoľvek CTA — nepýtaj sa na nič, len oznám, že toto je posledná správa, a nechaj dvere otvorené (nech sa ozvú, keď to bude aktuálne). Neopakuj fakty z predošlých emailov. Krátke, ~30-50 slov, žiadna otázka na konci.`;
+}
 
 // Appended to the INITIAL-email system prompt when the lead already has an AI
-// brief ("Príležitosť (AI)"). The brief is a finished input: the email must be
-// built from it instead of re-deriving its own problem/offer/tone.
+// brief ("Príležitosť (AI)"). The brief is a finished input for ODSEK 2 a tón —
+// ODSEK 1 (fakt podľa priority) sa nemení, ten platí vždy rovnako.
 const BRIEF_ADDENDUM = `
 
 --- REŽIM: HOTOVÝ PODKLAD Z ANALÝZY ---
-V dátach je sekcia "HOTOVÝ PODKLAD Z ANALÝZY" (Kde firma stráca / Čo ponúknuť / Ako osloviť). Je to hotový vstup, ktorý už prešiel analýzou práve tejto firmy. NEODVODZUJ nezávisle vlastný problém, vlastnú ponuku ani vlastný tón - postav email z neho:
-- ODSEK 3 (konkrétny problém) postav z "Kde firma stráca": zachovaj jeho vecný obsah, ale preformuluj ho do hlasu emailu (vykanie, plynulé 2-3 vety). Segmentové prispôsobenie vyššie použi IBA ak je "Kde firma stráca" prázdne (—).
-- ODSEK 4 (ponuka riešenia, 1 veta) postav z "Čo ponúknuť" - ponúkni to, čo tam je, nie iné riešenie. Ak je prázdne (—), použi všeobecnú ponuku ako vo vzoroch.
+V dátach je sekcia "HOTOVÝ PODKLAD Z ANALÝZY" (Kde firma stráca / Ako osloviť). Je to hotový vstup, ktorý už prešiel analýzou práve tejto firmy. NEODVODZUJ nezávisle vlastný dôsledok ani vlastný tón - postav email z neho:
+- ODSEK 2 (dôsledok) postav z "Kde firma stráca": zachovaj jeho vecný obsah, ale preformuluj ho do hlasu emailu (vykanie, 1 plynulá veta). Segmentové prispôsobenie vyššie použi IBA ak je "Kde firma stráca" prázdne (—).
 - TÓN A OSLOVENIE nastav podľa "Ako osloviť": formálny/odborný tón (odborník, titul, rešpekt) = formálny variant oslovenia z tabuľky ("Vážený pán/Vážená pani ...") a podpis "S úctou,"; vecný/bežný tón = "Dobrý deň, pán/pani ..." a podpis "S pozdravom,". Vykanie ostáva vždy, aj pri uvoľnenejšom tóne.
 - Podklad môže obsahovať frázy, ktoré sú v emaile ZAKÁZANÉ (napr. "moderný web", "profesionálny web", "online prítomnosť"). Nikdy ich neprevezmi doslova - pri preformulovaní ich nahraď vecným opisom (napr. "nový web s online objednávaním").
-- Meno v oslovení použi len z "Konateľ/kontakt"; ak meno nepoznáš, meno nevymýšľaj.
-- Z "Ako osloviť" preber IBA tón a spôsob oslovenia - nekopíruj z neho vety ani štruktúru. Štruktúra 4 odsekov, vykanie, mužský rod pisateľa, zákaz pozitívneho hodnotenia webu a zakázané frázy majú vždy prednosť. Ak podklad hodnotí web pozitívne, túto časť ignoruj.
+- Z "Ako osloviť" preber IBA tón a spôsob oslovenia - nekopíruj z neho vety ani štruktúru. Ak podklad hodnotí web pozitívne, túto časť ignoruj (pravidlo o hodnotení webu má vždy prednosť).
 - NEPRIDÁVAJ NIČ NAD PODKLAD: nevymýšľaj tvrdenia o správaní firmy (napr. že nezdvíhajú telefón) ani mieru dopadu (napr. "väčšina klientov odíde", "polovica dopytov"). Drž sa miery z podkladu - ak tam je "časť klientov" alebo "niektorí", nepíš "väčšina".
-- ČÍSLA: nepridávaj žiadne čísla, sumy ani odhady, ktoré nie sú v dátach. Čísla z analýzy (PageSpeed, skóre) necituj - opíš dôsledok slovami. Sumu alebo odhad označený ako "všeobecný trhový odhad" do emailu neprenášaj, drž sa kvalitatívneho opisu dôsledku.`;
+- "Čo ponúknuť" je v dátach len pre kontext - konkrétne riešenie sa do emailu podľa štruktúry vyššie nedáva (to je až na konzultácii), takže toto pole v tele emailu nepoužívaj.`;
 
 const OUTREACH_TOOL: Anthropic.Tool = {
   name: "uloz_email",
@@ -356,8 +367,8 @@ const OUTREACH_TOOL: Anthropic.Tool = {
   input_schema: {
     type: "object",
     properties: {
-      subject: { type: "string", description: "Predmet emailu — obsahuje doménu alebo meno firmy, krátky a konkrétny. Prázdny reťazec, ak segment preskakuješ." },
-      body: { type: "string", description: "Telo emailu v plain texte (4 odseky: kompliment na prácu + 'mám pocit'; predstavenie 'Moje meno je Samuel Bibeň...'; segmentový problém; ponuka + CTA), vrátane oslovenia a podpisu (S pozdravom/S úctou + Samuel Bibeň). Žiadne HTML. Prázdny reťazec, ak segment preskakuješ." },
+      subject: { type: "string", description: "Predmet emailu — 2-4 slová, malými písmenami, obsahuje doménu/názov firmy alebo konkrétny nález. Nikdy 'ponuka'/'spolupráca'/'riešenie'. Prázdny reťazec, ak segment preskakuješ." },
+      body: { type: "string", description: "Telo emailu v plain texte: oslovenie; PRESNE 3 krátke odseky (fakt / dôsledok / mäkké CTA) pre initial email — pre followup pozri REŽIM FOLLOWUP; podpis (S pozdravom/S úctou + Samuel Bibeň). 50-100 slov tela pre initial email. Žiadne HTML. Prázdny reťazec, ak segment preskakuješ." },
       skipReason: { type: ["string", "null"], description: "Ak segment nie je vhodný na cold outreach, dôvod; inak null." },
     },
     required: ["subject", "body"],
@@ -370,59 +381,71 @@ export interface OutreachEmail {
   skipReason: string | null; // set when the segment isn't worth cold-emailing
 }
 
+/** One earlier e-mail in the same thread, for the "don't repeat this" context. */
+export interface ThreadEmail {
+  type: string; // "initial" | "followup1" | "followup2" | "followup3"
+  subject: string;
+  body: string;
+}
+
+const THREAD_LABEL: Record<string, string> = {
+  initial: "PRVÝ EMAIL",
+  followup1: "FOLLOWUP 1",
+  followup2: "FOLLOWUP 2",
+  followup3: "FOLLOWUP 3",
+};
+
 /** Generate an initial cold email or a follow-up as { subject, body }. */
 export async function generateOutreachEmail(input: {
   lead: Lead;
   segmentName: string;
-  type: "initial" | "followup1" | "followup2";
-  previousSubject?: string | null;
-  previousBody?: string | null;
+  type: "initial" | FollowupType;
+  /** Earlier e-mails in this thread, chronological — so a followup can avoid repeating a fact/angle already used. */
+  previousEmails?: ThreadEmail[];
 }): Promise<OutreachEmail> {
   const { lead, segmentName, type } = input;
+  const previousEmails = input.previousEmails ?? [];
 
-  // Pick the single strongest angle so the email leads with the right example
-  // intro. The model gets this as a hint — it must NOT quote the raw numbers.
-  const mainProblem =
-    lead.pageSpeedMobile != null && lead.pageSpeedMobile < 50
-      ? "pomalé načítanie na mobile"
-      : lead.isMobileFriendly === false
-        ? "web nie je responzívny (zle sa zobrazuje na mobile)"
-        : (lead.visualScore ?? 0) >= 35
-          ? "zastaraný vizuálny dizajn"
-          : "celkovo zastaraný web";
-
-  // Initial email of a lead that already has an AI brief → the brief is the input
-  // (problem, offer, tone); the heuristic `mainProblem` would be an independent
-  // second derivation, so it is dropped in that case.
-  const useBrief = type === "initial" && Boolean(lead.aiPainPoint?.trim() || lead.aiOpportunity?.trim());
+  // Initial email of a lead that already has an AI brief → the brief drives
+  // ODSEK 2 (dôsledok) a tón; ODSEK 1 (fakt) sa riadi vždy tou istou prioritou.
+  const useBrief = type === "initial" && Boolean(lead.aiPainPoint?.trim());
 
   const briefBlock = useBrief
     ? `
-HOTOVÝ PODKLAD Z ANALÝZY (použi ako vstup, neodvodzuj vlastný):
+HOTOVÝ PODKLAD Z ANALÝZY (použi ako vstup pre odsek 2 a tón, neodvodzuj vlastný):
 Kde firma stráca: ${lead.aiPainPoint?.trim() || "—"}
-Čo ponúknuť: ${lead.aiOpportunity?.trim() || "—"}
+Čo ponúknuť (len kontext, nepoužívaj v tele emailu): ${lead.aiOpportunity?.trim() || "—"}
 Ako osloviť (len tón a oslovenie): ${lead.aiOutreachAngle?.trim() || "—"}`
     : `
-Pain point: ${lead.aiPainPoint ?? "—"}
-Príležitosť (čo vieme spraviť): ${lead.aiOpportunity ?? "—"}`;
+Pain point: ${lead.aiPainPoint ?? "—"}`;
+
+  const threadBlock = previousEmails.length
+    ? `\n\nPREDCHÁDZAJÚCE EMAILY V TOMTO VLÁKNE (nepoužívaj rovnaký fakt/uhol ako tu):\n${previousEmails
+        .map(
+          (e) =>
+            `--- ${THREAD_LABEL[e.type] ?? e.type} ---\nPredmet: ${e.subject}\n${e.body}`,
+        )
+        .join("\n\n")}`
+    : "";
 
   const facts = `DÁTA O FIRME (použi konkrétne, nevymýšľaj; surové skóre/čísla z analýzy necituj):
 Firma: ${lead.companyName}
 Segment (odvetvie): ${segmentName}
 Web: ${lead.websiteUrl ?? "—"}
 Mesto: ${lead.companyCity ?? "—"}
-Konateľ/kontakt: ${lead.ownerName ?? "neznámy"}${lead.ownerPosition ? ` (${lead.ownerPosition})` : ""}${useBrief ? "" : `\nHlavný problém webu (použi ako uhol emailu): ${mainProblem}`}
+Konateľ/kontakt: ${lead.ownerName ?? "neznámy"}${lead.ownerPosition ? ` (${lead.ownerPosition})` : ""}
+Rok v pätičke webu (copyright): ${lead.copyrightYear ?? "—"}
+PageSpeed mobil: ${lead.pageSpeedMobile != null ? `${lead.pageSpeedMobile}/100` : "—"}
 Vizuálny dojem (AI): ${lead.aiVisualReason ?? "—"}
 Hlavné vizuálne problémy: ${(lead.visualIssues ?? []).slice(0, 4).join("; ") || "—"}
 Ďalšie nedostatky webu: ${(lead.websiteIssues ?? []).slice(0, 5).join("; ") || "—"}${briefBlock}
-Zhrnutie stavu webu: ${lead.aiSummary ?? "—"}`;
+Zhrnutie stavu webu: ${lead.aiSummary ?? "—"}${threadBlock}`;
 
+  const initialSubject = previousEmails[0]?.subject || lead.companyName;
   const instruction =
     type === "initial"
       ? "Napíš PRVÝ (initial) cold email podľa štruktúry a pravidiel."
-      : type === "followup1"
-        ? `Napíš FOLLOWUP 1 (po 3 dňoch). Predmet: "Re: ${input.previousSubject ?? lead.companyName}". Nadväzuj na predošlý email:\n"""\n${input.previousBody ?? ""}\n"""`
-        : `Napíš FOLLOWUP 2 (po 7 dňoch), posledný. Predmet: "Re: ${input.previousSubject ?? lead.companyName}". Nadväzuj na predošlý email:\n"""\n${input.previousBody ?? ""}\n"""`;
+      : `Napíš ${THREAD_LABEL[type]}. Predmet: "Re: ${initialSubject.replace(/^\s*(re\s*:\s*)+/i, "").trim()}".`;
 
   // Optional booking link (initial emails only) — appended just before the sign-off.
   const bookingLink = process.env.BOOKING_LINK?.trim();
@@ -431,11 +454,16 @@ Zhrnutie stavu webu: ${lead.aiSummary ?? "—"}`;
       ? `\n\nBOOKING LINK — na koniec emailu, PRED podpisom ("S pozdravom,"/"S úctou,"), pridaj na samostatný riadok presne:\n"Prípadne si môžete vybrať termín priamo tu: ${bookingLink}"`
       : "";
 
+  const system =
+    (type === "initial"
+      ? OUTREACH_SYSTEM + (useBrief ? BRIEF_ADDENDUM : "")
+      : OUTREACH_SYSTEM + followupAddendum(type)) + bookingRule;
+
   const client = new Anthropic();
   const msg = await client.messages.create({
     model: MODEL,
     max_tokens: 700,
-    system: (type === "initial" ? OUTREACH_SYSTEM + (useBrief ? BRIEF_ADDENDUM : "") : OUTREACH_SYSTEM + FOLLOWUP_ADDENDUM) + bookingRule,
+    system,
     tools: [OUTREACH_TOOL],
     tool_choice: { type: "tool", name: "uloz_email" },
     messages: [{ role: "user", content: `${facts}\n\n${instruction}` }],

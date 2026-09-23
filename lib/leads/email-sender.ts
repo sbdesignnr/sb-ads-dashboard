@@ -143,7 +143,8 @@ function toHtml(
 // ── Vláknenie follow-upov (odpoveď na predošlý mail) ──────────────────────────
 // Follow-up sa posiela ako ODPOVEĎ na predošlý mail v konverzácii: nastaví
 // In-Reply-To/References (aby Gmail spojil vlákno) a pod text pridá citáciu
-// predošlej správy. followup1 odpovedá na initial, followup2 na followup1.
+// predošlej správy. followup1 odpovedá na initial, followup2 na followup1,
+// followup3 na followup2 (viď THREAD_SEQUENCE nižšie).
 
 interface ThreadContext {
   inReplyTo: string;
@@ -196,6 +197,34 @@ function buildQuote(prev: {
   return { quotedHtml, quotedText };
 }
 
+// Poradie kroku vlákna — followup3 odpovedá na followup2, ktorý odpovedá na
+// followup1, ktorý odpovedá na initial. Chýbajúci medzičlánok sa preskočí
+// (odpovie sa na najbližší predošlý, ktorý má uložené Message-ID).
+const THREAD_SEQUENCE = ["initial", "followup1", "followup2", "followup3"];
+
+/** Predchádzajúce e-maily v tomto vlákne pred `beforeType`, chronologicky (najstarší prvý). */
+export async function getPriorThreadEmails(
+  leadId: string,
+  beforeType: string,
+): Promise<{ type: string; subject: string; body: string }[]> {
+  const idx = THREAD_SEQUENCE.indexOf(beforeType);
+  if (idx <= 0) return [];
+  const priorTypes = THREAD_SEQUENCE.slice(0, idx);
+  const rows = await prisma.leadEmail.findMany({
+    where: {
+      leadId,
+      emailType: { in: priorTypes },
+      NOT: { body: "" },
+    },
+    select: { emailType: true, subject: true, body: true },
+  });
+  const byType = new Map(rows.map((r) => [r.emailType, r]));
+  return priorTypes
+    .map((t) => byType.get(t))
+    .filter((r): r is (typeof rows)[number] => Boolean(r))
+    .map((r) => ({ type: r.emailType, subject: r.subject, body: r.body }));
+}
+
 /**
  * Zostaví vláknenie pre follow-up. Vráti null pri initiali alebo keď sa predošlý
  * odoslaný mail (s Message-ID) nenájde — vtedy sa pošle ako samostatný mail.
@@ -205,34 +234,31 @@ export async function buildThreadContext(email: {
   emailType: string;
   subject: string;
 }): Promise<ThreadContext | null> {
-  if (email.emailType !== "followup1" && email.emailType !== "followup2")
-    return null;
+  const idx = THREAD_SEQUENCE.indexOf(email.emailType);
+  if (idx <= 0) return null; // initial alebo neznámy typ
 
   const sent = { leadId: email.leadId, status: "sent" as const };
-  const initial = await prisma.leadEmail.findFirst({
-    where: { ...sent, emailType: "initial" },
+  const priorTypes = THREAD_SEQUENCE.slice(0, idx); // napr. followup3 → [initial, followup1, followup2]
+  const sentPrior = await prisma.leadEmail.findMany({
+    where: { ...sent, emailType: { in: priorTypes } },
     orderBy: { sentAt: "asc" },
   });
-  const followup1 =
-    email.emailType === "followup2"
-      ? await prisma.leadEmail.findFirst({
-          where: { ...sent, emailType: "followup1" },
-          orderBy: { sentAt: "asc" },
-        })
-      : null;
+  const byType = new Map(sentPrior.map((r) => [r.emailType, r]));
+  const initial = byType.get("initial") ?? null;
 
-  // Na koho odpovedáme: followup1 → initial, followup2 → followup1 (inak initial).
-  const parent =
-    email.emailType === "followup2" ? (followup1 ?? initial) : initial;
-  if (!parent?.brevoMessageId) return null; // predošlý mail nemá uložené Message-ID
+  // Na koho odpovedáme: najbližší predošlý (v poradí vlákna), ktorý bol reálne
+  // odoslaný — ak chýba medzičlánok (napr. followup1 sa preskočil), odpovie sa
+  // na ten pred ním.
+  const parent = [...priorTypes]
+    .reverse()
+    .map((t) => byType.get(t))
+    .find((r): r is (typeof sentPrior)[number] => Boolean(r?.brevoMessageId));
+  if (!parent?.brevoMessageId) return null; // žiadny predošlý mail nemá uložené Message-ID
 
   const references: string[] = [];
-  if (initial?.brevoMessageId) references.push(initial.brevoMessageId);
-  if (
-    followup1?.brevoMessageId &&
-    !references.includes(followup1.brevoMessageId)
-  ) {
-    references.push(followup1.brevoMessageId);
+  for (const t of priorTypes) {
+    const id = byType.get(t)?.brevoMessageId;
+    if (id && !references.includes(id)) references.push(id);
   }
   if (!references.includes(parent.brevoMessageId))
     references.push(parent.brevoMessageId);
@@ -438,9 +464,9 @@ export async function sendLeadEmail(leadEmailId: string): Promise<SendResult> {
 }
 
 /**
- * Queue two follow-ups after an initial e-mail. Bodies are left empty — they get
- * generated when they fall due (so they reflect the latest thread), then surface
- * in the campaign queue for approval.
+ * Queue three follow-ups after an initial e-mail (+3 / +5 / +7 dní). Bodies are
+ * left empty — they get generated when they fall due (so they reflect the
+ * latest thread), then surface in the campaign queue for approval.
  */
 export async function scheduleFollowUps(
   leadId: string,
@@ -449,13 +475,14 @@ export async function scheduleFollowUps(
   const now = Date.now();
   const day = 86_400_000;
   const existing = await prisma.leadEmail.findMany({
-    where: { leadId, emailType: { in: ["followup1", "followup2"] } },
+    where: { leadId, emailType: { in: ["followup1", "followup2", "followup3"] } },
     select: { emailType: true },
   });
   const have = new Set(existing.map((e) => e.emailType));
   const rows: { emailType: string; days: number }[] = [
-    { emailType: "followup1", days: 3 },
-    { emailType: "followup2", days: 7 },
+    { emailType: "followup1", days: 3 }, // +2-3 dni
+    { emailType: "followup2", days: 5 }, // +4-5 dní
+    { emailType: "followup3", days: 7 }, // +5-7 dní
   ].filter((r) => !have.has(r.emailType));
   if (!rows.length) return;
   void initialEmailId; // reserved for future threading; follow-ups regenerate from the lead

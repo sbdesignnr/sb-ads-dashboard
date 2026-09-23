@@ -71,7 +71,7 @@ export interface ScanJobDTO {
   createdAt: string;
 }
 
-export type EmailType = "initial" | "followup1" | "followup2";
+export type EmailType = "initial" | "followup1" | "followup2" | "followup3";
 export type EmailStatus = "draft" | "approved" | "sent" | "failed" | "rejected";
 
 export interface LeadEmailDTO {
@@ -121,6 +121,7 @@ export const EMAIL_TYPE_LABEL: Record<EmailType, string> = {
   initial: "Prvý email",
   followup1: "Followup 1",
   followup2: "Followup 2",
+  followup3: "Followup 3",
 };
 
 export const LEAD_STATUS_LABEL: Record<LeadStatus, string> = {

@@ -28,7 +28,10 @@ export async function GET(req: NextRequest) {
       : queue === "approved"
         ? { status: "approved" }
         : queue === "followup"
-          ? { status: "draft", emailType: { in: ["followup1", "followup2"] } }
+          ? {
+              status: "draft",
+              emailType: { in: ["followup1", "followup2", "followup3"] },
+            }
           : { status: "draft", emailType: "initial" };
 
   // Scope to one campaign's segment when requested.

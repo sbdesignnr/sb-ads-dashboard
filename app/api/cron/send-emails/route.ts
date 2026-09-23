@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { fromZonedTime } from "date-fns-tz";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { sendLeadEmail } from "@/lib/leads/email-sender";
+import { sendLeadEmail, getPriorThreadEmails } from "@/lib/leads/email-sender";
 import { generateOutreachEmail } from "@/lib/leads/ai";
 
 export const runtime = "nodejs";
@@ -140,7 +140,7 @@ async function handle(req: NextRequest) {
   const dueFollowups = await prisma.leadEmail.findMany({
     where: {
       status: "draft",
-      emailType: { in: ["followup1", "followup2"] },
+      emailType: { in: ["followup1", "followup2", "followup3"] },
       scheduledAt: { lte: soon },
     },
     include: { lead: { include: { segment: true } } },
@@ -153,20 +153,20 @@ async function handle(req: NextRequest) {
     }
     if (!f.lead || !process.env.ANTHROPIC_API_KEY) continue;
     try {
-      const initial = await prisma.leadEmail.findFirst({
-        where: { leadId: f.leadId, emailType: "initial" },
-        orderBy: { createdAt: "asc" },
-      });
+      const previousEmails = await getPriorThreadEmails(
+        f.leadId,
+        f.emailType,
+      );
       const out = await generateOutreachEmail({
         lead: f.lead,
         segmentName: f.lead.segment?.name ?? "firma",
-        type: f.emailType as "followup1" | "followup2",
-        previousSubject: initial?.subject,
-        previousBody: initial?.body,
+        type: f.emailType as "followup1" | "followup2" | "followup3",
+        previousEmails,
       });
       // Follow-up ide ako odpoveď → „Re: <pôvodný predmet>".
-      const subject = initial?.subject
-        ? `Re: ${initial.subject.replace(/^\s*(re\s*:\s*)+/i, "").trim()}`
+      const initialSubject = previousEmails[0]?.subject;
+      const subject = initialSubject
+        ? `Re: ${initialSubject.replace(/^\s*(re\s*:\s*)+/i, "").trim()}`
         : out.subject;
       await prisma.leadEmail.update({
         where: { id: f.id },

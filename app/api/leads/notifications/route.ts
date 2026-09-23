@@ -13,7 +13,7 @@ export async function GET() {
 
   const [dueFollowups, respondedLeads] = await Promise.all([
     prisma.leadEmail.findMany({
-      where: { status: "draft", emailType: { in: ["followup1", "followup2"] }, scheduledAt: { lte: now } },
+      where: { status: "draft", emailType: { in: ["followup1", "followup2", "followup3"] }, scheduledAt: { lte: now } },
       include: { lead: { select: { id: true, companyName: true } } },
       orderBy: { scheduledAt: "asc" },
       take: 10,

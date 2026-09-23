@@ -21,7 +21,7 @@ export async function GET() {
     prisma.leadEmail.count({
       where: {
         status: "draft",
-        emailType: { in: ["followup1", "followup2"] },
+        emailType: { in: ["followup1", "followup2", "followup3"] },
         scheduledAt: { lte: new Date(Date.now() + 24 * 3600 * 1000) },
       },
     }),

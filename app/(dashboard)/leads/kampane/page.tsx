@@ -1001,7 +1001,7 @@ export default function CampaignsPage() {
           {followups.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted">
               Žiadne follow-upy nie sú naplánované. Vytvoria sa automaticky po
-              oslovení leadu (1. po 3 dňoch, 2. po 7 dňoch).
+              oslovení leadu (1. po 3 dňoch, 2. po 5 dňoch, 3. po 7 dňoch).
             </p>
           ) : (
             <div className="space-y-1">
@@ -1293,7 +1293,13 @@ function EmailRow({
           )}
           {showType && (
             <Badge
-              variant={email.emailType === "followup2" ? "warning" : "info"}
+              variant={
+                email.emailType === "followup3"
+                  ? "danger"
+                  : email.emailType === "followup2"
+                    ? "warning"
+                    : "info"
+              }
             >
               {EMAIL_TYPE_LABEL[email.emailType]}
             </Badge>

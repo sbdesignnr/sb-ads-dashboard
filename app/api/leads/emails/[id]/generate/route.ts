@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateOutreachEmail } from "@/lib/leads/ai";
+import { getPriorThreadEmails } from "@/lib/leads/email-sender";
 import { serializeLeadEmail } from "@/lib/leads/store";
 
 export const runtime = "nodejs";
@@ -32,30 +33,25 @@ export async function POST(
     return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   const type = (
-    ["initial", "followup1", "followup2"].includes(email.emailType)
+    ["initial", "followup1", "followup2", "followup3"].includes(
+      email.emailType,
+    )
       ? email.emailType
       : "initial"
-  ) as "initial" | "followup1" | "followup2";
+  ) as "initial" | "followup1" | "followup2" | "followup3";
 
-  // Follow-ups reference the initial email in the thread.
-  let previousSubject: string | null = null;
-  let previousBody: string | null = null;
-  if (type !== "initial") {
-    const initial = await prisma.leadEmail.findFirst({
-      where: { leadId: email.leadId, emailType: "initial" },
-      orderBy: { createdAt: "asc" },
-    });
-    previousSubject = initial?.subject ?? null;
-    previousBody = initial?.body ?? null;
-  }
+  // Follow-ups referencujú celé predchádzajúce vlákno (nie len initial), nech
+  // model vie, aké fakty/uhly sa už použili a nezopakuje ich.
+  const previousEmails =
+    type !== "initial" ? await getPriorThreadEmails(email.leadId, type) : [];
+  const previousSubject = previousEmails[0]?.subject ?? null;
 
   try {
     const out = await generateOutreachEmail({
       lead: email.lead,
       segmentName: email.lead.segment?.name ?? "firma",
       type,
-      previousSubject,
-      previousBody,
+      previousEmails,
     });
     // Follow-up ide ako ODPOVEĎ → predmet je „Re: <pôvodný predmet>", nech to tak
     // vidno aj vo fronte (odoslanie to potvrdí aj vláknením).
