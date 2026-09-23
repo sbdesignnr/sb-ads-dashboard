@@ -34,6 +34,11 @@ export async function captureScreenshot(url: string): Promise<Screenshot | null>
     block_ads: "true",
     block_cookie_banners: "true",
     block_trackers: "true",
+    // ZÁMERNE bez ignore_host_errors: keď cieľový web vráti chybu (429/503,
+    // napr. dočasná bot ochrana), radšej žiadna snímka a čestný pád na textové
+    // hodnotenie, než odfotená chybová stránka, ktorú AI vyhodnotí ako "zlý
+    // dizajn" — meria sa tým nesprávna vec (chvíľková chyba, nie reálny web),
+    // čo je horšie než jasne nízka istota pri fallbacku na text.
     // Cache aggressively so re-scanning the same site doesn't re-bill the service.
     cache: "true",
     cache_ttl: "2592000", // 30 days
