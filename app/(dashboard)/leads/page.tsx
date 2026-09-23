@@ -105,14 +105,18 @@ export default function LeadsPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [pendingAnalysis, setPendingAnalysis] = useState(0);
 
+  // Obmedzené na aktuálne zvolený segment (rovnaká logika ako loadLeads) — nech
+  // tlačidlo ukazuje, koľko treba analyzovať PRE TENTO segment, nie naprieč všetkými.
   const loadPendingAnalysis = useCallback(async () => {
     try {
-      const j = await fetch("/api/leads/analyze-bulk").then((r) => r.json());
+      const j = await fetch(
+        `/api/leads/analyze-bulk?segment=${encodeURIComponent(segment)}`,
+      ).then((r) => r.json());
       setPendingAnalysis(j.remaining ?? 0);
     } catch {
       /* ponechaj starú hodnotu */
     }
-  }, []);
+  }, [segment]);
 
   useEffect(() => {
     loadPendingAnalysis();
@@ -195,14 +199,20 @@ export default function LeadsPage() {
     }
   };
 
-  // Po importe: analyzuj weby po dávkach, kým nie je hotovo (server volá enrichLead).
-  const runAnalyze = async () => {
+  // Po importe (alebo kedykoľvek): analyzuj weby po dávkach, kým nie je hotovo
+  // (server volá enrichLead). Obmedzené na aktuálne zvolený segment — z dialógu
+  // po importe (kde ešte nemusí byť segment vybraný) ide bez obmedzenia.
+  const runAnalyze = async (scopeToSegment = true) => {
     setAnalyzeAsk(null);
     setAnalyzing(true);
+    const segParam =
+      scopeToSegment && segment !== "all"
+        ? `?segment=${encodeURIComponent(segment)}`
+        : "";
     const tid = toast.loading("Spúšťam analýzu…");
     try {
-      const first = await fetch("/api/leads/analyze-bulk").then((r) =>
-        r.json(),
+      const first = await fetch(`/api/leads/analyze-bulk${segParam}`).then(
+        (r) => r.json(),
       );
       const total: number = first.remaining ?? 0;
       if (!total) {
@@ -215,6 +225,10 @@ export default function LeadsPage() {
         guard++;
         const r = await fetch("/api/leads/analyze-bulk", {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            segmentId: scopeToSegment && segment !== "all" ? segment : "all",
+          }),
         }).then((x) => x.json());
         if (!r || typeof r.remaining !== "number" || r.processed === 0) break;
         remaining = r.remaining;
@@ -342,9 +356,13 @@ export default function LeadsPage() {
           </button>
           {pendingAnalysis > 0 && (
             <button
-              onClick={runAnalyze}
+              onClick={() => runAnalyze(true)}
               disabled={analyzing || importing}
-              title="Bez analýzy webu appka nevie, či je vhodný na oslovenie — kým lead nie je analyzovaný, kampaň mu negeneruje mail."
+              title={
+                segment === "all"
+                  ? "Bez analýzy webu appka nevie, či je vhodný na oslovenie — kým lead nie je analyzovaný, kampaň mu negeneruje mail. Analyzuje naprieč všetkými segmentmi."
+                  : `Bez analýzy webu appka nevie, či je vhodný na oslovenie. Analyzuje len zvolený segment „${segments.find((s) => s.id === segment)?.name ?? ""}" — prepni na „Všetky segmenty", ak chceš naraz viac.`
+              }
               className="inline-flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/15 disabled:opacity-60"
             >
               {analyzing ? (
@@ -674,7 +692,7 @@ export default function LeadsPage() {
                 Nie, neskôr
               </button>
               <button
-                onClick={runAnalyze}
+                onClick={() => runAnalyze(false)}
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
               >
                 <Sparkles className="h-4 w-4" />

@@ -14,32 +14,46 @@ const BATCH = 6;
 
 // Importované, ešte nezanalyzované leady: majú web, nie sú zamietnuté a
 // lastScannedAt je null (enrichLead ho vždy nastaví — úspech aj zlyhanie).
-function pendingWhere(): Prisma.LeadWhereInput {
+// Voliteľne obmedzené na jeden segment (nech sa dá analyzovať len ten, pre
+// ktorý sa práve chystá kampaň, nie celá databáza naraz).
+function pendingWhere(segmentId?: string): Prisma.LeadWhereInput {
   return {
     source: "trusted-leads",
     websiteUrl: { not: null },
     status: { not: "rejected" },
     lastScannedAt: null,
+    ...(segmentId ? { segmentId } : {}),
   };
 }
 
-/** GET — počet leadov čakajúcich na analýzu (poháňa progres v UI). */
-export async function GET() {
+/** GET — počet leadov čakajúcich na analýzu (poháňa progres v UI). `?segment=<id>` obmedzí na segment. */
+export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user)
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const count = await prisma.lead.count({ where: pendingWhere() });
+  const seg = req.nextUrl.searchParams.get("segment");
+  const segmentId = seg && seg !== "all" ? seg : undefined;
+  const count = await prisma.lead.count({ where: pendingWhere(segmentId) });
   return NextResponse.json({ remaining: count });
 }
 
-/** POST — zanalyzuje ďalšiu dávku importovaných leadov. */
-export async function POST(_req: NextRequest) {
+/** POST — zanalyzuje ďalšiu dávku importovaných leadov. `segmentId` v tele obmedzí na segment. */
+export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user)
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
+  let body: { segmentId?: string } = {};
+  try {
+    body = await req.json();
+  } catch {
+    /* bez tela — analyzuj naprieč všetkými segmentmi */
+  }
+  const segmentId =
+    body.segmentId && body.segmentId !== "all" ? body.segmentId : undefined;
+
   const leads = await prisma.lead.findMany({
-    where: pendingWhere(),
+    where: pendingWhere(segmentId),
     select: {
       id: true,
       segment: {
@@ -77,7 +91,9 @@ export async function POST(_req: NextRequest) {
     }
   }
 
-  const remaining = await prisma.lead.count({ where: pendingWhere() });
+  const remaining = await prisma.lead.count({
+    where: pendingWhere(segmentId),
+  });
   return NextResponse.json({
     processed: leads.length,
     analyzed,
