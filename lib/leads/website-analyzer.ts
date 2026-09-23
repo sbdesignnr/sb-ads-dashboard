@@ -6,7 +6,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 
-const QUALIFY_AT = 65;
+export const QUALIFY_AT = 65;
 
 export interface WebsiteAnalysis {
   // Total 0-100, higher = more outdated. websiteScore is kept as the canonical
@@ -233,7 +233,7 @@ function detectBusinessGaps(html: string): string[] {
     );
 
   if (
-    !/(calendly|reservio|bookio|reservanto|noona|simplybook|bookla|rezerva[čc]|online\s+objedn|objedna[ťt]\s+sa\s+online|book\s+now)/i.test(
+    !/(calendly|reservio|bookio|reservanto|noona|simplybook|bookla|superbook|setmore|timify|acuityscheduling|square\s?appointments|rezerva[čc]|objedna[ťt]|book\s*(now|online|an?\s+appointment)|schedule\s+(an?\s+)?appointment|vyberte?\s+term[ií]n|zvo[ľl]te?\s+term[ií]n|href=["'][^"']*(objedn|rezervac|booking|reserv|termin)[^"']*["'])/i.test(
       lower,
     )
   )
@@ -353,6 +353,10 @@ const LEGAL_RE =
   /gdpr|ochran|osobn[ýy]ch|s[uú]krom|privacy|podmienk|obchodn|\bvop\b|terms|impress?um|z[aá]sady|reklama[čc]|fakturačn|prevádzkovate[ľl]/i;
 const CONTACT_RE =
   /kontakt|contact|o-?n[aá]s|o\s*nas|\babout\b|firma|spolo[čc]nos|t[ií]m\b/i;
+// Rezervačná/objednávková podstránka (napr. "Objednať sa" → /objednaj-sa) — často
+// nesie bohatšie signály o booking systéme než samotná homepage.
+const BOOKING_RE =
+  /objedna[ťt]|objedn[aá]vk|rezerv|book(ing)?\b|appointment|termín/i;
 // Priame cesty ako záloha, keď sa odkazy nedajú vyčítať (napr. JS menu).
 const FALLBACK_PATHS = [
   "/kontakt",
@@ -368,9 +372,15 @@ const FALLBACK_PATHS = [
   "/zasady-ochrany-osobnych-udajov",
   "/podmienky",
   "/impressum",
+  "/objednaj-sa",
+  "/objednat",
+  "/objednat-sa",
+  "/rezervacia",
+  "/rezervovat",
+  "/booking",
 ];
 
-/** Z HTML domovskej stránky vytiahne odkazy na právne + kontaktné stránky (rovnaká doména). */
+/** Z HTML domovskej stránky vytiahne odkazy na právne + rezervačné + kontaktné stránky (rovnaká doména). */
 function discoverPageLinks(homeHtml: string, origin: string): string[] {
   let host: string;
   try {
@@ -379,6 +389,7 @@ function discoverPageLinks(homeHtml: string, origin: string): string[] {
     return [];
   }
   const legal = new Set<string>();
+  const booking = new Set<string>();
   const contact = new Set<string>();
   for (const m of homeHtml.matchAll(
     /<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi,
@@ -394,16 +405,18 @@ function discoverPageLinks(homeHtml: string, origin: string): string[] {
       continue;
     }
     if (LEGAL_RE.test(hay)) legal.add(abs.split("#")[0]);
+    else if (BOOKING_RE.test(hay)) booking.add(abs.split("#")[0]);
     else if (CONTACT_RE.test(hay)) contact.add(abs.split("#")[0]);
   }
-  // Právne stránky prvé (kvôli IČO), potom kontaktné.
-  return [...legal, ...contact];
+  // Právne stránky prvé (kvôli IČO), potom rezervačná (kvôli detekcii bookingu), potom kontaktné.
+  return [...legal, ...booking, ...contact];
 }
 
 /**
- * Stiahne kontaktné + právne podstránky (max 4) — odtiaľ sa berie IČO, meno
- * konateľa, e-mail a telefón. Najprv skúsi odkazy z domovskej stránky, potom
- * doplní zopár typických ciest, ktoré ešte nemáme.
+ * Stiahne kontaktné + právne + rezervačné podstránky (max 5) — odtiaľ sa berie
+ * IČO, meno konateľa, e-mail, telefón a signály o booking systéme (viď
+ * detectBusinessGaps). Najprv skúsi odkazy z domovskej stránky, potom doplní
+ * zopár typických ciest, ktoré ešte nemáme.
  */
 async function loadExtraPages(
   origin: string,
@@ -423,7 +436,7 @@ async function loadExtraPages(
   let combined = "";
   let fetched = 0;
   for (const url of queue) {
-    if (fetched >= 4) break;
+    if (fetched >= 5) break;
     const r = await fetchOnce(url);
     if (r && r.ok && r.html) {
       combined += " " + r.html;
@@ -712,7 +725,10 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
   // The concrete findings the AI turns into pain points: scoring reasons plus
   // the business gaps (only when the page actually loaded).
   const issues = [...reasons];
-  if (site.reachable) issues.push(...detectBusinessGaps(site.html));
+  // combinedHtml = homepage + kontaktné/právne/rezervačné podstránky (nižšie) —
+  // booking systém alebo formulár často žije na vlastnej podstránke, nie na
+  // homepage, a kontrola len homepage HTML by ho falošne označila za chýbajúci.
+  if (site.reachable) issues.push(...detectBusinessGaps(combinedHtml));
 
   const technology =
     fw.name ?? platform.technology ?? (jqOld ? "jQuery <3" : null);

@@ -378,6 +378,8 @@ export default function CampaignsPage() {
     setGenerating(true);
     let totalGen = 0;
     let lastMissing = 0;
+    let lastBelowThreshold = 0;
+    let lastUnscored = 0;
     toast.loading("Generujem emaily…", { id: "gen" });
     try {
       for (let round = 0; round < 30; round++) {
@@ -395,6 +397,8 @@ export default function CampaignsPage() {
         }
         totalGen += j.generated ?? 0;
         lastMissing = j.missingEmail ?? 0;
+        lastBelowThreshold = j.belowThreshold ?? 0;
+        lastUnscored = j.unscored ?? 0;
         toast.loading(
           `Generujem… ${totalGen} hotových${j.remaining ? `, ešte ${j.remaining}` : ""}`,
           { id: "gen" },
@@ -402,9 +406,16 @@ export default function CampaignsPage() {
         // Koniec, keď nič nezostáva alebo sa už nedá pohnúť (zvyšok bez emailu / chyby).
         if (!j.remaining || !j.generated) break;
       }
+      // Vysvetli aj to, čo sa zámerne PRESKOČILO (web v poriadku / ešte
+      // nezanalyzovaný) — inak to vyzerá, že appka „stratila" leady.
+      const skippedParts = [
+        lastMissing ? `${lastMissing} bez emailu` : null,
+        lastBelowThreshold ? `${lastBelowThreshold} má web v poriadku` : null,
+        lastUnscored ? `${lastUnscored} čaká na analýzu` : null,
+      ].filter(Boolean);
       toast.success(
-        `Načítaných ${totalGen} emailov na schválenie${lastMissing ? ` · ${lastMissing} leadov bez emailu` : ""}`,
-        { id: "gen", duration: 5000 },
+        `Načítaných ${totalGen} emailov na schválenie${skippedParts.length ? ` · preskočené: ${skippedParts.join(", ")}` : ""}`,
+        { id: "gen", duration: 6000 },
       );
       loadQueues();
       loadCampaigns();

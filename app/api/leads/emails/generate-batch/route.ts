@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateOutreachEmail } from "@/lib/leads/ai";
 import { fillTemplate } from "@/lib/leads/templates";
+import { QUALIFY_AT } from "@/lib/leads/website-analyzer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,35 +48,66 @@ export async function POST(req: NextRequest) {
   // žiadny initial mail. Zamietnutie initialu teraz rejektne celý lead (nie je
   // "new"), takže sa sem prirodzene nedostane a negeneruje sa mu nový.
   const noInitial = { emails: { none: { emailType: "initial" } } } as const;
+  // Iba web, ktorý appka sama vyhodnotila ako naozaj zastaraný (skóre ≥ prah
+  // kvalifikácie) — nechceme oslovovať firmy s webom, ktorý je v poriadku, ani
+  // leady, ktoré ešte neprešli analýzou (websiteScore je vtedy null, čo `gte`
+  // v Postgrese nespĺňa).
+  const qualifiedOnly = { websiteScore: { gte: QUALIFY_AT } } as const;
 
   // Diagnostics for "only 1 generated": how many "new" leads have/lack an email,
-  // and how many already have an initial draft (so they're skipped here).
-  const [leadsWithEmail, leadsWithoutEmail, alreadyHaveInitial] =
-    await Promise.all([
-      prisma.lead.count({
-        where: {
-          status: "new",
-          ...segFilter,
-          companyEmail: { not: null },
-          NOT: { companyEmail: "" },
-        },
-      }),
-      prisma.lead.count({
-        where: {
-          status: "new",
-          ...segFilter,
-          OR: [{ companyEmail: null }, { companyEmail: "" }],
-        },
-      }),
-      prisma.lead.count({
-        where: {
-          status: "new",
-          ...segFilter,
-          companyEmail: { not: null },
-          emails: { some: { emailType: "initial" } },
-        },
-      }),
-    ]);
+  // how many already have an initial draft, a web v poriadku, alebo ešte
+  // nezanalyzovaný web (tie sa preskakujú, nech je jasné prečo).
+  const [
+    leadsWithEmail,
+    leadsWithoutEmail,
+    alreadyHaveInitial,
+    belowThreshold,
+    unscored,
+  ] = await Promise.all([
+    prisma.lead.count({
+      where: {
+        status: "new",
+        ...segFilter,
+        companyEmail: { not: null },
+        NOT: { companyEmail: "" },
+      },
+    }),
+    prisma.lead.count({
+      where: {
+        status: "new",
+        ...segFilter,
+        OR: [{ companyEmail: null }, { companyEmail: "" }],
+      },
+    }),
+    prisma.lead.count({
+      where: {
+        status: "new",
+        ...segFilter,
+        companyEmail: { not: null },
+        emails: { some: { emailType: "initial" } },
+      },
+    }),
+    prisma.lead.count({
+      where: {
+        status: "new",
+        ...segFilter,
+        companyEmail: { not: null },
+        NOT: { companyEmail: "" },
+        ...noInitial,
+        websiteScore: { not: null, lt: QUALIFY_AT },
+      },
+    }),
+    prisma.lead.count({
+      where: {
+        status: "new",
+        ...segFilter,
+        companyEmail: { not: null },
+        NOT: { companyEmail: "" },
+        ...noInitial,
+        websiteScore: null,
+      },
+    }),
+  ]);
   console.log(
     "Leads with email:",
     leadsWithEmail,
@@ -83,6 +115,10 @@ export async function POST(req: NextRequest) {
     leadsWithoutEmail,
     "· already have initial:",
     alreadyHaveInitial,
+    "· web v poriadku (preskočené):",
+    belowThreshold,
+    "· ešte nezanalyzované (preskočené):",
+    unscored,
   );
 
   const leads = await prisma.lead.findMany({
@@ -92,6 +128,7 @@ export async function POST(req: NextRequest) {
       NOT: { companyEmail: "" }, // a lead with an empty e-mail can't be sent to
       ...(segmentId ? { segmentId } : {}),
       ...noInitial,
+      ...qualifiedOnly,
     },
     include: { segment: true },
     orderBy: { websiteScore: "desc" },
@@ -196,8 +233,10 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // Koľko ešte zostáva vygenerovať (neoslovené leady s emailom bez initial draftu)
-  // — UI podľa toho vie, či zavolať ďalší beh.
+  // Koľko ešte zostáva vygenerovať (neoslovené kvalifikované leady s emailom bez
+  // initial draftu) — UI podľa toho vie, či zavolať ďalší beh. Rovnaký filter
+  // skóre ako vyššie, inak by "remaining" nikdy neklesol na 0 pre leady, ktoré
+  // sa aj tak nikdy nevygenerujú (web v poriadku / ešte nezanalyzovaný).
   const remaining = await prisma.lead.count({
     where: {
       status: "new",
@@ -205,6 +244,7 @@ export async function POST(req: NextRequest) {
       NOT: { companyEmail: "" },
       ...(segmentId ? { segmentId } : {}),
       ...noInitial,
+      ...qualifiedOnly,
     },
   });
 
@@ -213,6 +253,8 @@ export async function POST(req: NextRequest) {
     remaining,
     skipped: skippedSegment + missingEmail,
     missingEmail, // leads skipped specifically for a missing e-mail (for the finder button)
+    belowThreshold, // web je v poriadku (skóre < prah) — zámerne sa neoslovujú
+    unscored, // ešte nezanalyzované (websiteScore je null) — treba spustiť "Analyzovať"
     failed,
     details: details.slice(0, 50),
   });

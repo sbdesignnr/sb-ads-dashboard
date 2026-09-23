@@ -103,6 +103,20 @@ export default function LeadsPage() {
   const [importing, setImporting] = useState(false);
   const [analyzeAsk, setAnalyzeAsk] = useState<number | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [pendingAnalysis, setPendingAnalysis] = useState(0);
+
+  const loadPendingAnalysis = useCallback(async () => {
+    try {
+      const j = await fetch("/api/leads/analyze-bulk").then((r) => r.json());
+      setPendingAnalysis(j.remaining ?? 0);
+    } catch {
+      /* ponechaj starú hodnotu */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPendingAnalysis();
+  }, [loadPendingAnalysis]);
 
   // Restore the segment filter from the URL (?segment=) so returning from a lead
   // detail lands back on the same segment.
@@ -167,7 +181,7 @@ export default function LeadsPage() {
         `✅ Importovaných ${j.imported} | ⏭ Preskočených ${j.skipped} | 🔄 Duplikátov ${j.duplicates}`,
         { id: tid, duration: 7000 },
       );
-      await Promise.all([loadSegments(), loadLeads()]);
+      await Promise.all([loadSegments(), loadLeads(), loadPendingAnalysis()]);
       if (j.imported > 0) setAnalyzeAsk(j.imported);
     } catch (err) {
       toast.error(
@@ -214,7 +228,7 @@ export default function LeadsPage() {
         id: tid,
         duration: 6000,
       });
-      await Promise.all([loadSegments(), loadLeads()]);
+      await Promise.all([loadSegments(), loadLeads(), loadPendingAnalysis()]);
     } catch {
       toast.error("Analýza zlyhala", { id: tid });
     } finally {
@@ -326,6 +340,23 @@ export default function LeadsPage() {
             )}
             {importing ? "Importujem…" : "Importovať CSV"}
           </button>
+          {pendingAnalysis > 0 && (
+            <button
+              onClick={runAnalyze}
+              disabled={analyzing || importing}
+              title="Bez analýzy webu appka nevie, či je vhodný na oslovenie — kým lead nie je analyzovaný, kampaň mu negeneruje mail."
+              className="inline-flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/15 disabled:opacity-60"
+            >
+              {analyzing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {analyzing
+                ? "Analyzujem…"
+                : `Analyzovať weby (${pendingAnalysis})`}
+            </button>
+          )}
           <Link
             href="/leads/metriky"
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/40"
