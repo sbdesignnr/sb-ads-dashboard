@@ -16,13 +16,14 @@ export const maxDuration = 300;
 // 3 × 75s bezpečne pod 300s limit funkcie aj takmer-worst-case.
 const BATCH = 3;
 
-// Importované, ešte nezanalyzované leady: majú web, nie sú zamietnuté a
-// lastScannedAt je null (enrichLead ho vždy nastaví — úspech aj zlyhanie).
+// Ešte nezanalyzované leady (akéhokoľvek zdroja — CSV import aj Google Places
+// sken): majú web, nie sú zamietnuté a lastScannedAt je null (enrichLead ho
+// vždy nastaví — úspech aj zlyhanie; POST /api/leads/reset-analysis ho vie
+// zase vynulovať, aby sa lead dostal do frontu znova po oprave skórovania).
 // Voliteľne obmedzené na jeden segment (nech sa dá analyzovať len ten, pre
 // ktorý sa práve chystá kampaň, nie celá databáza naraz).
 function pendingWhere(segmentId?: string): Prisma.LeadWhereInput {
   return {
-    source: "trusted-leads",
     websiteUrl: { not: null },
     status: { not: "rejected" },
     lastScannedAt: null,

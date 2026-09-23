@@ -20,6 +20,7 @@ import {
   Upload,
   Sparkles,
   EyeOff,
+  RotateCw,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -250,6 +251,35 @@ export default function LeadsPage() {
     }
   };
 
+  // Vynuluje lastScannedAt pre už raz naskenované leady v aktuálnom segmente
+  // a spustí analýzu odznova — na použitie po oprave skórovacej logiky, keď
+  // staré skóre sedí ešte pred opravou (kliknutie na "Prepočítať" v detaile
+  // leadu web nescanuje odznova, len prepíše text z pôvodného skóre).
+  const reanalyzeOld = async () => {
+    const scopeLabel =
+      segment === "all"
+        ? "vo všetkých segmentoch"
+        : `v segmente „${segments.find((s) => s.id === segment)?.name ?? ""}"`;
+    if (
+      !confirm(
+        `Preanalyzovať UŽ SKÓROVANÉ leady ${scopeLabel}? Každý web sa preskenuje odznova (PageSpeed, screenshot, AI vizuál) — môže to chvíľu trvať. Staré skóre sa prepíše novým.`,
+      )
+    )
+      return;
+    try {
+      const r = await fetch("/api/leads/reset-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ segmentId: segment }),
+      }).then((x) => x.json());
+      toast.success(`Pripravených ${r.reset ?? 0} leadov na preanalyzovanie`);
+      await loadPendingAnalysis();
+      await runAnalyze(true);
+    } catch {
+      toast.error("Reset zlyhal");
+    }
+  };
+
   // Hromadné skrytie leadov s dobrým webom (skóre < 65) v aktuálnom segmente.
   const hideGoodWebs = async () => {
     const scope =
@@ -375,6 +405,15 @@ export default function LeadsPage() {
                 : `Analyzovať weby (${pendingAnalysis})`}
             </button>
           )}
+          <button
+            onClick={reanalyzeOld}
+            disabled={analyzing || importing}
+            title="Leady, ktoré už majú skóre spočítané pred dnešnou opravou (PageSpeed timeout, screenshot pre AI vizuál) — toto ich preanalyzuje odznova s opraveným skórovaním. Použi po oprave alebo keď skóre nesedí s tým, čo vidíš na webe."
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-muted transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-60"
+          >
+            <RotateCw className="h-4 w-4" />
+            Preanalyzovať staré
+          </button>
           <Link
             href="/leads/metriky"
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/40"
