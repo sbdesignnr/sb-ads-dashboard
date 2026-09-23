@@ -5,6 +5,7 @@
 // Modern-framework / broken / parked / social sites are disqualified outright.
 
 import Anthropic from "@anthropic-ai/sdk";
+import { captureScreenshot } from "./screenshot";
 
 export const QUALIFY_AT = 65;
 
@@ -129,8 +130,11 @@ async function pageSpeed(
   const q = new URLSearchParams({ url, strategy, category: "performance" });
   if (key) q.set("key", key);
   try {
+    // Reálny Lighthouse beh (mobil) často trvá 15-30s, hlavne na pomalších
+    // weboch — presne tie, ktoré nás najviac zaujímajú. 20s bol príliš tesný
+    // limit a systematicky strácal dáta práve pri najzaujímavejších leadoch.
     const res = await fetch(`${PAGESPEED_API}?${q.toString()}`, {
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(35000),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as {
@@ -523,17 +527,21 @@ function isSocialUrl(url: string): boolean {
   }
 }
 
-const VISUAL_SYSTEM = `Si expert na web dizajn. Ohodnoť vizuálnu zastaralosť webu na škále 0-60, kde 60 = extrémne zastaralý dizajn z 90-tych/2000-tych rokov, 0 = moderný profesionálny web.
+// Každé kritérium sa hodnotí SAMOSTATNE a sčíta sa kódom (nie AI súčet) — jedna
+// holistická 0-60 známka sa v praxi takmer nikdy nepriblížila k hornej polovici
+// škály ani pri webe, ktorý AI vo vlastnom texte opísala ako vyslovene
+// zastaraný. Samostatné kritériá s vlastným rozsahom nútia AI reálne rozdeliť
+// body podľa toho, čo skutočne vidí, namiesto jedného opatrného odhadu.
+const VISUAL_SYSTEM = `Si expert na web dizajn. Ohodnoť KAŽDÉ z 5 kritérií nižšie SAMOSTATNE podľa toho, ako veľmi naznačuje zastaralosť webu (0 = vôbec, horná hranica = extrémne). Bežný, funkčný, ale vizuálne neaktualizovaný web spred ~8-10 rokov si typicky zaslúži strednú až vysokú hodnotu vo VIACERÝCH kritériách naraz, nie len v jednom — neváhaj použiť hornú polovicu rozsahu, ak si ju kritérium reálne zaslúži.
 
-Kritériá hodnotenia:
-- Typografia: malé písmo, Comic Sans, Times New Roman, Arial pod 14px = zastaralé (+10)
-- Layout: table-based, fixed width, úzky vycentrovaný obsah = zastaralé (+15)
-- Farby: príliš veľa farieb, neónové farby, nevhodný kontrast = (+10)
-- Obrázky: nízka kvalita, štvorhranné bez zaoblenia, staré stock fotky = (+10)
-- Celkový dojem: pôsobila by firma na prvý pohľad profesionálne? (+15)
+1. TYPOGRAFIA (0-10): malé písmo, Comic Sans, Times New Roman, príliš veľa rôznych fontov, zlý kontrast textu.
+2. LAYOUT (0-15): table-based, fixed-width, úzky vycentrovaný obsah, žiadny moderný grid/karty/sekcie.
+3. FARBY (0-10): príliš veľa farieb naraz, neónové farby, nevhodný/nekonzistentný kontrast.
+4. OBRÁZKY (0-10): nízka kvalita, štvorhranné bez zaoblenia, staré/lacné stock fotky, chýbajúce obrázky.
+5. CELKOVÝ DOJEM (0-15): pôsobila by firma na prvý pohľad profesionálne a dôveryhodne v roku ${new Date().getFullYear()}? Ak nie, vyššia hodnota.
 
 Odpovedz VÝHRADNE v JSON (žiadny iný text):
-{"score": číslo 0-60, "reason": "stručný dôvod po slovensky, max 2 vety", "mainIssues": ["problém1","problém2","problém3"]}`;
+{"typography": číslo 0-10, "layout": číslo 0-15, "colors": číslo 0-10, "images": číslo 0-10, "impression": číslo 0-15, "reason": "stručný dôvod po slovensky, max 2 vety", "mainIssues": ["problém1","problém2","problém3"]}`;
 
 interface VisualResult {
   score: number | null;
@@ -548,14 +556,25 @@ function parseVisualJson(
   if (!m) return null;
   try {
     const j = JSON.parse(m[0]) as {
-      score?: unknown;
+      typography?: unknown;
+      layout?: unknown;
+      colors?: unknown;
+      images?: unknown;
+      impression?: unknown;
       reason?: unknown;
       mainIssues?: unknown;
     };
-    const score = Math.max(0, Math.min(60, Math.round(Number(j.score))));
+    const part = (v: unknown, max: number) =>
+      Math.max(0, Math.min(max, Math.round(Number(v)) || 0));
+    const score =
+      part(j.typography, 10) +
+      part(j.layout, 15) +
+      part(j.colors, 10) +
+      part(j.images, 10) +
+      part(j.impression, 15);
     if (!Number.isFinite(score)) return null;
     return {
-      score,
+      score: Math.max(0, Math.min(60, score)),
       reason: String(j.reason ?? "").trim() || "Vizuál pôsobí zastaralo.",
       mainIssues: Array.isArray(j.mainIssues)
         ? j.mainIssues.map(String).slice(0, 5)
@@ -567,8 +586,11 @@ function parseVisualJson(
 }
 
 /**
- * Score the visual outdatedness 0-60 from the page's HTML/text via Claude.
- * Returns nulls when there is no ANTHROPIC_API_KEY or on any failure.
+ * Score the visual outdatedness 0-60 via Claude. Keď je nakonfigurovaný
+ * SCREENSHOT_API_KEY, AI vidí REÁLNY screenshot webu (oveľa spoľahlivejšie —
+ * font, farby, layout sa zo strohého textu odhadujú len nepriamo). Bez neho
+ * padá späť na HTML/textový obsah. Vracia nully bez ANTHROPIC_API_KEY alebo pri
+ * zlyhaní.
  */
 async function analyzeVisual(
   url: string,
@@ -578,18 +600,32 @@ async function analyzeVisual(
     return { score: null, reason: null, mainIssues: [] };
   }
 
+  const screenshot = await captureScreenshot(url).catch(() => null);
+
   const client = new Anthropic();
   try {
+    const content: Anthropic.MessageParam["content"] = screenshot
+      ? [
+          {
+            type: "text",
+            text: `Pozri sa na tento screenshot webu (${url}) a ohodnoť jeho vizuálnu zastaralosť podľa kritérií zo system promptu.`,
+          },
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: screenshot.mediaType,
+              data: screenshot.base64,
+            },
+          } as Anthropic.ImageBlockParam,
+        ]
+      : `Screenshot webu (${url}) sa nepodarilo zachytiť — hodnoť vizuálnu zastaralosť IBA z HTML/textového obsahu nižšie (menej spoľahlivé pre typografiu/farby/obrázky, tie z textu priamo nevidno — ak sa kritérium nedá z textu vôbec posúdiť, daj mu nízku hodnotu namiesto hádania vysokej).\n\nOBSAH:\n${pageText.slice(0, 4000)}`;
+
     const msg = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 400,
+      max_tokens: 500,
       system: VISUAL_SYSTEM,
-      messages: [
-        {
-          role: "user",
-          content: `Hodnoť vizuálnu zastaralosť webu (${url}) z jeho HTML/textového obsahu. Ak je obsah príliš chudobný, odhadni konzervatívne.\n\nOBSAH:\n${pageText.slice(0, 4000)}`,
-        },
-      ],
+      messages: [{ role: "user", content }],
     });
 
     const text = msg.content
@@ -678,9 +714,16 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
     technical += 6;
     reasons.push("Chýba HTTPS/SSL");
   }
-  // Hard-modern stacks are disqualified below; soft builders take a small hit.
+  // Hard-modern stacks are disqualified below; soft builders (WordPress/Wix/…)
+  // take a small hit IF there's no independent evidence they're actually old —
+  // a fresh WordPress build has no aged copyright, so the discount targets that
+  // case. Keep it away from sites with a genuinely stale copyright: without this
+  // guard, the -10 wiped out the modest copyright bonus (+4/+8) and floored a
+  // real, old site to technicalScore=0, letting the WordPress penalty overrule
+  // the actual best evidence we have that the site is old.
+  const genuinelyOld = cy !== null && cy <= 2020;
   if (fw.kind === "hard") technical -= 20;
-  else if (fw.kind === "soft") technical -= 10;
+  else if (fw.kind === "soft" && !genuinelyOld) technical -= 6;
   const technicalScore = Math.max(0, Math.min(40, technical));
 
   // ---- Cheap disqualifiers FIRST, so we skip the expensive visual AI (Claude)

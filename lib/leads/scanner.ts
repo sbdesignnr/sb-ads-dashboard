@@ -114,8 +114,18 @@ export async function enrichLead(
 
   // Not qualified (score < 65) → store the analysis but KEEP the lead visible.
   // Only a hard disqualifier (broken / parked / social / modern framework) drops
-  // it to "rejected"; a low score alone is just an indicator, not a filter. Skip
-  // the expensive ORSR + AI dossier for these.
+  // it to "rejected"; a low score alone is just an indicator, not a filter.
+  //
+  // ZÁMERNÉ ROZHODNUTIE: pôvodne som toto chcel zmeniť na
+  // auto-zamietanie pri každom nekvalifikovanom skóre, ale na reálnom prípade
+  // (ayurfyzio.sk) sa ukázalo, že vizuálne skóre bez skutočného screenshotu
+  // webu (SCREENSHOT_API_KEY nenastavený) systematicky podhodnocuje zjavne
+  // zastarané weby — AI si to sama uvedomuje a hlási nízku istotu. Auto-reject
+  // na takomto skóre by ticho a nenávratne strácal reálne dobré leady presne
+  // tak, ako sa obával používateľ. Kým skóre nie je spoľahlivejšie (ideálne cez
+  // screenshot), nízke skóre ostáva len indikátor — používateľ má kontrolu cez
+  // filter "Kvalita webu" a tlačidlo "Skryť tieto", nie automatiku.
+  // Skip the expensive ORSR + AI dossier for these.
   if (!analysis.qualified) {
     await prisma.lead.update({
       where: { id: leadId },
