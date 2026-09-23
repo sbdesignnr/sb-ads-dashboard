@@ -1,11 +1,37 @@
-// Server-side website screenshot capture for the visual quality analysis.
-// Uses a configurable screenshot API (default: ScreenshotOne) via SCREENSHOT_API_KEY.
-// The key stays server-side and is never persisted or exposed to the client.
+// Server-side website screenshot capture for the visual quality analysis —
+// SELF-HOSTED (vlastný headless Chromium cez Puppeteer), žiadna externá
+// platená služba ani API kľúč. Na Verceli beží cez @sparticuz/chromium
+// (odľahčená binárka stavaná presne pre serverless prostredie); lokálne padá
+// na bežne nainštalovaný Chrome, ak sa nájde, inak čestne vráti null (volajúci
+// spadne na textové hodnotenie).
 
-const SCREENSHOT_ENDPOINT = process.env.SCREENSHOT_API_URL?.trim() || "https://api.screenshotone.com/take";
+import puppeteer, { type Browser } from "puppeteer-core";
 
+const isServerless = Boolean(
+  process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME,
+);
+
+// Bežné cesty k desktopovému Chrome/Chromium — len pre lokálny vývoj, kde
+// @sparticuz/chromium (Linux binárka) nefunguje.
+const LOCAL_CHROME_PATHS = [
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", // macOS
+  "/usr/bin/google-chrome-stable", // Linux
+  "/usr/bin/google-chrome",
+  "/usr/bin/chromium-browser",
+  "/usr/bin/chromium",
+  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", // Windows
+];
+
+async function findLocalChrome(): Promise<string | null> {
+  if (process.env.PUPPETEER_EXECUTABLE_PATH)
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  const { existsSync } = await import("node:fs");
+  return LOCAL_CHROME_PATHS.find((p) => existsSync(p)) ?? null;
+}
+
+/** Vždy true — vlastný headless prehliadač, žiadny API kľúč netreba. */
 export function screenshotConfigured(): boolean {
-  return Boolean(process.env.SCREENSHOT_API_KEY?.trim());
+  return true;
 }
 
 export interface Screenshot {
@@ -14,54 +40,51 @@ export interface Screenshot {
 }
 
 /**
- * Capture an above-the-fold screenshot of `url`. Returns null when unconfigured
- * or on any failure — callers must degrade gracefully (fall back to HTML-based
- * visual analysis) rather than break the scan.
+ * Capture an above-the-fold screenshot of `url` cez vlastný headless Chromium.
+ * Returns null keď sa nenájde spustiteľný prehliadač (lokálny vývoj bez
+ * nainštalovaného Chrome) alebo pri akomkoľvek zlyhaní — volajúci musí spadnúť
+ * na textové hodnotenie, nie zlyhať celý sken.
  */
 export async function captureScreenshot(url: string): Promise<Screenshot | null> {
-  const key = process.env.SCREENSHOT_API_KEY?.trim();
-  if (!key) return null;
-
-  const q = new URLSearchParams({
-    access_key: key,
-    url,
-    format: "jpg",
-    image_quality: "80",
-    viewport_width: "1366",
-    viewport_height: "900",
-    device_scale_factor: "1",
-    full_page: "false",
-    block_ads: "true",
-    block_cookie_banners: "true",
-    block_trackers: "true",
-    // ZÁMERNE bez ignore_host_errors: keď cieľový web vráti chybu (429/503,
-    // napr. dočasná bot ochrana), radšej žiadna snímka a čestný pád na textové
-    // hodnotenie, než odfotená chybová stránka, ktorú AI vyhodnotí ako "zlý
-    // dizajn" — meria sa tým nesprávna vec (chvíľková chyba, nie reálny web),
-    // čo je horšie než jasne nízka istota pri fallbacku na text.
-    //
-    // delay: bez neho (default 0s) appka fotí OKAMŽITE po evente "load", ešte
-    // pred dokončením CSS/fontov/obrázkov — reálne to spôsobovalo screenshoty
-    // nenaštýlovanej/rozbitej stránky (napr. holý odkaz "Přeskočit na obsah",
-    // chýbajúce logo), ktoré AI vyhodnotila ako zlý dizajn, hoci to bola len
-    // chyba časovania snímky, nie skutočný vzhľad webu.
-    delay: "2",
-    navigation_timeout: "15",
-    // Cache aggressively so re-scanning the same site doesn't re-bill the service.
-    cache: "true",
-    cache_ttl: "2592000", // 30 days
-    timeout: "20",
-  });
-
+  let browser: Browser | null = null;
   try {
-    const res = await fetch(`${SCREENSHOT_ENDPOINT}?${q.toString()}`, {
-      signal: AbortSignal.timeout(25000),
-    });
-    if (!res.ok) return null;
-    const buf = new Uint8Array(await res.arrayBuffer());
-    if (buf.byteLength === 0) return null;
+    if (isServerless) {
+      const chromium = (await import("@sparticuz/chromium")).default;
+      browser = await puppeteer.launch({
+        executablePath: await chromium.executablePath(),
+        args: await puppeteer.defaultArgs({
+          args: chromium.args,
+          headless: "shell",
+        }),
+        headless: "shell",
+        defaultViewport: { width: 1366, height: 900 },
+        timeout: 15000,
+      });
+    } else {
+      const localPath = await findLocalChrome();
+      if (!localPath) return null; // lokálny vývoj bez Chrome — čestný pád na text
+      browser = await puppeteer.launch({
+        executablePath: localPath,
+        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+        headless: true,
+        defaultViewport: { width: 1366, height: 900 },
+        timeout: 15000,
+      });
+    }
+
+    const page = await browser.newPage();
+    await page.setUserAgent(
+      "Mozilla/5.0 (compatible; SBDesignLeadBot/1.0; +https://sbdesign.sk)",
+    );
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 15000 });
+    // Krátke dodatočné čakanie po "networkidle2" — bez neho hrozí odfotenie
+    // ešte nenaštýlovanej stránky (CSS/fonty/obrázky sa dokresľujú aj potom).
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const buf = await page.screenshot({ type: "jpeg", quality: 80 });
     return { base64: Buffer.from(buf).toString("base64"), mediaType: "image/jpeg" };
   } catch {
     return null;
+  } finally {
+    await browser?.close().catch(() => {});
   }
 }

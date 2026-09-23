@@ -53,8 +53,25 @@ const nextConfig: NextConfig = {
     removeConsole: false,
   },
   // google-ads-api is a Node-native package (gRPC/protobuf) — keep it external
-  // so it is required at runtime instead of bundled.
-  serverExternalPackages: ["google-ads-api", "cheerio", "@google-analytics/data"],
+  // so it is required at runtime instead of bundled. @sparticuz/chromium ships
+  // a native binary (headless Chromium for lead-screenshot capture) that must
+  // NOT be bundled either.
+  serverExternalPackages: [
+    "google-ads-api",
+    "cheerio",
+    "@google-analytics/data",
+    "@sparticuz/chromium",
+    "puppeteer-core",
+  ],
+  // @sparticuz/chromium zisťuje cestu k binárke (bin/chromium.br a pod.)
+  // dynamicky za behu — statická analýza (@vercel/nft), ktorá inak rozhoduje,
+  // čo sa zabalí do funkcie, si ju sama nevšimne. Bez tohto by na Verceli
+  // executablePath() ukazoval na súbor, ktorý sa do nasadenia nedostal.
+  outputFileTracingIncludes: {
+    "/api/leads/analyze-bulk": ["./node_modules/@sparticuz/chromium/bin/**"],
+    "/api/leads/[id]/ai": ["./node_modules/@sparticuz/chromium/bin/**"],
+    "/api/leads/scan": ["./node_modules/@sparticuz/chromium/bin/**"],
+  },
   eslint: {
     // Lint is run separately; do not block production builds.
     ignoreDuringBuilds: true,
