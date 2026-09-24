@@ -3,7 +3,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Lead } from "@prisma/client";
 import sharp from "sharp";
-import { collectEvidence, type EvidencePack } from "../../leads/research/collect";
+import type { EvidencePack } from "../../leads/research/collect";
+import { findPlaceProfile } from "../../leads/research/places";
 import { captureScreenshot } from "../../leads/screenshot";
 import { composePage } from "./compose";
 import { directDesign, type Concept, type DesignBrief, type StageCost } from "./design";
@@ -47,15 +48,23 @@ export async function buildMockup(input: BuildInput): Promise<BuildResult> {
   if (!assets) throw new Error("Web firmy sa nepodarilo načítať.");
 
   const segmentName = lead.segment?.name ?? "firma";
-  const pack = input.pack ?? (await collectEvidence({ lead, segmentName, keywords: lead.segment?.keywords ?? [] }));
+  // Z Google potrebujeme len profil a recenzie (1 volanie); celý zber dôkazov robí Nora sama
+  // a pošle ho sem hotový.
+  const place = input.pack ? input.pack.place : await findPlaceProfile(lead.companyName, lead.companyCity, lead.websiteUrl);
   const facts: string[] = [];
-  if (pack.place?.rating && pack.place.reviewCount && pack.place.rating >= 4.3)
-    facts.push(`Google: hodnotenie ${pack.place.rating} z 5, ${pack.place.reviewCount} recenzií`);
-  const reviews = pack.items.find((i) => i.kind === "places");
+  if (place?.rating && place.reviewCount && place.rating >= 4.3)
+    facts.push(`Google: hodnotenie ${place.rating} z 5, ${place.reviewCount} recenzií`);
+  const reviewsText = place?.reviews?.length
+    ? place.reviews
+        .slice(0, 5)
+        .map((r) => `- ${r.rating ?? "?"}★ „${r.text.replace(/\s+/g, " ").slice(0, 260)}“`)
+        .join("\n")
+    : "";
+  const stored = input.pack?.items.find((i) => i.kind === "stored")?.text.slice(0, 900) ?? [lead.aiSummary, lead.aiOpportunity].filter(Boolean).join("\n");
   const research = [
     input.findingsText ? `ZISTENIA O FIRME (overené):\n${input.findingsText}` : "",
-    pack.items.find((i) => i.kind === "stored")?.text.slice(0, 900),
-    reviews ? `GOOGLE PROFIL A RECENZIE:\n${reviews.text.slice(0, 1800)}` : "",
+    stored,
+    reviewsText ? `GOOGLE RECENZIE (doslovné, smú sa citovať):\n${reviewsText}` : "",
   ]
     .filter(Boolean)
     .join("\n\n");

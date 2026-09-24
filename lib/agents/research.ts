@@ -165,6 +165,13 @@ async function executeResearchInner(researchId: string, leadId: string, opts: Re
     });
     await pending;
     const ok = Boolean(result.offer) && result.findings.length >= 2;
+    // Nora sama posúdila, že firma nepatrí do odboru / nie je vhodná: lead sa vyradí (dá sa vrátiť
+    // v záložke "Skryté"), aby ho Skaut nevyberal znova.
+    if (result.skipReason) {
+      await prisma.lead
+        .update({ where: { id: leadId }, data: { status: "rejected", disqualifyReason: `Nora: ${result.skipReason}`.slice(0, 500) } })
+        .catch(() => {});
+    }
     await prisma.leadResearch.update({
       where: { id: researchId },
       data: {
@@ -179,7 +186,9 @@ async function executeResearchInner(researchId: string, leadId: string, opts: Re
           ? result.email
             ? null
             : "Ponuka je hotová, ale mail neprešiel kontrolou kvality."
-          : (result.skipReason ?? "Nepodarilo sa zostaviť aspoň 2 overené zistenia a ponuku."),
+          : result.skipReason
+            ? `Vyradené: ${result.skipReason}`
+            : "Nepodarilo sa zostaviť aspoň 2 overené zistenia a ponuku.",
       },
     });
   } catch (e) {

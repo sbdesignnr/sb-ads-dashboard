@@ -74,7 +74,8 @@ interface RunDetail extends Omit<RunRow, "lead"> {
 
 const eur = (v: number | null | undefined) => (v == null ? "–" : `${v.toFixed(2).replace(".", ",")} €`);
 const BASE_EUR = 0.19; // výskum (Claude) + Google
-const MOCKUP_EUR = 0.07; // návrh stránky (Sonnet)
+const MOCKUP_EUR = 0.07; // návrh stránky (Sonnet) v rámci výskumu Nory
+const MOCKUP_ALONE_EUR = 0.1; // samostatný návrh (Sonnet + jedno volanie Google)
 const PREMIUM_EUR = 0.35; // koncept od art directora (Opus)
 const COST_HINT = "≈ 0,25 €";
 
@@ -93,12 +94,12 @@ function stepIndex(step: string | null): number {
   return 0;
 }
 
-function StatusPill({ run }: { run: Pick<RunRow, "status" | "appliedAt" | "emailSubject"> }) {
+function StatusPill({ run }: { run: Pick<RunRow, "status" | "appliedAt" | "emailSubject" | "error"> }) {
   const [label, color] =
     run.status === "running"
       ? ["Pracuje", "#22c55e"]
       : run.status === "failed"
-        ? ["Nepodarilo sa", "#ef4444"]
+        ? [run.error?.startsWith("Vyradené:") ? "Vyradený" : "Nepodarilo sa", run.error?.startsWith("Vyradené:") ? "#94a3b8" : "#ef4444"]
         : run.appliedAt
           ? ["Koncept vytvorený", "#60a5fa"]
           : ["Čaká na posúdenie", "#f59e0b"];
@@ -493,7 +494,16 @@ function RunView({
         </div>
       )}
 
-      {run.status === "failed" && (
+      {run.status === "failed" && run.error?.startsWith("Vyradené:") && (
+        <div className="mb-4 rounded-2xl border border-white/15 bg-white/[0.04] p-4">
+          <p className="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+            <CircleAlert className="h-4 w-4 text-amber-300" /> Nora tento lead vyradila
+          </p>
+          <p className="text-[13px] text-foreground/90">{run.error.replace(/^Vyradené:\s*/, "")}</p>
+          <p className="mt-2 text-[12px] text-muted">Lead je v zozname leadov v záložke „Skryté“. Ak sa Nora mýli, môžeš ho tam vrátiť.</p>
+        </div>
+      )}
+      {run.status === "failed" && !run.error?.startsWith("Vyradené:") && (
         <div className="mb-4 rounded-2xl border border-red-400/30 bg-red-500/10 p-4">
           <p className="mb-1 flex items-center gap-2 text-sm font-medium text-red-300">
             <CircleAlert className="h-4 w-4" /> Nora to tentoraz nedotiahla
@@ -737,7 +747,7 @@ function MockupCard({
   }, [running, load]);
 
   const make = async (director: boolean) => {
-    const eur = MOCKUP_EUR + (director ? PREMIUM_EUR : 0);
+    const eur = MOCKUP_ALONE_EUR + (director ? PREMIUM_EUR : 0);
     if (!confirm(`Ateliér vyrobí návrh novej domovskej stránky${director ? " (prémiový, koncept od art directora)" : ""}.\n\nTrvá 1 až 2 minúty a stojí približne ${eur.toFixed(2).replace(".", ",")} €.`)) return;
     setBusy(director ? "p" : "n");
     try {
@@ -780,10 +790,10 @@ function MockupCard({
           <p className="mb-2.5 text-[13px] text-muted">K tomuto leadu ešte nie je hotový návrh. Mail s hotovým návrhom pôsobí silnejšie než sľub, že ho pripravíš.</p>
           <div className="flex flex-wrap gap-2">
             <button onClick={() => make(false)} disabled={busy !== null} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-primary/90 disabled:opacity-50">
-              {busy === "n" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Layout className="h-3.5 w-3.5" />} Pripraviť návrh (≈ {MOCKUP_EUR.toFixed(2).replace(".", ",")} €)
+              {busy === "n" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Layout className="h-3.5 w-3.5" />} Pripraviť návrh (≈ {MOCKUP_ALONE_EUR.toFixed(2).replace(".", ",")} €)
             </button>
             <button onClick={() => make(true)} disabled={busy !== null} className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-[12.5px] font-medium text-foreground hover:bg-white/20 disabled:opacity-50">
-              Prémiový (≈ {(MOCKUP_EUR + PREMIUM_EUR).toFixed(2).replace(".", ",")} €)
+              Prémiový (≈ {(MOCKUP_ALONE_EUR + PREMIUM_EUR).toFixed(2).replace(".", ",")} €)
             </button>
           </div>
         </div>
@@ -821,7 +831,7 @@ function MockupCard({
                 <ExternalLink className="h-3.5 w-3.5" /> Otvoriť návrh
               </a>
               <button onClick={() => setFull((v) => !v)} className="rounded-lg bg-white/10 px-3 py-1.5 text-[12.5px] text-foreground hover:bg-white/20">{full ? "Len začiatok" : "Celá stránka"}</button>
-              <button onClick={() => make(false)} disabled={busy !== null} className="rounded-lg bg-white/10 px-3 py-1.5 text-[12.5px] text-foreground hover:bg-white/20 disabled:opacity-50">Iný smer (≈ {MOCKUP_EUR.toFixed(2).replace(".", ",")} €)</button>
+              <button onClick={() => make(false)} disabled={busy !== null} className="rounded-lg bg-white/10 px-3 py-1.5 text-[12.5px] text-foreground hover:bg-white/20 disabled:opacity-50">Iný smer (≈ {MOCKUP_ALONE_EUR.toFixed(2).replace(".", ",")} €)</button>
               <button onClick={() => make(true)} disabled={busy !== null} className="rounded-lg bg-white/10 px-3 py-1.5 text-[12.5px] text-foreground hover:bg-white/20 disabled:opacity-50">Prémiový</button>
               <button onClick={() => remove(latest.id)} className="ml-auto rounded-lg px-2 py-1.5 text-[12px] text-muted hover:bg-white/10 hover:text-red-300"><Trash2 className="h-3.5 w-3.5" /></button>
             </div>
