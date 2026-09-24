@@ -76,6 +76,24 @@ export async function GET(req: NextRequest) {
   if (region && region !== "all")
     where.region = region === "none" ? null : region;
 
+  // Počty podľa kvality webu pri rovnakých ostatných filtroch (segment/stav/kraj) —
+  // aby bolo vidno, koľko leadov je v skupinách, ktoré filter práve skrýva.
+  const baseWhere: Prisma.LeadWhereInput = {
+    ...segmentWhere,
+    ...statusWhere,
+    ...(region && region !== "all"
+      ? { region: region === "none" ? null : region }
+      : {}),
+  };
+  const countQuality = (q: string) =>
+    prisma.lead.count({ where: { ...baseWhere, ...qualityWhere(q) } });
+  const [qBad, qBorderline, qGood, qUnscored] = await Promise.all([
+    countQuality("bad"),
+    countQuality("borderline"),
+    countQuality("good"),
+    countQuality("unscored"),
+  ]);
+
   const [leads, total, contactedCount, regionGroups] = await Promise.all([
     prisma.lead.findMany({
       where,
@@ -128,5 +146,16 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  return NextResponse.json({ leads: out, total, contactedCount, regions });
+  return NextResponse.json({
+    leads: out,
+    total,
+    contactedCount,
+    regions,
+    qualityCounts: {
+      bad: qBad,
+      borderline: qBorderline,
+      good: qGood,
+      unscored: qUnscored,
+    },
+  });
 }

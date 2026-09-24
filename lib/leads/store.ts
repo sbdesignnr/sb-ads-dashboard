@@ -45,6 +45,7 @@ export function serializeLead(l: Lead): LeadDTO {
     companyActive: l.companyActive,
     ownerName: l.ownerName,
     ownerPosition: l.ownerPosition,
+    ownerSource: l.ownerSource,
     companyEmail: l.companyEmail,
     companyPhone: l.companyPhone,
     companyAddress: l.companyAddress,

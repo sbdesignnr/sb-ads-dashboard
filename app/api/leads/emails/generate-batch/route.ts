@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { generateOutreachEmail } from "@/lib/leads/ai";
 import { fillTemplate } from "@/lib/leads/templates";
 import { QUALIFY_AT } from "@/lib/leads/qualification";
+import { greetableOwnerName } from "@/lib/leads/owner-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -161,7 +162,8 @@ export async function POST(req: NextRequest) {
               firma: lead.companyName,
               mesto: lead.companyCity,
               web: lead.websiteUrl,
-              konatel: lead.ownerName,
+              // Meno len ak je OVERENÉ — inak prázdne a šablóna ostane bez mena.
+              konatel: greetableOwnerName(lead),
               kraj: lead.region,
             };
             subject =

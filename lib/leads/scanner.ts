@@ -9,17 +9,21 @@ import {
   type Region,
 } from "./google-places";
 import { analyzeWebsite } from "./website-analyzer";
-import { enrichCompany } from "./orsr";
-import { enrichCompanyAres } from "./ares";
+import { verifyOwner } from "./owner-verification";
+import { fixMojibake } from "./text-repair";
+import { scoreTier } from "./qualification";
 import { generateDossier } from "./ai";
 import { findEmailForLead } from "./email-finder";
 import { krajForLead } from "./regions-map";
 
 /** Guess whether a lead is a Czech company (routes ARES vs ORSR enrichment). */
 export function isCzLead(
-  lead: Pick<Lead, "source" | "companyCity" | "companyAddress">,
+  lead: Pick<Lead, "source" | "companyCity" | "companyAddress"> &
+    Partial<Pick<Lead, "country" | "websiteUrl">>,
 ): boolean {
   if (lead.source?.endsWith("-cz")) return true;
+  if (lead.country && /czech|česk|^cz$/i.test(lead.country.trim())) return true;
+  if (lead.websiteUrl && /\.cz(?:[/:?#]|$)/i.test(lead.websiteUrl)) return true;
   if (lead.companyCity && CZ_CITIES.includes(lead.companyCity)) return true;
   return /(česk|czech|\bpraha\b|\bbrno\b|,\s*CZ\b)/i.test(
     lead.companyAddress ?? "",
@@ -93,8 +97,20 @@ export async function enrichLead(
     return { qualified: false, active: null };
   }
 
+  // Pokazená diakritika z importu ("Å½ateÄka") sa opraví pri prvom spracovaní —
+  // s pokazeným názvom by sa firma nenašla v registri a v mailoch by bol preklep.
+  const fixedName = fixMojibake(lead.companyName);
+  const fixedOwner = lead.ownerName ? fixMojibake(lead.ownerName) : null;
+  const fixedCity = lead.companyCity ? fixMojibake(lead.companyCity) : null;
+  const textFixes = {
+    ...(fixedName !== lead.companyName ? { companyName: fixedName } : {}),
+    ...(fixedOwner && fixedOwner !== lead.ownerName ? { ownerName: fixedOwner } : {}),
+    ...(fixedCity && fixedCity !== lead.companyCity ? { companyCity: fixedCity } : {}),
+  };
+
   // The website-analysis fields written for every enriched lead (qualified or not).
   const analysisData = {
+    ...textFixes,
     segmentId: segment.id || undefined,
     websiteScore: analysis.websiteScore,
     technicalScore: analysis.technicalScore,
@@ -130,24 +146,24 @@ export async function enrichLead(
     return { qualified: false, active: null };
   }
 
-  // Not qualified (score < QUALIFY_AT) → store the analysis but KEEP the lead
-  // visible. Only a hard disqualifier (broken / parked / social / modern
-  // framework) drops it to "rejected"; a low score alone is just an indicator,
-  // not a filter.
-  //
-  // ZÁMERNÉ ROZHODNUTIE: auto-zamietanie pri každom nekvalifikovanom skóre som
-  // nezapol — na reálnom prípade (ayurfyzio.sk) sa ukázalo, že skóre vie
-  // zastaraný web podhodnotiť a auto-reject by ticho a nenávratne stratil
-  // reálne dobré leady. Nízke skóre ostáva len indikátor — používateľ má
-  // kontrolu cez filter "Kvalita webu" a tlačidlo "Skryť tieto", nie automatiku.
-  // Skip the expensive ORSR + AI dossier for these.
+  // Not qualified (score < QUALIFY_AT) → store the analysis, skip the expensive
+  // registry + AI dossier. TRIEDENIE PRI SKENE (aby sa vhodné leady nemiešali s
+  // nevhodnými): jednoznačne dobrý web (skóre < BORDERLINE_AT, hodnotený zo
+  // skutočného screenshotu) sa hneď skryje (status "rejected", dá sa vrátiť
+  // v záložke "Skryté") a ďalší sken ho už nepridá. Hraničné leady zostávajú
+  // viditeľné na ručnú kontrolu. Odhad len z textu (bez screenshotu) je menej
+  // spoľahlivý, preto ten sa NIKDY automaticky neskrýva — na reálnom prípade
+  // (ayurfyzio.sk) sa ukázalo, že text-only skóre vie zastaraný web podhodnotiť.
   if (!analysis.qualified) {
+    const textOnly = Boolean(analysis.aiVisualReason?.startsWith("(Bez screenshotu"));
+    const clearlyGood =
+      !textOnly && scoreTier(analysis.websiteScore) === "good";
     await prisma.lead.update({
       where: { id: leadId },
       data: {
         ...analysisData,
         disqualifyReason: analysis.disqualifyReason,
-        ...(analysis.hardDisqualified && lead.status === "new"
+        ...((analysis.hardDisqualified || clearlyGood) && lead.status === "new"
           ? { status: "rejected" }
           : {}),
         lastScannedAt: new Date(),
@@ -157,11 +173,29 @@ export async function enrichLead(
   }
 
   // Qualified — enrich fully. Prefer an IČO scraped from the site (exact match).
-  // CZ companies → ARES, SK companies → ORSR (both return the same shape).
+  // Konateľa NEBERIEME z odhadu AI ani slepo z vyhľadávania: osoba sa použije len
+  // ak ju potvrdí register (SK: ORSR, CZ: ARES — presné IČO, alebo prísna zhoda
+  // názvu + mesta) alebo vlastný web firmy (lib/leads/owner-verification.ts).
   const ico = lead.ico ?? analysis.extractedIco;
-  const registry = isCzLead(lead)
-    ? await enrichCompanyAres({ ico, name: lead.companyName }).catch(() => null)
-    : await enrichCompany({ ico, name: lead.companyName }).catch(() => null);
+  const ver = await verifyOwner({
+    companyName: fixedName,
+    city: fixedCity ?? lead.companyCity,
+    ico,
+    websiteUrl: lead.websiteUrl,
+    cz: isCzLead(lead),
+    candidate: { name: fixedOwner ?? lead.ownerName, position: lead.ownerPosition },
+    siteText: analysis.siteText,
+    email: analysis.extractedEmails[0] ?? lead.companyEmail,
+    // IČO zadané používateľom (nie zo stránky) je dôveryhodné aj pri inom názve.
+    trustIco: Boolean(lead.ico),
+  }).catch(() => null);
+  const registry = ver?.registry ?? null;
+  // Údaje z registra platia len ak ide naozaj o túto firmu.
+  const regTrusted =
+    registry && (registry.nameMatches || ver?.owner?.source === "registry")
+      ? registry
+      : null;
+  const verifiedOwner = ver?.owner ?? null;
 
   const dossier = process.env.ANTHROPIC_API_KEY
     ? await generateDossier({
@@ -169,12 +203,13 @@ export async function enrichLead(
         segmentName: segment.name,
         communicationStyle: segment.communicationStyle,
         websiteUrl: lead.websiteUrl,
-        companyCity: lead.companyCity ?? registry?.city ?? null,
-        ico: registry?.ico ?? ico ?? null,
-        companyActive: registry?.active ?? null,
-        orsrStatusNote: registry?.statusNote ?? null,
-        orsrOwnerName: registry?.ownerName ?? null,
-        orsrOwnerPosition: registry?.ownerPosition ?? null,
+        companyCity: lead.companyCity ?? regTrusted?.city ?? null,
+        ico: regTrusted?.ico ?? ico ?? null,
+        companyActive: regTrusted?.active ?? null,
+        orsrStatusNote: regTrusted?.statusNote ?? null,
+        // Do AI len OVERENÉ meno (nie neoverený kontakt z CSV).
+        orsrOwnerName: verifiedOwner?.name ?? null,
+        orsrOwnerPosition: verifiedOwner?.position ?? null,
         placesPhone: lead.companyPhone,
         extractedEmails: analysis.extractedEmails,
         extractedPhones: analysis.extractedPhones,
@@ -192,26 +227,32 @@ export async function enrichLead(
       }).catch(() => null)
     : null;
 
+  // Pole konateľa: ručne potvrdené meno sa neprepisuje; overené meno prepíše
+  // neoverený kontakt; pri neúspešnom overení kontakt ostane (na pohľad v UI),
+  // ale bez pôvodu "overené" — v maile sa nepoužije. Už raz overené meno pri
+  // prechodnom výpadku registra NErušíme.
+  const ownerFields =
+    lead.ownerSource === "manual"
+      ? {}
+      : verifiedOwner
+        ? {
+            ownerName: verifiedOwner.name,
+            ownerPosition: verifiedOwner.position ?? lead.ownerPosition ?? undefined,
+            ownerSource: verifiedOwner.source,
+          }
+        : {};
+
   await prisma.lead.update({
     where: { id: leadId },
     data: {
       ...analysisData,
       disqualifyReason: null, // clear any stale reason from a previous scan
-      ico: registry?.ico ?? ico ?? undefined,
-      companyActive: registry?.active ?? undefined,
-      companyAddress: lead.companyAddress ?? registry?.address ?? undefined,
-      companyCity: lead.companyCity ?? registry?.city ?? undefined,
-      // Prefer real contact data the AI pulled from the site, then extractor, then ORSR.
-      ownerName:
-        dossier?.ownerName ??
-        registry?.ownerName ??
-        lead.ownerName ??
-        undefined,
-      ownerPosition:
-        dossier?.ownerRole ??
-        registry?.ownerPosition ??
-        lead.ownerPosition ??
-        undefined,
+      ico: regTrusted?.ico ?? ico ?? undefined,
+      companyActive: regTrusted?.active ?? undefined,
+      companyAddress: lead.companyAddress ?? regTrusted?.address ?? undefined,
+      companyCity: lead.companyCity ?? regTrusted?.city ?? undefined,
+      ...ownerFields,
+      ownerCheckedAt: new Date(),
       companyEmail:
         dossier?.email ??
         analysis.extractedEmails[0] ??
@@ -250,7 +291,7 @@ export async function enrichLead(
       });
   }
 
-  return { qualified: true, active: registry?.active ?? null };
+  return { qualified: true, active: regTrusted?.active ?? null };
 }
 
 /**

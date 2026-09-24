@@ -47,6 +47,9 @@ export interface WebsiteAnalysis {
   extractedPhones: string[];
   extractedIco: string | null; // IČO from the footer/contact — enables exact ORSR match
   pageText: string;
+  // Dlhší text vlastného webu (domov + kontakt/o nás/právne stránky) na overenie,
+  // že kontaktná osoba je na webe uvedená ako majiteľ/konateľ (owner-verification).
+  siteText: string;
 }
 
 const UA =
@@ -706,9 +709,9 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
   const extractedEmails = site.reachable ? extractEmails(combinedHtml) : [];
   const extractedPhones = site.reachable ? extractPhones(combinedHtml) : [];
   const extractedIco = site.reachable ? extractIco(combinedHtml) : null;
-  const pageText = site.reachable
-    ? visibleText(combinedHtml).slice(0, 5000)
-    : "";
+  const fullText = site.reachable ? visibleText(combinedHtml) : "";
+  const pageText = fullText.slice(0, 5000);
+  const siteText = fullText.slice(0, 60000);
 
   const platform = detectPlatform(site.html, site.headers);
   const jqOld = jqueryOld(site.html);
@@ -849,5 +852,6 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
     extractedPhones,
     extractedIco,
     pageText,
+    siteText,
   };
 }

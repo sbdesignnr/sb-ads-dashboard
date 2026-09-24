@@ -33,6 +33,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ScoreGauge } from "@/components/ai/ScoreGauge";
+import { isVerifiedOwnerSource, OWNER_SOURCE_LABEL } from "@/lib/leads/owner-source";
 import { copyToClipboard } from "@/lib/export";
 import { cn } from "@/lib/utils";
 import {
@@ -396,10 +397,14 @@ export function LeadDetail({ id }: { id: string }) {
       const j = await res.json();
       if (res.ok && j.lead) {
         setLead(j.lead);
-        if (j.found?.matched) toast.success(`Konateľ: ${j.found.ownerName}`);
+        if (j.found?.matched)
+          toast.success(
+            `Konateľ overený: ${j.found.ownerName}${j.found.registryName ? ` (${j.found.registryName})` : ""}`,
+          );
         else
           toast(
-            `Firma overená v registri, ale konateľ sa nenašiel${j.found?.ico ? ` (IČO ${j.found.ico})` : ""}.`,
+            `Konateľa sa nepodarilo overiť${j.found?.reason ? `: ${j.found.reason}` : ""}. Meno sa v maile nepoužije - môžeš ho potvrdiť ručne.`,
+            { duration: 8000 },
           );
       } else {
         toast.error(j.message || j.error || "Register nič nenašiel");
@@ -782,6 +787,23 @@ export function LeadDetail({ id }: { id: string }) {
                         ({lead.ownerPosition})
                       </span>
                     )}
+                    {lead.ownerName &&
+                      (isVerifiedOwnerSource(lead.ownerSource) ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-xs text-success"
+                          title="Toto meno sa použije v oslovení mailu"
+                        >
+                          <ShieldCheck className="h-3 w-3" />
+                          {OWNER_SOURCE_LABEL[lead.ownerSource]}
+                        </span>
+                      ) : (
+                        <span
+                          className="text-xs text-warning"
+                          title="Meno pochádza z importu/odhadu a nie je potvrdené — v maile sa nepoužije, oslovenie bude „Dobrý deň,“. Klikni „Z registra“ alebo meno oprav ručne."
+                        >
+                          neoverené - v maile sa nepoužije
+                        </span>
+                      ))}
                     <button
                       onClick={enrichOwner}
                       disabled={enrichingOwner}

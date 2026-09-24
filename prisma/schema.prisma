@@ -129,6 +129,8 @@ model Lead {
   companyActive      Boolean?     @map("company_active")
   ownerName          String?      @map("owner_name")
   ownerPosition      String?      @map("owner_position")
+  ownerSource        String?      @map("owner_source") // registry | website | manual = OVERENÉ; null = neoverené (v maile sa meno nepoužije)
+  ownerCheckedAt     DateTime?    @map("owner_checked_at") // kedy sa naposledy skúšalo overiť konateľa
   companyEmail       String?      @map("company_email")
   companyPhone       String?      @map("company_phone")
   companyAddress     String?      @map("company_address")

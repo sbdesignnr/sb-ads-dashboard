@@ -61,6 +61,7 @@ export async function PATCH(
     companyPhone?: string | null;
     ownerName?: string | null;
     ownerPosition?: string | null;
+    ownerSource?: string | null;
     ico?: string | null;
   } = {};
   if (typeof body.status === "string" && STATUSES.includes(body.status))
@@ -71,8 +72,12 @@ export async function PATCH(
     data.companyEmail = body.companyEmail.trim() || null;
   if (typeof body.companyPhone === "string")
     data.companyPhone = body.companyPhone.trim() || null;
-  if (typeof body.ownerName === "string")
+  // Meno zadané/upravené RUČNE = človek ho potvrdil, takže sa smie použiť v
+  // oslovení (source "manual"); vymazanie mena zruší aj pôvod.
+  if (typeof body.ownerName === "string") {
     data.ownerName = body.ownerName.trim() || null;
+    data.ownerSource = data.ownerName ? "manual" : null;
+  }
   if (typeof body.ownerPosition === "string")
     data.ownerPosition = body.ownerPosition.trim() || null;
   if (typeof body.ico === "string")

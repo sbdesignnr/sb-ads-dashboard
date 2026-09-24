@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { generateEmail, generateDossier } from "@/lib/leads/ai";
 import { enrichLead } from "@/lib/leads/scanner";
 import { serializeLead } from "@/lib/leads/store";
+import { greetableOwnerName } from "@/lib/leads/owner-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -70,8 +71,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         companyCity: current.companyCity,
         ico: current.ico,
         companyActive: current.companyActive,
-        orsrOwnerName: current.ownerName,
-        orsrOwnerPosition: current.ownerPosition,
+        // Do AI len OVERENÉ meno — uložené meno z CSV/AI odhadu by sa inak
+        // "vyprálo" na overené a AI by ho brala ako fakt z registra.
+        orsrOwnerName: greetableOwnerName(current),
+        orsrOwnerPosition: greetableOwnerName(current) ? current.ownerPosition : null,
         placesPhone: current.companyPhone,
         extractedEmails: current.companyEmail ? [current.companyEmail] : [],
         websiteScore: current.websiteScore,

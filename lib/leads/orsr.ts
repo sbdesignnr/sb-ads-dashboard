@@ -1,4 +1,10 @@
 import * as cheerio from "cheerio";
+import { looseSamePerson } from "./person-name";
+import {
+  plausibleSameCompany,
+  sameCity,
+  strictCompanyMatch,
+} from "./company-match";
 
 // ORSR.sk is an old ASP site served as windows-1250 and expecting windows-1250
 // URL-encoded query params. These helpers handle both directions.
@@ -62,12 +68,21 @@ function encodeWin1250(input: string): string {
 }
 
 async function getWin1250(url: string): Promise<string> {
-  const res = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; SBDesignLeadBot/1.0)" },
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!res.ok) return "";
-  return decoder.decode(await res.arrayBuffer());
+  // ORSR občas neodpovie alebo vráti chybu — jeden opakovací pokus, aby sa
+  // prechodný výpadok nezamieňal za "firma v registri neexistuje".
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; SBDesignLeadBot/1.0)" },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (res.ok) return decoder.decode(await res.arrayBuffer());
+    } catch {
+      /* skús znova */
+    }
+    await new Promise((r) => setTimeout(r, 800));
+  }
+  return "";
 }
 
 export interface OrsrCompany {
@@ -76,10 +91,19 @@ export interface OrsrCompany {
   sid: string;
 }
 
+/** Osoba v štatutárnom orgáne firmy (aktuálny výpis). */
+export interface RegistryPerson {
+  name: string;
+  position: string | null;
+}
+
 export interface OrsrDetail {
   ico: string | null;
   address: string | null;
   city: string | null;
+  /** Všetci AKTUÁLNI členovia štatutárneho orgánu (konatelia, predstavenstvo…). */
+  owners: RegistryPerson[];
+  /** Prvý z `owners` (spätná kompatibilita). */
   ownerName: string | null;
   ownerPosition: string | null;
   active: boolean; // false if struck off / deleted from the register
@@ -121,8 +145,78 @@ export async function searchByIco(ico: string): Promise<OrsrCompany | null> {
   return parseResults(html, 1)[0] ?? null;
 }
 
-const NAME_RE =
-  /((?:(?:Ing|Mgr|JUDr|PhDr|MUDr|MVDr|RNDr|PaedDr|Bc|Dr|prof|doc|arch)\.?\s+)*[A-ZÁ-Ž][a-zá-žäôňčďĺľŕšťžýíéóú'-]+\s+[A-ZÁ-Ž][a-zá-žäôňčďĺľŕšťžýíéóú'-]+)/;
+const ROLE_RE =
+  /(konate[ľl]ia|konate[ľl]|predseda predstavenstva|podpredseda predstavenstva|[čc]len predstavenstva|generálny riaditeľ|riadite[ľl]|spoločník a konateľ|likvidátor|správca)/gi;
+
+const LEGAL_ENTITY_RE =
+  /\b(s\.\s?r\.\s?o\.?|spol\.|a\.\s?s\.?|k\.\s?s\.?|v\.\s?o\.\s?s\.?|z\.\s?o\.?|n\.\s?o\.?|IČO|GmbH|Ltd|Inc)\b/i;
+
+const NAME_PARTICLES = new Set(["van", "von", "de", "di", "da", "del", "der", "den", "la", "le", "el", "al", "ben", "bin", "mc", "st"]);
+
+/** Vyzerá reťazec ako meno osoby (nie firma/adresa)? */
+function looksLikePersonName(s: string): boolean {
+  if (!s || /\d/.test(s) || LEGAL_ENTITY_RE.test(s) || /\(od:|Vznik|funkcie/i.test(s)) return false;
+  const tokens = s.replace(/,/g, " ").split(/\s+/).filter(Boolean);
+  if (tokens.length < 2 || tokens.length > 8) return false;
+  return tokens.every((t) => {
+    // Titul: krátky token s bodkou, aj malými písmenami ("arch.", "Ing.arch.", "PhD.").
+    if (/^[A-Za-z]+(?:\.[A-Za-z]+)*\.$/.test(t) && t.length <= 12) return true;
+    if (NAME_PARTICLES.has(t.toLowerCase())) return true;
+    return /^\p{Lu}[\p{L}'’-]+\.?$/u.test(t);
+  });
+}
+
+function normalizeRole(role: string | null): string | null {
+  if (!role) return null;
+  const r = role.toLowerCase().replace(/\s+/g, " ").trim();
+  if (/^konate[ľl]ia?$/.test(r)) return "konateľ";
+  return r;
+}
+
+/**
+ * Z bloku "Štatutárny orgán" vytiahne VŠETKÝCH aktuálnych členov. Reálny formát:
+ *   "konatelia (od: 25.06.2015) Martin Ďuriška Dátum narodenia: 19.03.1984 Vznik
+ *    funkcie: 22.09.2016 (od: 13.11.2019) Danko Gages Dátum narodenia: …"
+ * Meno leží medzi posledným "(od: dátum)" a "Dátum narodenia:" — vďaka tomu sa
+ * neodreže priezvisko pri viacerých krstných menách ("Alain Michel Müller"),
+ * čo robil predošlý regex na prvé dve slová. Právnická osoba v orgáne nemá
+ * "Dátum narodenia", takže sa prirodzene preskočí.
+ */
+export function parseStatutoryPersons(block: string): RegistryPerson[] {
+  const out: RegistryPerson[] = [];
+  const dob = /Dátum narodenia:/g;
+  let m: RegExpExecArray | null;
+  while ((m = dob.exec(block))) {
+    const before = block.slice(0, m.index);
+    const od = [...before.matchAll(/\(od:\s*\d{1,2}\.\d{1,2}\.\d{4}\)/g)].pop();
+    if (!od || od.index === undefined) continue;
+    let name = before
+      .slice(od.index + od[0].length)
+      .replace(/\s+/g, " ")
+      .trim();
+    // Pri a.s. je funkcia ZA menom: "Ing. Michal Reiter - člen predstavenstva".
+    let inlineRole: string | null = null;
+    const dash = name.split(/\s+[-–]\s+/);
+    if (dash.length === 2) {
+      name = dash[0].trim();
+      inlineRole = dash[1].match(ROLE_RE)?.[0] ?? null;
+      ROLE_RE.lastIndex = 0;
+    }
+    // Prípadná adresa za menom ("Ján Novák, Hlavná 5, 811 01 Bratislava") — odrež
+    // od prvého segmentu s číslicou (titul "PhD." za čiarkou ostane).
+    const segs = name.split(",");
+    const cut = segs.findIndex((s) => /\d/.test(s));
+    if (cut > 0) name = segs.slice(0, cut).join(",").trim();
+    // Register občas dáva medzeru pred čiarkou ("Králová , ArtD.") — zjednoť.
+    name = name.replace(/\s+,/g, ",").replace(/\bIng\.arch\./g, "Ing. arch.");
+    if (!looksLikePersonName(name)) continue;
+    const role =
+      inlineRole ?? [...before.slice(0, od.index).matchAll(ROLE_RE)].pop()?.[1] ?? null;
+    out.push({ name, position: normalizeRole(role) });
+  }
+  // duplicity (rovnaká osoba dvakrát)
+  return out.filter((p, i) => out.findIndex((q) => q.name === p.name) === i);
+}
 
 function extractCity(address: string | null): string | null {
   if (!address) return null;
@@ -146,24 +240,13 @@ export async function getCompanyDetail(
     text.match(/IČO:\s*([\d ]+?)\s*\(od:/)?.[1]?.replace(/\s/g, "") ?? null;
   const address = text.match(/Sídlo:\s*(.+?)\s*\(od:/)?.[1]?.trim() ?? null;
 
-  // Blok „Štatutárny orgán" až po nasledujúcu sekciu. Z neho zvlášť vytiahneme
-  // funkciu (konateľ/predseda…) a zvlášť prvé meno osoby — tolerantnejšie než
-  // jeden pevný vzor, ktorý padal, keď výpis nemal presne očakávané „(od:".
-  let ownerName: string | null = null;
-  let ownerPosition: string | null = null;
+  // Blok „Štatutárny orgán" až po nasledujúcu sekciu; z neho všetci aktuálni členovia.
   const block = text.match(
-    /Štatutárny orgán:\s*(.+?)(?:Spoločníci|Základné imanie|Konanie v mene|Ďalšie právne skutočnosti|Dozorná rada|Prokúra|$)/,
+    /Štatutárny orgán:\s*(.+?)(?:Spoločníci|Základné imanie|Konanie (?:v mene|menom)|Ďalšie právne skutočnosti|Dozorná rada|Prokúra|$)/,
   )?.[1];
-  if (block) {
-    ownerPosition =
-      block.match(
-        /\b(konate[ľl]ia|konate[ľl]|predseda predstavenstva|[čc]len predstavenstva|podpredseda predstavenstva|generálny riaditeľ|spoločník a konateľ)\b/i,
-      )?.[1] ?? null;
-    // Preskoč prípadné „(od: …)" a adresné čísla — meno je prvá dvojica veľkých slov.
-    ownerName = block.match(NAME_RE)?.[1]?.trim() ?? null;
-    if (ownerPosition)
-      ownerPosition = ownerPosition.replace(/\s+/g, " ").toLowerCase();
-  }
+  const owners = block ? parseStatutoryPersons(block) : [];
+  const ownerName = owners[0]?.name ?? null;
+  const ownerPosition = owners[0]?.position ?? null;
 
   // Activity status: a "Dátum výmazu" (deletion) means the company no longer exists.
   let active = true;
@@ -181,6 +264,7 @@ export async function getCompanyDetail(
     ico,
     address,
     city: extractCity(address),
+    owners,
     ownerName,
     ownerPosition,
     active,
@@ -188,21 +272,85 @@ export async function getCompanyDetail(
   };
 }
 
+export type RegistryMatchType = "ico" | "name";
+
 /**
- * Best-effort enrichment for the scanner: prefer IČO, else the company name.
- * Returns the ORSR detail plus the matched register name, or null.
+ * Vyhľadanie firmy v ORSR pre overenie konateľa.
+ *  - Ak poznáme IČO: presné vyhľadanie podľa IČO a kontrola, že výpis naozaj nesie
+ *    to isté IČO. `nameMatches` hovorí, či aj názov sedí (chráni pred IČO
+ *    webagentúry v pätičke — vtedy sa osoba musí overiť inak).
+ *  - Bez IČO: hľadanie podľa názvu, ale výsledok sa NIKDY neberie naslepo — názov
+ *    musí prísne sedieť a mesto sídla musí byť rovnaké (ak ho poznáme), inak
+ *    nič. Radšej žiadny konateľ než konateľ inej firmy.
  */
 export async function enrichCompany(input: {
-  name?: string;
+  name?: string | null;
   ico?: string | null;
-}): Promise<(OrsrDetail & { matchedName: string }) | null> {
-  let match: OrsrCompany | null = null;
-  if (input.ico) match = await searchByIco(input.ico);
-  if (!match && input.name) {
-    const results = await searchCompanies(input.name, 5);
-    match = results[0] ?? null;
+  city?: string | null;
+  websiteUrl?: string | null;
+  /** IČO zadal človek ručne / je overené — preskoč kontrolu podobnosti názvu. */
+  trustIco?: boolean;
+  /** Kontakt z importu — ak je v štatutárnom orgáne, nájdená firma je overená aj pri inom meste. */
+  personName?: string | null;
+}): Promise<
+  | (OrsrDetail & {
+      matchedName: string;
+      matchType: RegistryMatchType;
+      /** Názov v registri vyzerá ako názov leadu (pri zhode podľa IČO nemusí — značka vs. právny názov). */
+      nameMatches: boolean;
+    })
+  | null
+> {
+  const digits = (s: string) => s.replace(/\D/g, "").replace(/^0+/, "");
+
+  if (input.ico) {
+    const match = await searchByIco(input.ico);
+    if (!match) return null;
+    const detail = await getCompanyDetail(match.id, match.sid);
+    // Hľadali sme presne podľa IČO, takže výsledok je ono. Ak sa na výpise IČO
+    // podarilo prečítať a NESEDÍ, výsledok zahodíme; ak sa neprečítalo, nevadí.
+    if (detail.ico && digits(detail.ico) !== digits(input.ico)) return null;
+    if (!detail.owners.length && !detail.address) return null; // prázdny/nedostupný výpis
+    // Značka vs. právny názov (Nehnuteľnosti.sk = United Classifieds s.r.o.) sa
+    // líšia legitímne, preto IČO nezamietame — len označíme, či názov sedí.
+    // Overenie osoby potom rozhodne podľa zhody mena s členom orgánu.
+    const nameMatches =
+      Boolean(input.trustIco) ||
+      !input.name ||
+      plausibleSameCompany(input.name, match.name, input.websiteUrl);
+    return { ...detail, matchedName: match.name, matchType: "ico", nameMatches };
   }
-  if (!match) return null;
-  const detail = await getCompanyDetail(match.id, match.sid);
-  return { ...detail, matchedName: match.name };
+
+  if (!input.name) return null;
+  const results = await searchCompanies(input.name, 8);
+  const candidates = results.filter((r) => strictCompanyMatch(input.name!, r.name));
+  type Found = OrsrDetail & {
+    matchedName: string;
+    matchType: RegistryMatchType;
+    nameMatches: boolean;
+  };
+  const accepted: { found: Found; personMatch: boolean }[] = [];
+  for (const c of candidates.slice(0, 3)) {
+    const detail = await getCompanyDetail(c.id, c.sid);
+    const city = sameCity(input.city, detail.city);
+    // Osoba z importu je v orgáne = silný dôkaz (názov + osoba), aj keď sa sídlo
+    // v registri líši od mesta prevádzky v CSV.
+    const personMatch = Boolean(
+      input.personName && detail.owners.some((o) => looseSamePerson(o.name, input.personName!)),
+    );
+    // Bez zhody osoby: známe mesto musí sedieť; ak ho nepoznáme, prejde len
+    // jediný kandidát.
+    if (!personMatch) {
+      if (city === false) continue;
+      if (city === null && candidates.length > 1) continue;
+    }
+    accepted.push({
+      found: { ...detail, matchedName: c.name, matchType: "name", nameMatches: true },
+      personMatch,
+    });
+  }
+  // Viac zhôd = nejednoznačné → uprednostni jedinú so zhodou osoby, inak nič.
+  const byPerson = accepted.filter((a) => a.personMatch);
+  if (byPerson.length === 1) return byPerson[0].found;
+  return accepted.length === 1 ? accepted[0].found : null;
 }

@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { TemplateBar } from "@/components/leads/TemplateBar";
+import { OwnerCheckPanel } from "@/components/leads/OwnerCheckPanel";
 import { registerLink } from "@/lib/leads/registers";
 import { QUALIFY_AT } from "@/lib/leads/qualification";
 import { type EmailTemplateDTO } from "@/lib/leads/templates";
@@ -859,6 +860,9 @@ export default function CampaignsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Overenie konateľa v registri + oprava osloveniev v konceptoch. */}
+      <OwnerCheckPanel segmentId={segmentId} onChanged={loadQueues} />
 
       {/* The queues below show ONLY the active campaign's segment. */}
       <div className="flex flex-wrap items-center gap-2 text-sm">

@@ -42,6 +42,8 @@ export interface LeadDTO {
   companyActive: boolean | null;
   ownerName: string | null;
   ownerPosition: string | null;
+  /** registry | website | manual = overené meno; null = neoverené (v maile sa nepoužije). */
+  ownerSource: string | null;
   companyEmail: string | null;
   companyPhone: string | null;
   companyAddress: string | null;

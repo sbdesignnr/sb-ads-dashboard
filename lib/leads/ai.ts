@@ -1,7 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Lead } from "@prisma/client";
+import { buildGreeting } from "./person-name";
+import { greetableOwnerName } from "./owner-source";
+import { lintEmail } from "./email-quality";
 
 const MODEL = "claude-sonnet-4-6";
+// Model na písanie a na korektúru cold emailov. Dá sa prepísať env premennou
+// (LEADS_EMAIL_MODEL / LEADS_PROOFREAD_MODEL) bez zásahu do kódu.
+const WRITER_MODEL = process.env.LEADS_EMAIL_MODEL?.trim() || "claude-sonnet-4-6";
+const PROOF_MODEL = process.env.LEADS_PROOFREAD_MODEL?.trim() || WRITER_MODEL;
 
 export interface LeadDossier {
   ownerName: string | null; // person to address (from website or ORSR)
@@ -88,7 +95,7 @@ ${f.pageText ? f.pageText.slice(0, 4500) : "(web sa nepodarilo načítať)"}`;
 const DOSSIER_SYSTEM = `Si senior konzultant a obchodník SB Design (weby a digitálne riešenia na mieru, Slovensko). Dostaneš kompletné dáta o firme a jej webe. Priprav dôkladný podklad pre oslovenie – tak, aby obchodník presne vedel, KOHO, KEDY a AKO osloviť a čím firme reálne pomôžeme (a na čom zarobí).
 
 Zásady:
-- KONTAKTY (dôležité, NEVYMÝŠĽAJ): e-mail vyber IBA zo zoznamu "E-maily" nižšie – ak je prázdny, daj null. Telefón vyber IBA zo zoznamu "Telefóny" alebo z "Telefón (Google)" – inak null. NIKDY nevymýšľaj e-mail ani číslo. Meno majiteľa/konateľa urči z textu webu alebo ORSR (uprednostni konkrétnu osobu pred generickým info@); ak sa nedá, null.
+- KONTAKTY (dôležité, NEVYMÝŠĽAJ): e-mail vyber IBA zo zoznamu "E-maily" nižšie – ak je prázdny, daj null. Telefón vyber IBA zo zoznamu "Telefóny" alebo z "Telefón (Google)" – inak null. NIKDY nevymýšľaj e-mail ani číslo. Meno osoby (ownerName) a jej rolu (ownerRole) NEURČUJ - vždy vráť null. Meno konateľa overujeme zvlášť v obchodnom registri; hádanie z textu webu vedie k zlému oslovovaniu.
 - ANALÝZA (summary): 2–4 vety, MAX ~80 slov. Posúď stručne to najdôležitejšie – vek/modernosť dizajnu, responzívnosť, rýchlosť, konverzné prvky (rezervácia, formulár, CTA), SEO, dôveryhodnosť. Konkrétne, žiadna vata.
 - PAIN: 1 najsilnejší pain point – čo to firmu reálne stojí (stratení klienti/rezervácie/tržby/dôvera/Google návštevnosť). Ak sa dá, naznač dopad – kvalitatívne (pozri pravidlo o číslach nižšie). Max ~50 slov.
 - OPPORTUNITY: 1 konkrétna vec, ktorú postavíme, + ako mu pomôže zarobiť/ušetriť. Hmatateľné a relevantné pre jeho typ podnikania. Max ~50 slov.
@@ -107,8 +114,8 @@ const DOSSIER_TOOL: Anthropic.Tool = {
   input_schema: {
     type: "object",
     properties: {
-      ownerName: { type: ["string", "null"], description: "Meno majiteľa/konateľa alebo null" },
-      ownerRole: { type: ["string", "null"], description: "Rola/pozícia alebo null" },
+      ownerName: { type: ["string", "null"], description: "VŽDY null - meno konateľa sa neurčuje z textu" },
+      ownerRole: { type: ["string", "null"], description: "VŽDY null" },
       email: { type: ["string", "null"], description: "Najlepší kontaktný e-mail z webu alebo null" },
       phone: { type: ["string", "null"], description: "Najlepší kontaktný telefón alebo null" },
       summary: { type: "string", description: "Úprimná hĺbková diagnóza webu (dizajn, optimalizácia, SEO, konverzie)" },
@@ -144,8 +151,9 @@ export async function generateDossier(f: DossierInput): Promise<LeadDossier> {
   const phone = d.phone && phonePool.has(digits(d.phone)) ? d.phone : (f.extractedPhones?.[0] ?? f.placesPhone ?? null);
 
   return {
-    ownerName: d.ownerName ?? null,
-    ownerRole: d.ownerRole ?? null,
+    // Meno osoby sa z dossieru zámerne NEPREBERÁ (overuje sa v registri).
+    ownerName: null,
+    ownerRole: null,
     email,
     phone,
     summary: d.summary ?? "",
@@ -160,8 +168,8 @@ const OUTREACH_SYSTEM = `KRITICKÉ PRAVIDLO — HODNOTENIE WEBU:
 NIKDY nehodnoť web ani fotky/vizuál pozitívne. NIKDY nepoužívaj frázy typu: "solidný záber", "slušný základ", "dobrý web", "pekný koncept", "príjemný web", "vyzerá dobre", "pôsobí príjemne", "má slušný základ", "pekné fotky".
 O webe píš IBA to, čo CHÝBA alebo NEFUNGUJE — konkrétny fakt, nie kompliment.
 
-KRITICKÉ PRAVIDLO — MENO KONTAKTU:
-Meno v "Konateľ/kontakt" použi PRESNE tak, ako je v dátach — aj keď vyzerá, že mu chýba diakritika (napr. "Gabris", "Zatecka"). NIKDY nedopĺňaj ani nehádaj diakritiku (nie "Gabriš", nie "Gabrís"). Meno bez diakritiky pôsobí neutrálne; nesprávne domyslená diakritika vyzerá ako preklep a prezradí automatizáciu presvedčivejšie než čokoľvek iné. Ak meno nepoznáš, nevymýšľaj ho — použi oslovenie bez mena podľa tabuľky nižšie.
+KRITICKÉ PRAVIDLO — OSLOVENIE A PODPIS PRIDÁVA SYSTÉM:
+Oslovenie ("Dobrý deň, pán ...") a podpis ("S pozdravom, Samuel Bibeň") do emailu vkladá systém sám — NEPÍŠ ich. Ty píšeš IBA odseky tela. Meno adresáta nepoznáš: nepoužívaj žiadne meno človeka, ani "pán/pani", ani slovo "konateľ" (ani ako oslovenie, ani ako označenie príjemcu). Firmu môžeš spomenúť názvom alebo doménou.
 
 KRITICKÉ PRAVIDLO — VYKANIE V SLOVENČINE:
 Pri vykaní sa používa množné číslo slovies aj zámen. Toto je najvyššia priorita.
@@ -195,7 +203,7 @@ PRÍKLADY ZLÉHO VYKANIA (NIKDY):
 
 Každú vetu pred dokončením emailu skontroluj: obsahuje sloveso pri "ste"? → musí byť množné číslo. Obsahuje zámeno Vy/Vás/Vám/Váš? → musí byť veľké.
 
-Si Samuel Bibeň, web developer z Nitry. Píšeš osobný cold email konateľovi/majiteľovi firmy. Vždy po slovensky.
+Si Samuel Bibeň, web developer z Nitry. Píšeš osobný cold email vedeniu firmy (majiteľovi/konateľovi), ale meno adresáta nepoznáš. Vždy po slovensky.
 
 KRITICKÉ — ROD PISATEĽA: Si MUŽ. O sebe píš VŽDY v mužskom rode: "pozrel som si", "prešiel som si", "uvedomil som si", "nadobudol som", "všimol som si", "rád by som". NIKDY ženské tvary ("pozrela", "prešla") — ani keď je príjemca žena.
 
@@ -218,10 +226,8 @@ ODSEK 3 — CTA: jedna nízko-záväzková otázka na názor/relevanciu (napr. "
 
 VZORY (dĺžka, tón a štruktúra — slovník a rámec faktu obmieňaj, nekopíruj doslovne):
 
-VZOR 1 - bežný segment:
+VZOR 1 - bežný segment (oslovenie a podpis pridá systém, ty píšeš len toto):
 Predmet: fyziocare.sk - rezervácie
-
-Dobrý deň, pán Novák,
 
 pri kontrole Vášho webu mi v pätičke vyskočil rok 2018 - fyzioterapia sa odvtedy predsa len niekam posunula.
 
@@ -229,13 +235,8 @@ Pre pacienta, ktorý si fyzioterapeuta vyberá podľa Google, to pôsobí ako d�
 
 Sedí Vám tento pohľad, alebo to vidíte inak?
 
-S pozdravom,
-Samuel Bibeň
-
-VZOR 2 - odborník/titul:
+VZOR 2 - odborník (advokát/lekár; formálnosť tónu riadi oslovenie, ktoré pridá systém):
 Predmet: akchocholousek.cz - kontakt online
-
-Vážený pán doktor Chocholoušek,
 
 na Vašom webe som nenašiel žiadny spôsob, ako Vás osloviť inak než telefonicky - ani formulár, ani priamy e-mail.
 
@@ -243,18 +244,7 @@ Klient, ktorý advokáta hľadá mimo pracovnej doby, sa v tej chvíli nemá ako
 
 Dáva Vám tento pohľad zmysel?
 
-S úctou,
-Samuel Bibeň
-
-OSLOVENIE S TITULOM:
-- JUDr./MUDr. → "Vážený pán doktor X," / "Vážená pani doktorka X,"
-- Ing./Mgr. → "Dobrý deň, pán Ing. X,"
-- Bez titulu → "Dobrý deň, pán X," / "Dobrý deň, pani Xová,"
-- Neznáme meno → "Dobrý deň," (nikdy nevymýšľaj meno len preto, aby oslovenie nebolo generické)
-
-PODPIS:
-- Bežné segmenty: "S pozdravom,"
-- Advokáti/lekári/akademici: "S úctou,"
+TÓN: prvý odsek začína rovno vetou (bez "Dobrý deň", bez mena) — oslovenie je nad ním. Formálnosť tónu prispôsob údaju "Tón oslovenia" v dátach (formálny = vecnejší a uctivejší, bežný = uvoľnenejší; vykanie platí vždy).
 
 VYKANIE: Vy, Vás, Vám, Váš, Vaše, Vašu, Vašej. Mali by ste (NIE Mal by ste), Mohli by ste (NIE Mohol by ste), Vedeli by ste (NIE Vedel by ste).
 
@@ -268,7 +258,6 @@ TVRDÝ BLOCKLIST — tieto frázy a vzory NIKDY nepoužiješ, bez výnimky:
 - "sme tím odborníkov/agentúra špecializujúca sa na..."
 - "v dnešnej dobe je dôležité mať moderný web"
 - "dovoľujeme si Vás osloviť"
-- generický pozdrav bez mena, keď je meno v dátach dostupné
 
 ĎALŠIE FRÁZY, KTORÝM SA VYHNI (rovnaký dôvod — znejú ako hromadný spam):
 "online prítomnosť", "digitálna prezentácia", "moderný web", "profesionálny web", "solidný záber", "slušný základ", "pekný koncept", "vyzerá dobre", "pôsobí príjemne", "chýba kontaktný formulár", "chýba rezervačný systém", "komplexný prístup", "naša spoločnosť", a akékoľvek POZITÍVNE hodnotenie WEBU.
@@ -329,7 +318,7 @@ function followupAddendum(type: FollowupType): string {
   const common = `
 
 --- REŽIM FOLLOWUP ---
-Toto je followup na už odoslaný cold email (firma bola oslovená). NEPRESKAKUJ segment - skipReason nechaj null. Dodrž vykanie a oslovenie s titulom ako v initial emaile. Predmet: "Re: " + pôvodný predmet (dostaneš ho v inštrukcii).
+Toto je followup na už odoslaný cold email (firma bola oslovená). NEPRESKAKUJ segment - skipReason nechaj null. Dodrž vykanie. Oslovenie a podpis pridá systém - nepíš ich. Predmet: "Re: " + pôvodný predmet (dostaneš ho v inštrukcii).
 Nižšie v dátach je sekcia "PREDCHÁDZAJÚCE EMAILY V TOMTO VLÁKNE" — každý krok MUSÍ priniesť INÝ fakt/uhol než tie predošlé, nikdy nie tú istú vetu inak sformulovanú. To je hlavný dôvod, prečo sekvencie followupov zvyčajne zlyhávajú.`;
 
   if (type === "followup1")
@@ -355,7 +344,7 @@ const BRIEF_ADDENDUM = `
 --- REŽIM: HOTOVÝ PODKLAD Z ANALÝZY ---
 V dátach je sekcia "HOTOVÝ PODKLAD Z ANALÝZY" (Kde firma stráca / Ako osloviť). Je to hotový vstup, ktorý už prešiel analýzou práve tejto firmy. NEODVODZUJ nezávisle vlastný dôsledok ani vlastný tón - postav email z neho:
 - ODSEK 2 (dôsledok) postav z "Kde firma stráca": zachovaj jeho vecný obsah, ale preformuluj ho do hlasu emailu (vykanie, 1 plynulá veta). Segmentové prispôsobenie vyššie použi IBA ak je "Kde firma stráca" prázdne (—).
-- TÓN A OSLOVENIE nastav podľa "Ako osloviť": formálny/odborný tón (odborník, titul, rešpekt) = formálny variant oslovenia z tabuľky ("Vážený pán/Vážená pani ...") a podpis "S úctou,"; vecný/bežný tón = "Dobrý deň, pán/pani ..." a podpis "S pozdravom,". Vykanie ostáva vždy, aj pri uvoľnenejšom tóne.
+- TÓN nastav podľa "Ako osloviť": formálny/odborný (odborník, titul, rešpekt) = vecnejší a uctivejší; vecný/bežný = uvoľnenejší. Oslovenie a podpis pridá systém - nepíš ich. Vykanie ostáva vždy, aj pri uvoľnenejšom tóne.
 - Podklad môže obsahovať frázy, ktoré sú v emaile ZAKÁZANÉ (napr. "moderný web", "profesionálny web", "online prítomnosť"). Nikdy ich neprevezmi doslova - pri preformulovaní ich nahraď vecným opisom (napr. "nový web s online objednávaním").
 - Z "Ako osloviť" preber IBA tón a spôsob oslovenia - nekopíruj z neho vety ani štruktúru. Ak podklad hodnotí web pozitívne, túto časť ignoruj (pravidlo o hodnotení webu má vždy prednosť).
 - NEPRIDÁVAJ NIČ NAD PODKLAD: nevymýšľaj tvrdenia o správaní firmy (napr. že nezdvíhajú telefón) ani mieru dopadu (napr. "väčšina klientov odíde", "polovica dopytov"). Drž sa miery z podkladu - ak tam je "časť klientov" alebo "niektorí", nepíš "väčšina".
@@ -363,15 +352,47 @@ V dátach je sekcia "HOTOVÝ PODKLAD Z ANALÝZY" (Kde firma stráca / Ako oslovi
 
 const OUTREACH_TOOL: Anthropic.Tool = {
   name: "uloz_email",
-  description: "Uloží predmet a telo cold emailu. Pre nevhodný segment nechaj subject aj body prázdne a vyplň skipReason.",
+  description: "Uloží predmet a odseky tela cold emailu (BEZ oslovenia a podpisu - tie pridá systém). Pre nevhodný segment nechaj subject aj paragraphs prázdne a vyplň skipReason.",
   input_schema: {
     type: "object",
     properties: {
       subject: { type: "string", description: "Predmet emailu — 2-4 slová, malými písmenami, obsahuje doménu/názov firmy alebo konkrétny nález. Nikdy 'ponuka'/'spolupráca'/'riešenie'. Prázdny reťazec, ak segment preskakuješ." },
-      body: { type: "string", description: "Telo emailu v plain texte: oslovenie; PRESNE 3 krátke odseky (fakt / dôsledok / mäkké CTA) pre initial email — pre followup pozri REŽIM FOLLOWUP; podpis (S pozdravom/S úctou + Samuel Bibeň). 50-100 slov tela pre initial email. Žiadne HTML. Prázdny reťazec, ak segment preskakuješ." },
+      paragraphs: {
+        type: "array",
+        items: { type: "string" },
+        description: "Odseky tela v poradí. Initial email: PRESNE 3 krátke odseky (fakt / dôsledok / mäkké CTA), spolu 50-100 slov. Followup: pozri REŽIM FOLLOWUP. BEZ oslovenia ('Dobrý deň'), BEZ podpisu, BEZ mena adresáta. Prázdne pole, ak segment preskakuješ.",
+      },
       skipReason: { type: ["string", "null"], description: "Ak segment nie je vhodný na cold outreach, dôvod; inak null." },
     },
-    required: ["subject", "body"],
+    required: ["subject", "paragraphs"],
+  } as Anthropic.Tool.InputSchema,
+};
+
+const PROOFREAD_SYSTEM = `Si jazykový redaktor slovenčiny a kontrolór kvality obchodných e-mailov. Dostaneš návrh cold emailu (predmet + odseky) a DÁTA O FIRME, z ktorých smel autor čerpať. Skontroluj a oprav:
+
+1. PRAVOPIS A GRAMATIKA: y/i po tvrdých a mäkkých spoluhláskach, ľ/l, ä/e, ô, mäkčene, veľké písmená, skloňovanie a pády, zhoda podmetu s prísudkom, predložkové väzby, čiarky (pred že, ktorý, aby, keď, pretože…), rod a číslo.
+2. VYKANIE: pri "Vy" množné číslo slovies a príčastí ("Mali by ste", "Boli ste", "Ste presvedčení"), zámená Vy/Vás/Vám/Váš/Vaše/Vašu/Vašej/Vašich VŽDY s veľkým začiatočným písmenom.
+3. ŠTYLISTIKA: prirodzená, správna slovenčina; žiadne kalky z češtiny alebo angličtiny ("vzhľadom k", "web stránka", "zdá se"), žiadne nemotorné alebo strojové obraty; správna terminológia (webová stránka, rezervácia, objednávanie, mobilné zariadenia). Pisateľ je MUŽ ("pozrel som", "všimol som si").
+4. PRAVDIVOSŤ: každé tvrdenie o firme/webe musí vyplývať z DÁT; nič nesmie byť vymyslené, zveličené ani zosilnené (ak dáta hovoria "časť klientov", nesmie tam byť "väčšina"). Čísla, percentá a sumy mimo dát sú zakázané (povolený je iba rok z pätičky webu).
+5. Pomlčky: iba obyčajná "-", nikdy — ani –.
+
+PRAVIDLÁ ÚPRAV: Oprav MINIMÁLNE. Zachovaj počet odsekov, zmysel, tón a približnú dĺžku. Nepridávaj oslovenie ani podpis ani meno adresáta. Nepridávaj nové fakty. Ak je text v poriadku, vráť verdikt "ok" a text nezmeň.
+Ak sa problém nedá opraviť bez prepísania emailu (nepravdivé/vymyslené tvrdenie, nezrozumiteľný text), vráť verdikt "reject" a v "problems" stručne uveď dôvod.
+
+Výsledok vlož VÝHRADNE cez nástroj "uloz_korekturu".`;
+
+const PROOFREAD_TOOL: Anthropic.Tool = {
+  name: "uloz_korekturu",
+  description: "Uloží výsledok korektúry emailu.",
+  input_schema: {
+    type: "object",
+    properties: {
+      verdict: { type: "string", enum: ["ok", "fixed", "reject"], description: "ok = bez zmien, fixed = opravené, reject = nedá sa opraviť bez prepísania" },
+      subject: { type: "string", description: "Predmet (opravený alebo pôvodný)" },
+      paragraphs: { type: "array", items: { type: "string" }, description: "Odseky (opravené alebo pôvodné), rovnaký počet ako na vstupe" },
+      problems: { type: "array", items: { type: "string" }, description: "Zistené problémy (aj tie, čo sa opravili) - stručne" },
+    },
+    required: ["verdict", "subject", "paragraphs", "problems"],
   } as Anthropic.Tool.InputSchema,
 };
 
@@ -379,6 +400,14 @@ export interface OutreachEmail {
   subject: string;
   body: string;
   skipReason: string | null; // set when the segment isn't worth cold-emailing
+}
+
+/** Mail neprešiel kontrolou kvality ani po opakovaných pokusoch — NESMIE sa uložiť ani odoslať. */
+export class EmailQualityError extends Error {
+  constructor(public readonly issues: string[]) {
+    super(`Email nespĺňa kontrolu kvality: ${issues.slice(0, 3).join("; ")}`);
+    this.name = "EmailQualityError";
+  }
 }
 
 /** One earlier e-mail in the same thread, for the "don't repeat this" context. */
@@ -395,7 +424,41 @@ const THREAD_LABEL: Record<string, string> = {
   followup3: "FOLLOWUP 3",
 };
 
-/** Generate an initial cold email or a follow-up as { subject, body }. */
+// Segmenty, kde sa píše formálne ("S úctou") aj bez titulu v mene.
+const FORMAL_SEGMENT_RE = /advok|notár|lekár|zubn|doktor|ordinác|akadem|právn|exekút|súdn/i;
+
+function textFrom(msg: Anthropic.Message): string {
+  return msg.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+}
+
+/** Skladá finálny plain-text mail: oslovenie (z kódu) + odseky + [booking] + podpis. */
+function assembleBody(opts: {
+  greeting: string;
+  paragraphs: string[];
+  signoff: string;
+  bookingLine?: string;
+}): string {
+  return [
+    opts.greeting,
+    ...opts.paragraphs.map((p) => p.trim()),
+    ...(opts.bookingLine ? [opts.bookingLine] : []),
+    `${opts.signoff}\nSamuel Bibeň`,
+  ].join("\n\n");
+}
+
+/**
+ * Generate an initial cold email or a follow-up as { subject, body }.
+ *
+ * Postup: (1) model napíše LEN odseky (oslovenie a podpis skladá kód z OVERENÉHO
+ * mena — nikdy z odhadu modelu), (2) deterministická kontrola pravidiel
+ * (vykanie, zakázané frázy, čísla, dĺžka…), (3) AI jazykový korektor, (4) znova
+ * kontrola. Pri chybe sa model pokúsi znova s konkrétnou spätnou väzbou (max. 3
+ * pokusy); ak ani potom mail nesedí, vyhodí EmailQualityError — zlý mail sa
+ * nikdy neuloží.
+ */
 export async function generateOutreachEmail(input: {
   lead: Lead;
   segmentName: string;
@@ -405,6 +468,11 @@ export async function generateOutreachEmail(input: {
 }): Promise<OutreachEmail> {
   const { lead, segmentName, type } = input;
   const previousEmails = input.previousEmails ?? [];
+
+  // Oslovenie: meno sa použije LEN ak je overené (register/web/ručne).
+  const greeting = buildGreeting(greetableOwnerName(lead));
+  const formal = greeting.formal || FORMAL_SEGMENT_RE.test(segmentName);
+  const signoff = formal ? "S úctou," : "S pozdravom,";
 
   // Initial email of a lead that already has an AI brief → the brief drives
   // ODSEK 2 (dôsledok) a tón; ODSEK 1 (fakt) sa riadi vždy tou istou prioritou.
@@ -428,12 +496,13 @@ Pain point: ${lead.aiPainPoint ?? "—"}`;
         .join("\n\n")}`
     : "";
 
+  // Meno adresáta MODEL NEDOSTÁVA (oslovenie robí kód) — nemá ako ho použiť zle.
   const facts = `DÁTA O FIRME (použi konkrétne, nevymýšľaj; surové skóre/čísla z analýzy necituj):
 Firma: ${lead.companyName}
 Segment (odvetvie): ${segmentName}
 Web: ${lead.websiteUrl ?? "—"}
 Mesto: ${lead.companyCity ?? "—"}
-Konateľ/kontakt: ${lead.ownerName ?? "neznámy"}${lead.ownerPosition ? ` (${lead.ownerPosition})` : ""}
+Tón oslovenia: ${formal ? "formálny (odborník / uctivý tón)" : "bežný (vecný, priateľský, stále vykanie)"}
 Rok v pätičke webu (copyright): ${lead.copyrightYear ?? "—"}
 PageSpeed mobil: ${lead.pageSpeedMobile != null ? `${lead.pageSpeedMobile}/100` : "—"}
 Vizuálny dojem (AI): ${lead.aiVisualReason ?? "—"}
@@ -444,37 +513,119 @@ Zhrnutie stavu webu: ${lead.aiSummary ?? "—"}${threadBlock}`;
   const initialSubject = previousEmails[0]?.subject || lead.companyName;
   const instruction =
     type === "initial"
-      ? "Napíš PRVÝ (initial) cold email podľa štruktúry a pravidiel."
-      : `Napíš ${THREAD_LABEL[type]}. Predmet: "Re: ${initialSubject.replace(/^\s*(re\s*:\s*)+/i, "").trim()}".`;
+      ? "Napíš PRVÝ (initial) cold email podľa štruktúry a pravidiel. Nepíš oslovenie ani podpis."
+      : `Napíš ${THREAD_LABEL[type]} (len odseky, bez oslovenia a podpisu). Predmet: "Re: ${initialSubject.replace(/^\s*(re\s*:\s*)+/i, "").trim()}".`;
 
-  // Optional booking link (initial emails only) — appended just before the sign-off.
+  // Optional booking link (initial emails only) — appended by code before the sign-off.
   const bookingLink = process.env.BOOKING_LINK?.trim();
-  const bookingRule =
+  const bookingLine =
     type === "initial" && bookingLink
-      ? `\n\nBOOKING LINK — na koniec emailu, PRED podpisom ("S pozdravom,"/"S úctou,"), pridaj na samostatný riadok presne:\n"Prípadne si môžete vybrať termín priamo tu: ${bookingLink}"`
-      : "";
+      ? `Prípadne si môžete vybrať termín priamo tu: ${bookingLink}`
+      : undefined;
 
   const system =
-    (type === "initial"
+    type === "initial"
       ? OUTREACH_SYSTEM + (useBrief ? BRIEF_ADDENDUM : "")
-      : OUTREACH_SYSTEM + followupAddendum(type)) + bookingRule;
+      : OUTREACH_SYSTEM + followupAddendum(type);
 
   const client = new Anthropic();
-  const msg = await client.messages.create({
-    model: MODEL,
-    max_tokens: 700,
-    system,
-    tools: [OUTREACH_TOOL],
-    tool_choice: { type: "tool", name: "uloz_email" },
-    messages: [{ role: "user", content: `${facts}\n\n${instruction}` }],
-  });
-  const block = msg.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-  const d = (block?.input ?? {}) as Partial<OutreachEmail>;
-  return {
-    subject: (d.subject ?? "").trim().slice(0, 120),
-    body: (d.body ?? "").trim(),
-    skipReason: d.skipReason ? String(d.skipReason).trim() : null,
-  };
+  const MAX_ATTEMPTS = 3;
+  let feedback: string[] = [];
+  let lastIssues: string[] = [];
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const retryNote = feedback.length
+      ? `\n\nPREDCHÁDZAJÚCI POKUS BOL ZAMIETNUTÝ z týchto dôvodov - oprav ich a dodrž VŠETKY pravidlá:\n${feedback.map((f) => `- ${f}`).join("\n")}`
+      : "";
+
+    // 1) písanie
+    const msg = await client.messages.create({
+      model: WRITER_MODEL,
+      max_tokens: 800,
+      temperature: 0.6,
+      system,
+      tools: [OUTREACH_TOOL],
+      tool_choice: { type: "tool", name: "uloz_email" },
+      messages: [{ role: "user", content: `${facts}\n\n${instruction}${retryNote}` }],
+    });
+    const block = msg.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+    const d = (block?.input ?? {}) as {
+      subject?: string;
+      paragraphs?: unknown;
+      skipReason?: string | null;
+    };
+    if (d.skipReason)
+      return { subject: "", body: "", skipReason: String(d.skipReason).trim() };
+
+    let subject = (d.subject ?? "").trim().slice(0, 120);
+    let paragraphs = Array.isArray(d.paragraphs)
+      ? d.paragraphs.map((p) => String(p).trim()).filter(Boolean)
+      : [];
+
+    const lint = (subj: string, paras: string[]) =>
+      lintEmail({ kind: type, subject: subj, paragraphs: paras, copyrightYear: lead.copyrightYear });
+
+    // 2) tvrdé pravidlá
+    let res = lint(subject, paragraphs);
+    if (res.errors.length) {
+      lastIssues = res.errors;
+      feedback = res.errors;
+      continue;
+    }
+
+    // 3) jazyková korektúra (AI, temperature 0)
+    const proof = await client.messages.create({
+      model: PROOF_MODEL,
+      max_tokens: 900,
+      temperature: 0,
+      system: PROOFREAD_SYSTEM,
+      tools: [PROOFREAD_TOOL],
+      tool_choice: { type: "tool", name: "uloz_korekturu" },
+      messages: [
+        {
+          role: "user",
+          content: `DÁTA O FIRME:\n${facts}\n\nNÁVRH EMAILU:\nPredmet: ${subject}\n\n${paragraphs.map((p, i) => `Odsek ${i + 1}: ${p}`).join("\n\n")}`,
+        },
+      ],
+    });
+    const pb = proof.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+    const pd = (pb?.input ?? {}) as {
+      verdict?: string;
+      subject?: string;
+      paragraphs?: unknown;
+      problems?: unknown;
+    };
+    const problems = Array.isArray(pd.problems) ? pd.problems.map(String) : [];
+    if (pd.verdict === "reject") {
+      lastIssues = problems.length ? problems : ["korektor mail zamietol"];
+      feedback = lastIssues;
+      continue;
+    }
+    if (pd.verdict === "fixed" && Array.isArray(pd.paragraphs)) {
+      const fixedParas = pd.paragraphs.map((p) => String(p).trim()).filter(Boolean);
+      // Korektor nesmie meniť štruktúru (počet odsekov).
+      if (fixedParas.length === paragraphs.length) {
+        paragraphs = fixedParas;
+        if (type === "initial" && pd.subject?.trim()) subject = pd.subject.trim().slice(0, 120);
+      }
+    }
+
+    // 4) po korektúre znova tvrdé pravidlá
+    res = lint(subject, paragraphs);
+    if (res.errors.length) {
+      lastIssues = res.errors;
+      feedback = res.errors;
+      continue;
+    }
+
+    return {
+      subject,
+      body: assembleBody({ greeting: greeting.line, paragraphs, signoff, bookingLine }),
+      skipReason: null,
+    };
+  }
+
+  throw new EmailQualityError(lastIssues);
 }
 
 /** Back-compat for the lead detail page: returns "Predmet: …\\n\\n<body>". */

@@ -28,6 +28,7 @@ import {
   Sparkles,
   EyeOff,
   RotateCw,
+  ShieldCheck,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -53,6 +54,7 @@ import {
   subscribeAnalysisRun,
 } from "@/lib/leads/analysis-runner";
 import { AnalysisProgress } from "@/components/leads/AnalysisProgress";
+import { isVerifiedOwnerSource, OWNER_SOURCE_LABEL } from "@/lib/leads/owner-source";
 
 type StatusFilter = LeadStatus | "all";
 
@@ -63,6 +65,8 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: "contacted", label: "Oslovení" },
   { value: "responded", label: "Reagovali" },
   { value: "all", label: "Všetci" },
+  // Automaticky skryté (web v poriadku) aj ručne zamietnuté — dajú sa odtiaľ vrátiť.
+  { value: "rejected", label: "Skryté" },
 ];
 
 /** Krátky dátum, napr. „14. 7.". */
@@ -115,7 +119,15 @@ export default function LeadsPage() {
   const [segment, setSegment] = useState("all");
   const [status, setStatus] = useState<StatusFilter>("new");
   const [region, setRegion] = useState("all");
-  const [quality, setQuality] = useState("all"); // all | bad | good | unscored
+  // Predvolene len leady VHODNÉ na oslovenie (nemieša sa s hraničnými ani s
+  // webmi v poriadku). Ostatné skupiny sú v tom istom výbere s počtami.
+  const [quality, setQuality] = useState("bad"); // all | bad | borderline | good | unscored
+  const [qualityCounts, setQualityCounts] = useState<{
+    bad: number;
+    borderline: number;
+    good: number;
+    unscored: number;
+  } | null>(null);
   const [regions, setRegions] = useState<
     { region: string | null; count: number }[]
   >([]);
@@ -191,24 +203,29 @@ export default function LeadsPage() {
     loadSegments();
   }, [loadSegments]);
 
+  // Filter kvality webu sa týka len leadov, ktoré ešte nikto neoslovil — oslovené,
+  // reagujúce a skryté leady sa vždy ukážu všetky.
+  const qualityApplies = status === "new" || status === "all";
+
   const loadLeads = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/leads?segment=${encodeURIComponent(segment)}&status=${status}&region=${encodeURIComponent(region)}&quality=${quality}`,
+        `/api/leads?segment=${encodeURIComponent(segment)}&status=${status}&region=${encodeURIComponent(region)}&quality=${qualityApplies ? quality : "all"}`,
       );
       const j = await res.json();
       setLeads(j.leads ?? []);
       setTotal(j.total ?? 0);
       setRegions(j.regions ?? []);
       setContactedCount(j.contactedCount ?? 0);
+      setQualityCounts(j.qualityCounts ?? null);
     } catch {
       setLeads([]);
       setTotal(0);
     } finally {
       setLoading(false);
     }
-  }, [segment, status, region, quality]);
+  }, [segment, status, region, quality, qualityApplies]);
 
   useEffect(() => {
     loadLeads();
@@ -551,25 +568,29 @@ export default function LeadsPage() {
               </button>
             )}
 
-            {/* Filter podľa kvality webu (skóre zastaralosti) */}
-            <Select value={quality} onValueChange={setQuality}>
-              <SelectTrigger className="h-9 w-[220px]">
-                <SelectValue placeholder="Kvalita webu" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Všetky weby</SelectItem>
-                <SelectItem value="bad">
-                  Vhodné na oslovenie (skóre ≥ {QUALIFY_AT})
-                </SelectItem>
-                <SelectItem value="borderline">
-                  Hraničné — pozri ručne ({BORDERLINE_AT}–{QUALIFY_AT - 1})
-                </SelectItem>
-                <SelectItem value="good">
-                  Web v poriadku (&lt; {BORDERLINE_AT})
-                </SelectItem>
-                <SelectItem value="unscored">Bez skóre / nezanalyzované</SelectItem>
-              </SelectContent>
-            </Select>
+            {/* Filter podľa kvality webu (skóre zastaralosti) — len pre neoslovených */}
+            {qualityApplies && (
+              <Select value={quality} onValueChange={setQuality}>
+                <SelectTrigger className="h-9 w-[270px]">
+                  <SelectValue placeholder="Kvalita webu" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bad">
+                    Vhodné na oslovenie (≥ {QUALIFY_AT}){qualityCounts ? ` · ${qualityCounts.bad}` : ""}
+                  </SelectItem>
+                  <SelectItem value="borderline">
+                    Hraničné - pozri ručne ({BORDERLINE_AT}–{QUALIFY_AT - 1}){qualityCounts ? ` · ${qualityCounts.borderline}` : ""}
+                  </SelectItem>
+                  <SelectItem value="unscored">
+                    Bez skóre / nezanalyzované{qualityCounts ? ` · ${qualityCounts.unscored}` : ""}
+                  </SelectItem>
+                  <SelectItem value="good">
+                    Web v poriadku (&lt; {BORDERLINE_AT}){qualityCounts ? ` · ${qualityCounts.good}` : ""}
+                  </SelectItem>
+                  <SelectItem value="all">Všetky weby</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
 
             {/* Hromadné skrytie „dobrých webov" — len keď je na ne nastavený filter */}
             {quality === "good" && leads.length > 0 && (
@@ -679,6 +700,21 @@ export default function LeadsPage() {
                         <User className="h-3 w-3" />
                         {l.ownerName}
                         {l.ownerPosition ? ` · ${l.ownerPosition}` : ""}
+                        {isVerifiedOwnerSource(l.ownerSource) ? (
+                          <span
+                            title={`Meno ${OWNER_SOURCE_LABEL[l.ownerSource]}`}
+                            className="inline-flex text-success"
+                          >
+                            <ShieldCheck className="h-3 w-3" />
+                          </span>
+                        ) : (
+                          <span
+                            title="Meno nie je overené - v maile sa nepoužije, oslovenie bude „Dobrý deň,“"
+                            className="text-[10px] text-warning"
+                          >
+                            neoverené
+                          </span>
+                        )}
                       </p>
                     )}
                     {l.companyPhone && (

@@ -2,6 +2,8 @@
 // Čistá logika (bez DB) — parsovanie, mapovanie stĺpcov a určenie segmentu.
 // DB zápis rieši app/api/leads/import-csv/route.ts.
 
+import { fixMojibake } from "./text-repair";
+
 /** Zistí oddeľovač: TrustedLeads export je tab-separated, ale ak by prišiel
  *  klasický CSV (čiarky), zvládneme aj to. Rozhodujeme podľa hlavičky. */
 function detectDelimiter(text: string): string {
@@ -110,15 +112,18 @@ const clean = (v: string): string | null => (v.trim() ? v.trim() : null);
 export function mapRow(header: string[], cells: string[]): ParsedLead | null {
   const get = makeGetter(header, cells);
 
-  const companyName = get("Company Name").trim();
+  const companyName = fixMojibake(get("Company Name")).trim();
   if (!companyName) return null; // (a) bez názvu firmy preskočíme
 
   const websiteUrl = normalizeUrl(get("Website"));
   if (!websiteUrl) return null; // (b) bez webu nevieme analyzovať
 
   const ownerName =
-    [get("First Name"), get("Last Name")].filter(Boolean).join(" ").trim() ||
-    null;
+    [get("First Name"), get("Last Name")]
+      .map((v) => fixMojibake(v))
+      .filter(Boolean)
+      .join(" ")
+      .trim() || null;
 
   const email = get("Email").toLowerCase();
 
@@ -128,8 +133,9 @@ export function mapRow(header: string[], cells: string[]): ParsedLead | null {
     companyPhone: clean(get("Company Phone")),
     websiteUrl,
     ownerName,
-    ownerPosition: clean(get("Title")),
-    companyCity: clean(get("Company City")) ?? clean(get("City")),
+    ownerPosition: clean(fixMojibake(get("Title"))),
+    companyCity:
+      clean(fixMojibake(get("Company City"))) ?? clean(fixMojibake(get("City"))),
     stateRaw: clean(get("Company State")) ?? clean(get("State")),
     country: clean(get("Company Country")) ?? clean(get("Country")),
     industry: get("Industry"),
