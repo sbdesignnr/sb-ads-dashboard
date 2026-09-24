@@ -61,7 +61,8 @@ export async function POST(
         : out.subject;
     const updated = await prisma.leadEmail.update({
       where: { id },
-      data: { subject, body: out.body },
+      // createdAt = teraz: znovu vygenerovaný koncept sa nesmie tváriť ako ručne upravený.
+      data: { subject, body: out.body, createdAt: new Date() },
       include: { lead: { include: { segment: { select: { name: true } } } } },
     });
     return NextResponse.json({ email: serializeLeadEmail(updated) });

@@ -1,3 +1,4 @@
+import { isEditedByHand, isLegacyDraft } from "./draft-state";
 import type {
   Lead,
   LeadSegment,
@@ -81,6 +82,9 @@ type LeadLite = Pick<
   | "ico"
   | "country"
   | "region"
+  | "websiteScore"
+  | "ownerSource"
+  | "status"
 > & {
   segment?: { name: string } | null;
 };
@@ -116,6 +120,11 @@ export function serializeLeadEmail(
     clickCount: e.clickCount,
     repliedAt: iso(e.repliedAt),
     createdAt: e.createdAt.toISOString(),
+    leadScore: e.lead?.websiteScore ?? null,
+    leadStatus: e.lead?.status ?? null,
+    ownerSource: e.lead?.ownerSource ?? null,
+    edited: isEditedByHand(e),
+    legacy: isLegacyDraft(e),
   };
 }
 

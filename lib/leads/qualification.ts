@@ -36,6 +36,13 @@ export const BORDERLINE_AT = 16;
  */
 export const ANALYSIS_CURRENT_SINCE = "2026-09-24T09:00:00.000Z";
 
+/**
+ * Kedy sa nasadil nový generátor mailov (oslovenie z overeného mena, kontrola kvality,
+ * jazyková korektúra). Neupravené koncepty, ktoré vznikli PRED týmto časom, sú
+ * "staré" — dajú sa hromadne prepísať novým generátorom.
+ */
+export const EMAIL_PIPELINE_SINCE = "2026-09-24T11:42:00.000Z";
+
 export type ScoreTier = "qualified" | "borderline" | "good" | "unscored";
 
 export function scoreTier(score: number | null | undefined): ScoreTier {

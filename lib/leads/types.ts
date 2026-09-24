@@ -103,6 +103,15 @@ export interface LeadEmailDTO {
   clickCount: number;
   repliedAt: string | null;
   createdAt: string;
+  /** Aktuálne skóre webu leadu (null = bez skóre) — podľa neho fronta rozlišuje vhodné/nevhodné koncepty. */
+  leadScore: number | null;
+  leadStatus: string | null;
+  /** registry | website | manual = overené meno; null = neoverené. */
+  ownerSource: string | null;
+  /** Koncept upravil človek (nikdy sa automaticky nemaže ani neprepisuje). */
+  edited: boolean;
+  /** Neupravený koncept starého generátora (pred kontrolou kvality a overovaním mien). */
+  legacy: boolean;
 }
 
 export interface CampaignDTO {

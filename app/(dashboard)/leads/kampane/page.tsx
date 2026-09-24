@@ -37,8 +37,10 @@ import {
 import { cn } from "@/lib/utils";
 import { TemplateBar } from "@/components/leads/TemplateBar";
 import { OwnerCheckPanel } from "@/components/leads/OwnerCheckPanel";
+import { QueueHealthPanel } from "@/components/leads/QueueHealthPanel";
 import { registerLink } from "@/lib/leads/registers";
-import { QUALIFY_AT } from "@/lib/leads/qualification";
+import { QUALIFY_AT, scoreTier } from "@/lib/leads/qualification";
+import { isVerifiedOwnerSource } from "@/lib/leads/owner-source";
 import { type EmailTemplateDTO } from "@/lib/leads/templates";
 import {
   type LeadEmailDTO,
@@ -218,6 +220,9 @@ export default function CampaignsPage() {
   const [templateId, setTemplateId] = useState("__ai__");
 
   const [queue, setQueue] = useState<LeadEmailDTO[]>([]);
+  // Fronta predvolene ukazuje len koncepty pre VHODNÉ leady (aktuálne skóre), aby sa
+  // nemiešali s konceptmi, ktoré vznikli pred novým skórovaním.
+  const [queueView, setQueueView] = useState<"suitable" | "unsuitable" | "all">("suitable");
   const [followups, setFollowups] = useState<LeadEmailDTO[]>([]);
   const [approved, setApproved] = useState<LeadEmailDTO[]>([]);
   const [sent, setSent] = useState<LeadEmailDTO[]>([]);
@@ -461,7 +466,21 @@ export default function CampaignsPage() {
     }
   };
 
+  // Poistka: koncept pre lead, ktorý podľa aktuálneho skóre nie je vhodný, sa nesmie
+  // schváliť/odoslať omylom.
+  const confirmUnsuitable = (emails: LeadEmailDTO[]): boolean => {
+    const bad = emails.filter(
+      (e) => e.emailType === "initial" && !isSuitable(e),
+    );
+    if (!bad.length) return true;
+    return confirm(
+      `${bad.length === 1 ? "Tento lead nie je" : `${bad.length} leadov nie je`} podľa aktuálneho skóre vhodných na oslovenie ` +
+        `(${bad.slice(0, 3).map((e) => `${e.companyName}: ${e.leadScore ?? "bez skóre"}`).join(", ")}${bad.length > 3 ? "…" : ""}). Naozaj pokračovať?`,
+    );
+  };
+
   const act = async (email: LeadEmailDTO, action: "approve" | "reject") => {
+    if (action === "approve" && !confirmUnsuitable([email])) return;
     setBusyId(email.id);
     try {
       await fetch(`/api/leads/emails/${email.id}/${action}`, {
@@ -500,6 +519,7 @@ export default function CampaignsPage() {
   };
 
   const sendNow = async (email: LeadEmailDTO) => {
+    if (!confirmUnsuitable([email])) return;
     setBusyId(email.id);
     try {
       const j = await fetch(`/api/leads/emails/${email.id}/send`, {
@@ -540,6 +560,7 @@ export default function CampaignsPage() {
   const bulkApprove = async () => {
     const ids = [...selected];
     if (!ids.length) return;
+    if (!confirmUnsuitable(queue.filter((e) => selected.has(e.id)))) return;
     await fetch("/api/leads/emails/bulk-approve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -565,9 +586,19 @@ export default function CampaignsPage() {
     loadCampaigns();
   };
 
-  const allSelected = queue.length > 0 && selected.size === queue.length;
+  const isSuitable = (e: LeadEmailDTO) =>
+    scoreTier(e.leadScore) === "qualified" && e.leadStatus !== "rejected";
+  const suitableCount = queue.filter(isSuitable).length;
+  const visibleQueue =
+    queueView === "all"
+      ? queue
+      : queueView === "suitable"
+        ? queue.filter(isSuitable)
+        : queue.filter((e) => !isSuitable(e));
+  const allSelected =
+    visibleQueue.length > 0 && visibleQueue.every((e) => selected.has(e.id));
   const toggleAll = () =>
-    setSelected(allSelected ? new Set() : new Set(queue.map((e) => e.id)));
+    setSelected(allSelected ? new Set() : new Set(visibleQueue.map((e) => e.id)));
   const toggleOne = (id: string) =>
     setSelected((s) => {
       const n = new Set(s);
@@ -861,6 +892,9 @@ export default function CampaignsPage() {
         </CardContent>
       </Card>
 
+      {/* Fronta vs. vhodné leady: čo je správne, čo je zastarané. */}
+      <QueueHealthPanel segmentId={segmentId} onChanged={loadQueues} />
+
       {/* Overenie konateľa v registri + oprava osloveniev v konceptoch. */}
       <OwnerCheckPanel segmentId={segmentId} onChanged={loadQueues} />
 
@@ -922,7 +956,8 @@ export default function CampaignsPage() {
         <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
           <CardTitle className="flex items-center gap-2">
             <Inbox className="h-4 w-4 text-muted" />
-            Fronta emailov ({queue.length})
+            Fronta emailov ({visibleQueue.length}
+            {queueView !== "all" && visibleQueue.length !== queue.length ? ` z ${queue.length}` : ""})
           </CardTitle>
           {selected.size > 0 && (
             <div className="flex items-center gap-2">
@@ -943,15 +978,41 @@ export default function CampaignsPage() {
           )}
         </CardHeader>
         <CardContent>
+          {/* Filter: vhodné leady (predvolené) / nevhodné / všetky */}
+          {queue.length > 0 && (
+            <div className="mb-3 flex flex-wrap items-center gap-1.5 text-xs">
+              {(
+                [
+                  ["suitable", `Vhodné leady (${suitableCount})`],
+                  ["unsuitable", `Už nevhodné leady (${queue.length - suitableCount})`],
+                  ["all", `Všetky (${queue.length})`],
+                ] as const
+              ).map(([v, label]) => (
+                <button
+                  key={v}
+                  onClick={() => setQueueView(v)}
+                  className={cn(
+                    "rounded-full border px-3 py-1 transition-colors",
+                    queueView === v
+                      ? "border-primary/50 bg-primary/10 text-primary"
+                      : "border-border bg-surface text-muted hover:text-foreground",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
               Načítavam…
             </div>
-          ) : queue.length === 0 ? (
+          ) : visibleQueue.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted">
-              Žiadne emaily na schválenie. Klikni „Načítať emaily na
-              schválenie".
+              {queue.length > 0 && queueView === "suitable"
+                ? `Žiadne koncepty pre vhodné leady. ${queue.length} konceptov je pre leady, ktoré už nie sú vhodné - pozri panel vyššie.`
+                : "Žiadne emaily na schválenie. Klikni „Načítať emaily na schválenie“."}
             </p>
           ) : (
             <div className="space-y-1">
@@ -964,7 +1025,7 @@ export default function CampaignsPage() {
                 />
                 Vybrať všetky
               </div>
-              {queue.map((e) => (
+              {visibleQueue.map((e) => (
                 <EmailRow
                   key={e.id}
                   email={e}
@@ -1329,6 +1390,51 @@ function EmailRow({
             </span>
           )}
           {!email.companyEmail && <Badge variant="danger">Chýba email</Badge>}
+          {email.emailType === "initial" && email.leadStatus === "new" && (
+            <>
+              {(() => {
+                const tier = scoreTier(email.leadScore);
+                const label =
+                  tier === "qualified"
+                    ? `vhodný · skóre ${email.leadScore}`
+                    : tier === "borderline"
+                      ? `hraničný · skóre ${email.leadScore}`
+                      : tier === "good"
+                        ? `web v poriadku · skóre ${email.leadScore}`
+                        : "bez skóre";
+                return (
+                  <Badge
+                    variant={
+                      tier === "qualified"
+                        ? "success"
+                        : tier === "borderline"
+                          ? "warning"
+                          : "danger"
+                    }
+                  >
+                    {label}
+                  </Badge>
+                );
+              })()}
+              {isVerifiedOwnerSource(email.ownerSource) ? (
+                <span className="shrink-0 text-[11px] text-success" title="Meno v oslovení je overené">
+                  ✓ meno overené
+                </span>
+              ) : (
+                <span className="shrink-0 text-[11px] text-muted" title="Meno nie je overené - oslovenie bez mena">
+                  oslovenie bez mena
+                </span>
+              )}
+              {email.legacy && (
+                <span
+                  className="shrink-0 rounded bg-warning/15 px-1.5 py-0.5 text-[11px] text-warning"
+                  title="Vznikol starým generátorom (bez kontroly kvality a overenia mena) - prepíš ho tlačidlom v paneli vyššie"
+                >
+                  starý koncept
+                </span>
+              )}
+            </>
+          )}
         </div>
         <p className="truncate text-xs text-foreground/80">
           {email.subject || "—"}
