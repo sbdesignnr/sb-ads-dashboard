@@ -46,6 +46,15 @@
     },
     "app/api/leads/scan/route.ts": {
       "memory": 2048
+    },
+    "app/api/agents/mockup/route.ts": {
+      "memory": 2048
+    },
+    "app/api/agents/research/route.ts": {
+      "memory": 2048
+    },
+    "app/api/cron/agents-night/route.ts": {
+      "memory": 2048
     }
   }
 }

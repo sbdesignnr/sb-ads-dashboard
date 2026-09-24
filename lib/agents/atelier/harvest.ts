@@ -10,6 +10,8 @@ export interface HarvestedImage {
   h: number;
   alt: string;
   bytes: number;
+  /** foto = skutočná fotografia; logo = logo/odznak/ilustrácia (nepoužíva sa ako fotka) */
+  kind: "foto" | "logo";
 }
 
 export interface SiteAssets {
@@ -21,6 +23,8 @@ export interface SiteAssets {
   logo: string | null;
   ogImage: string | null;
   images: HarvestedImage[];
+  /** loga a odznaky nájdené na webe (nie fotky) */
+  logos: HarvestedImage[];
   /** farby značky zoradené podľa výskytu (hex), bez šedých */
   colors: string[];
   themeColor: string | null;
@@ -78,7 +82,9 @@ async function probeImage(url: string, referer: string): Promise<HarvestedImage 
     if (buf.length < 4000 || buf.length > 6_000_000) return null;
     const meta = await sharp(buf).metadata();
     if (!meta.width || !meta.height) return null;
-    return { url, w: meta.width, h: meta.height, alt: "", bytes: buf.length };
+    // logo/odznak: priehľadné pozadie alebo takmer štvorec menší než fotka
+    const logoLike = Boolean(meta.hasAlpha) || (meta.width <= 900 && Math.abs(meta.width / meta.height - 1) < 0.22);
+    return { url, w: meta.width, h: meta.height, alt: "", bytes: buf.length, kind: logoLike ? "logo" : "foto" };
   } catch {
     return null;
   }
@@ -164,8 +170,9 @@ export async function harvestSite(url: string): Promise<SiteAssets | null> {
   )
     .filter((x): x is HarvestedImage => Boolean(x))
     .filter((x) => x.w >= 480 && x.h >= 260)
-    .sort((a, b) => b.w * b.h - a.w * a.h)
-    .slice(0, 10);
+    .sort((a, b) => b.w * b.h - a.w * a.h);
+  const photos = probed.filter((x) => x.kind === "foto").slice(0, 10);
+  const logos = probed.filter((x) => x.kind === "logo").slice(0, 3);
 
   // farby: z CSS (najčastejšie sýte hex) + z loga
   const cssUrls = $('link[rel="stylesheet"]').map((_, el) => abs(base, $(el).attr("href"))).get().filter(Boolean).slice(0, 3) as string[];
@@ -202,7 +209,8 @@ export async function harvestSite(url: string): Promise<SiteAssets | null> {
     lang: $("html").attr("lang") ?? "sk",
     logo,
     ogImage,
-    images: probed,
+    images: photos,
+    logos,
     colors,
     themeColor,
     fonts,

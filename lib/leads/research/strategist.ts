@@ -54,6 +54,8 @@ export interface AgentResult {
   offer: OfferPlan | null;
   email: { subject: string; body: string } | null;
   skipReason: string | null;
+  /** verejný odkaz na hotový návrh domovskej stránky (ak vznikol) */
+  mockupUrl?: string | null;
   pack: EvidencePack;
   usage: AiUsage & { estimatedEur: number };
   issues: string[];
@@ -257,11 +259,126 @@ function numbersIn(text: string): string[] {
   return (text.match(/\d[\d.,]*/g) ?? []).map((n) => n.replace(/[.,]+$/g, ""));
 }
 
+/**
+ * Napíše cold e-mail z overených zistení a ponuky (oslovenie z overeného mena, lint, korektúra,
+ * odkaz na návrh stránky). Používa ho beh agenta aj "napísať mail znova" (napr. po vyrobení návrhu).
+ */
+export async function writeOutreachEmail(input: {
+  client: Anthropic;
+  lead: Lead;
+  segmentName: string;
+  findings: Finding[];
+  offer: OfferPlan;
+  /** dôkazné položky (id + text) — z nich sa overuje, že čísla v maile majú oporu */
+  evidence: { id: string; text: string }[];
+  mockupUrl?: string | null;
+}): Promise<{ email: { subject: string; body: string } | null; issues: string[] }> {
+  const { client, lead, segmentName, findings, offer, evidence } = input;
+  const mockupUrl = input.mockupUrl ?? null;
+  const issues: string[] = [];
+  // Do e-mailu idú iba úplne podložené zistenia (audit "ok"); "partial" ostáva len v správe.
+  const mailFindings = findings.filter((f) => f.audit !== "partial");
+  const usedFacts = mailFindings
+    .map((f) => `${f.id}: ${f.claim} (dôkaz: „${f.evidence[0].quote}“)`)
+    .join("\n");
+  const refLine = offer.reference_slug ? REFERENCES.find((r) => r.slug === offer.reference_slug) : null;
+  const offerBlock = mockupUrl
+    ? `NÁVRH PONUKY:\nNázov: Hotový návrh novej domovskej stránky\nČo dostanú: UŽ HOTOVÝ klikateľný návrh novej domovskej stránky ich firmy, postavený z ICH vlastných textov a fotiek. Odkaz na návrh pridá systém pod mail, v texte ho neuvádzaj.\nPrečo práve toto: ${offer.why_this}\nTermín: návrh je hotový už teraz\nBez rizika: návrh je zadarmo a bez záväzku\nČo urobím vopred: návrh je už urobený\n\nPOZOR: návrh je HOTOVÝ. Píš v minulom čase ("pripravil som", "urobil som"), nie "pripravím". Ukáž, že si na nich už pracoval: povedz 1 konkrétnu vec, ktorú návrh zvýrazňuje (z overených zistení, napr. ich recenzie alebo služby), a že odkaz je pod mailom. Záver: pokojná veta, že ak sa im páči, ozvú sa.`
+    : `NÁVRH PONUKY:\nNázov: ${offer.name}\nČo dostanú: ${offer.deliverable}\nPrečo práve toto: ${offer.why_this}\nTermín: ${offer.timeline}\nBez rizika: ${offer.risk_reversal}\nČo urobím vopred: ${offer.my_upfront_work}`;
+  const emailFacts = `FIRMA: ${lead.companyName} (${lead.companyCity ?? "?"}), odvetvie: ${segmentName}\nWeb: ${lead.websiteUrl ?? "—"}\n\nOVERENÉ ZISTENIA (jediný zdroj faktov):\n${usedFacts}\n\n${offerBlock}\nReferencia z ich odboru: ${refLine ? `web pre „${refLine.client}“` : "žiadna"}${
+    offer.finding_ids.some((id) => !mailFindings.some((f) => f.id === id))
+      ? "\n\nPOZOR: niektoré zistenia, o ktoré sa ponuka opiera, sa nepodarilo overiť. Spomeň v maile iba overené zistenia vyššie a v ponuke iba to, čo z nich vyplýva."
+      : ""
+  }`;
+
+  // Otvorenie e-mailu sa strieda podľa leadu, aby maily nemali všetky rovnakú kostru.
+  const OPENINGS = [
+    "Prvá veta = konkrétna vec z ich vlastného webu alebo cenníka (nie hodnotenie ani počet recenzií).",
+    "Prvá veta = čo o nich píšu zákazníci v recenziách (ak je takéto overené zistenie), inak konkrétna vec z ich webu.",
+    "Prvá veta = porovnanie s konkurentmi v meste s presným číslom zo zistení.",
+    "Prvá veta = rozpor medzi tým, čo o sebe tvrdia, a tým, čo web reálne ukazuje.",
+  ];
+  const openingHint = OPENINGS[[...lead.id].reduce((a, c) => a + c.charCodeAt(0), 0) % OPENINGS.length];
+  const greeting = buildGreeting(greetableOwnerName(lead));
+  const formal = greeting.formal || FORMAL_SEGMENT_RE.test(segmentName);
+  const signoff = formal ? "S úctou," : "S pozdravom,";
+  let email: AgentResult["email"] = null;
+  let emailFeedback = "";
+  for (let attempt = 1; attempt <= 3 && !email; attempt++) {
+    const msg = await createMessage(client, {
+      model: process.env.LEADS_AGENT_MODEL?.trim() || "claude-sonnet-5",
+      max_tokens: 700,
+      temperature: 0.7,
+      system: EMAIL_SYSTEM,
+      tools: [EMAIL_TOOL],
+      tool_choice: { type: "tool", name: "uloz_email" },
+      messages: [{ role: "user", content: `${emailFacts}\n\nOTVORENIE TOHTO E-MAILU: ${openingHint} (ak na to nemáš overené zistenie, zvoľ najsilnejšie iné).\n\nNapíš e-mail.${emailFeedback}` }],
+    });
+    const block = msg.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+    const d = (block?.input ?? {}) as { subject?: string; paragraphs?: unknown; used_findings?: string[] };
+    const subject = normalizeDashes(String(d.subject ?? "").trim()).slice(0, 120).toLowerCase();
+    let paragraphs = Array.isArray(d.paragraphs)
+      ? d.paragraphs.map((p) => normalizeDashes(String(p).trim())).filter(Boolean)
+      : [];
+    const used = mailFindings.filter((f) => asArray<string>(d.used_findings).includes(f.id));
+    // Číslo smie byť v maile, ak ho zistenie uvádza A zároveň je v plnom texte niektorej z
+    // dôkazných položiek, ktoré cituje (napr. "79" recenzií je v Google profile).
+    const byItem = new Map(evidence.map((i) => [i.id, i]));
+    const allowedNumbers = used.flatMap((f) => {
+      const inEvidence = new Set(f.evidence.flatMap((e) => numbersIn(byItem.get(e.eid)?.text ?? "")));
+      return [...numbersIn(f.claim), ...f.evidence.flatMap((e) => numbersIn(e.quote))].filter((n) => inEvidence.has(n));
+    });
+    allowedNumbers.push(...numbersIn(offer.timeline));
+    const allowedYears = allowedNumbers.filter((n) => /^(19|20)\d{2}$/.test(n)).map(Number);
+    const lint = (subj: string, paras: string[]) =>
+      lintEmail({ kind: "initial", subject: subj, paragraphs: paras, copyrightYear: lead.copyrightYear, allowedYears, allowedNumbers });
+    let res = lint(subject, paragraphs);
+    if (res.errors.length) {
+      emailFeedback = `\n\nPREDCHÁDZAJÚCI POKUS BOL ZAMIETNUTÝ: ${res.errors.join("; ")}. Oprav a dodrž všetky pravidlá.`;
+      issues.push(`e-mail pokus ${attempt}: ${res.errors.join("; ")}`);
+      continue;
+    }
+    const pr = await proofread(client, emailFacts, subject, paragraphs);
+    if (!pr || pr.verdict === "reject") {
+      emailFeedback = `\n\nKOREKTOR ZAMIETOL: ${(pr?.problems ?? ["nevrátil výsledok"]).join("; ")}. Oprav.`;
+      issues.push(`e-mail pokus ${attempt}: korektor zamietol`);
+      continue;
+    }
+    if (pr.verdict === "fixed") {
+      const fixed = pr.paragraphs.map((p) => normalizeDashes(p.trim())).filter(Boolean);
+      if (fixed.length === paragraphs.length) paragraphs = fixed;
+    }
+    res = lint(subject, paragraphs);
+    if (res.errors.length) {
+      emailFeedback = `\n\nPO KOREKTÚRE ZAMIETNUTÉ: ${res.errors.join("; ")}.`;
+      issues.push(`e-mail pokus ${attempt} po korektúre: ${res.errors.join("; ")}`);
+      continue;
+    }
+    const body = [
+      greeting.line,
+      lowerOpener(paragraphs[0], lead.companyName),
+      ...paragraphs.slice(1).map((t) => t.charAt(0).toUpperCase() + t.slice(1)),
+      ...(mockupUrl ? [`Návrh Vašej novej domovskej stránky: ${mockupUrl}`] : []),
+      ...(refLine && !mockupUrl ? [`Ukážka mojej práce z Vášho odboru: ${refLine.url}`] : []),
+      `${signoff}\nSamuel Bibeň`,
+    ].join("\n\n");
+    email = { subject, body };
+  }
+  if (!email) issues.push("E-mail sa nepodarilo napísať tak, aby prešiel kontrolou kvality.");
+
+  return { email, issues };
+}
+
 export async function runResearchAgent(input: {
   lead: Lead;
   segmentName: string;
   keywords: string[];
   onStep?: (msg: string) => void;
+  /**
+   * Volá sa po overení zistení a pred písaním mailu: Ateliér môže vyrobiť hotový návrh
+   * domovskej stránky. Vráti jeho verejný odkaz (mail potom nesľubuje, ale ukazuje hotovú vec).
+   */
+  beforeEmail?: (ctx: { findings: Finding[]; offer: OfferPlan; pack: EvidencePack }) => Promise<{ url: string } | null>;
 }): Promise<AgentResult> {
   const { lead, segmentName } = input;
   const step = input.onStep ?? (() => {});
@@ -372,95 +489,24 @@ export async function runResearchAgent(input: {
     };
   step(`Overené zistenia: ${findings.length}, zahodených (nedoložených): ${dropped.length}`);
 
+  // C2) hotový návrh domovskej stránky (voliteľné) — z ponuky sa stane hotová vec, nie sľub
+  let mockupUrl: string | null = null;
+  if (input.beforeEmail) {
+    step("Ateliér: navrhuje novú domovskú stránku…");
+    try {
+      mockupUrl = (await input.beforeEmail({ findings, offer, pack }))?.url ?? null;
+    } catch (e) {
+      issues.push(`návrh stránky zlyhal: ${(e as Error).message.slice(0, 120)}`);
+    }
+  }
+
   // D) e-mail z overených zistení
   step("Píšem e-mail z overených zistení…");
-  // Do e-mailu idú iba úplne podložené zistenia (audit "ok"); "partial" ostáva len v správe.
-  const mailFindings = findings.filter((f) => f.audit !== "partial");
-  const usedFacts = mailFindings
-    .map((f) => `${f.id}: ${f.claim} (dôkaz: „${f.evidence[0].quote}“)`)
-    .join("\n");
-  const refLine = offer.reference_slug ? REFERENCES.find((r) => r.slug === offer!.reference_slug) : null;
-  const emailFacts = `FIRMA: ${lead.companyName} (${lead.companyCity ?? "?"}), odvetvie: ${segmentName}\nWeb: ${lead.websiteUrl ?? "—"}\n\nOVERENÉ ZISTENIA (jediný zdroj faktov):\n${usedFacts}\n\nNÁVRH PONUKY:\nNázov: ${offer.name}\nČo dostanú: ${offer.deliverable}\nPrečo práve toto: ${offer.why_this}\nTermín: ${offer.timeline}\nBez rizika: ${offer.risk_reversal}\nČo urobím vopred: ${offer.my_upfront_work}\nReferencia z ich odboru: ${refLine ? `web pre „${refLine.client}“` : "žiadna"}${
-    offer.finding_ids.some((id) => !mailFindings.some((f) => f.id === id))
-      ? "\n\nPOZOR: niektoré zistenia, o ktoré sa ponuka opiera, sa nepodarilo overiť. Spomeň v maile iba overené zistenia vyššie a v ponuke iba to, čo z nich vyplýva."
-      : ""
-  }`;
+  const written = await writeOutreachEmail({ client, lead, segmentName, findings, offer, evidence: pack.items, mockupUrl });
+  issues.push(...written.issues);
+  const email = written.email;
 
-  // Otvorenie e-mailu sa strieda podľa leadu, aby maily nemali všetky rovnakú kostru.
-  const OPENINGS = [
-    "Prvá veta = konkrétna vec z ich vlastného webu alebo cenníka (nie hodnotenie ani počet recenzií).",
-    "Prvá veta = čo o nich píšu zákazníci v recenziách (ak je takéto overené zistenie), inak konkrétna vec z ich webu.",
-    "Prvá veta = porovnanie s konkurentmi v meste s presným číslom zo zistení.",
-    "Prvá veta = rozpor medzi tým, čo o sebe tvrdia, a tým, čo web reálne ukazuje.",
-  ];
-  const openingHint = OPENINGS[[...lead.id].reduce((a, c) => a + c.charCodeAt(0), 0) % OPENINGS.length];
-  const greeting = buildGreeting(greetableOwnerName(lead));
-  const formal = greeting.formal || FORMAL_SEGMENT_RE.test(segmentName);
-  const signoff = formal ? "S úctou," : "S pozdravom,";
-  let email: AgentResult["email"] = null;
-  let emailFeedback = "";
-  for (let attempt = 1; attempt <= 3 && !email; attempt++) {
-    const msg = await createMessage(client, {
-      model: process.env.LEADS_AGENT_MODEL?.trim() || "claude-sonnet-5",
-      max_tokens: 700,
-      temperature: 0.7,
-      system: EMAIL_SYSTEM,
-      tools: [EMAIL_TOOL],
-      tool_choice: { type: "tool", name: "uloz_email" },
-      messages: [{ role: "user", content: `${emailFacts}\n\nOTVORENIE TOHTO E-MAILU: ${openingHint} (ak na to nemáš overené zistenie, zvoľ najsilnejšie iné).\n\nNapíš e-mail.${emailFeedback}` }],
-    });
-    const block = msg.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-    const d = (block?.input ?? {}) as { subject?: string; paragraphs?: unknown; used_findings?: string[] };
-    const subject = normalizeDashes(String(d.subject ?? "").trim()).slice(0, 120).toLowerCase();
-    let paragraphs = Array.isArray(d.paragraphs)
-      ? d.paragraphs.map((p) => normalizeDashes(String(p).trim())).filter(Boolean)
-      : [];
-    const used = mailFindings.filter((f) => asArray<string>(d.used_findings).includes(f.id));
-    // Číslo smie byť v maile, ak ho zistenie uvádza A zároveň je v plnom texte niektorej z
-    // dôkazných položiek, ktoré cituje (napr. "79" recenzií je v Google profile).
-    const byItem = new Map(pack.items.map((i) => [i.id, i]));
-    const allowedNumbers = used.flatMap((f) => {
-      const inEvidence = new Set(f.evidence.flatMap((e) => numbersIn(byItem.get(e.eid)?.text ?? "")));
-      return [...numbersIn(f.claim), ...f.evidence.flatMap((e) => numbersIn(e.quote))].filter((n) => inEvidence.has(n));
-    });
-    allowedNumbers.push(...numbersIn(offer!.timeline));
-    const allowedYears = allowedNumbers.filter((n) => /^(19|20)\d{2}$/.test(n)).map(Number);
-    const lint = (subj: string, paras: string[]) =>
-      lintEmail({ kind: "initial", subject: subj, paragraphs: paras, copyrightYear: lead.copyrightYear, allowedYears, allowedNumbers });
-    let res = lint(subject, paragraphs);
-    if (res.errors.length) {
-      emailFeedback = `\n\nPREDCHÁDZAJÚCI POKUS BOL ZAMIETNUTÝ: ${res.errors.join("; ")}. Oprav a dodrž všetky pravidlá.`;
-      issues.push(`e-mail pokus ${attempt}: ${res.errors.join("; ")}`);
-      continue;
-    }
-    const pr = await proofread(client, emailFacts, subject, paragraphs);
-    if (!pr || pr.verdict === "reject") {
-      emailFeedback = `\n\nKOREKTOR ZAMIETOL: ${(pr?.problems ?? ["nevrátil výsledok"]).join("; ")}. Oprav.`;
-      issues.push(`e-mail pokus ${attempt}: korektor zamietol`);
-      continue;
-    }
-    if (pr.verdict === "fixed") {
-      const fixed = pr.paragraphs.map((p) => normalizeDashes(p.trim())).filter(Boolean);
-      if (fixed.length === paragraphs.length) paragraphs = fixed;
-    }
-    res = lint(subject, paragraphs);
-    if (res.errors.length) {
-      emailFeedback = `\n\nPO KOREKTÚRE ZAMIETNUTÉ: ${res.errors.join("; ")}.`;
-      issues.push(`e-mail pokus ${attempt} po korektúre: ${res.errors.join("; ")}`);
-      continue;
-    }
-    const body = [
-      greeting.line,
-      lowerOpener(paragraphs[0], lead.companyName),
-      ...paragraphs.slice(1).map((t) => t.charAt(0).toUpperCase() + t.slice(1)),
-      ...(refLine ? [`Ukážka mojej práce z Vášho odboru: ${refLine.url}`] : []),
-      `${signoff}\nSamuel Bibeň`,
-    ].join("\n\n");
-    email = { subject, body };
-  }
-  if (!email) issues.push("E-mail sa nepodarilo napísať tak, aby prešiel kontrolou kvality.");
-
-  return { understanding, nicheNotes, findings, dropped, offer, email, skipReason: null, pack, usage: getAiUsage(), issues };
+  return { understanding, nicheNotes, findings, dropped, offer, email, skipReason: null, mockupUrl, pack, usage: getAiUsage(), issues };
 }
 
 export { EmailQualityError };

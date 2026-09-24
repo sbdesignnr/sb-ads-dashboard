@@ -1,9 +1,11 @@
 // Beh výskumného agenta (Nora) v appke: zaradenie behu, vykonanie na pozadí, uloženie
 // overeného briefu a "Použiť ako koncept". Samotný agent je v lib/leads/research/.
 import { prisma } from "@/lib/prisma";
-import { runResearchAgent, type AgentResult, type OfferPlan } from "@/lib/leads/research/strategist";
+import Anthropic from "@anthropic-ai/sdk";
+import { runResearchAgent, writeOutreachEmail, type AgentResult, type Finding, type OfferPlan } from "@/lib/leads/research/strategist";
 import { isEditedByHand } from "@/lib/leads/draft-state";
 import { getBudget, withSpend } from "@/lib/agents/budget";
+import { executeMockup, publicMockupUrl, startMockup } from "@/lib/agents/mockup";
 
 /** Beh, ktorý sa neozval dlhšie, sa považuje za spadnutý (funkcia mohla skončiť časovým limitom). */
 export const STALE_MS = 8 * 60_000;
@@ -28,11 +30,14 @@ export interface ResearchBrief {
   issues: string[];
   skipReason: string | null;
   usageEur: number;
+  /** hotový návrh domovskej stránky k tomuto výskumu */
+  mockup?: { id: string; url: string } | null;
 }
 
 /** Zmenší výsledok agenta na to, čo sa oplatí uložiť a ukázať (dôkazy skrátené). */
-export function toBrief(r: AgentResult): ResearchBrief {
+export function toBrief(r: AgentResult, mockup?: { id: string; url: string } | null): ResearchBrief {
   return {
+    mockup: mockup ?? null,
     understanding: r.understanding,
     nicheNotes: r.nicheNotes,
     findings: r.findings.map((f) => ({
@@ -113,11 +118,18 @@ export async function startResearch(leadId: string): Promise<StartResult> {
 }
 
 /** Vykoná beh (1–2 min). Volá sa na pozadí (after()) — chyby sa zapisujú do záznamu. */
-export async function executeResearch(researchId: string, leadId: string): Promise<void> {
-  return withSpend({ agent: "nora", ref: leadId }, () => executeResearchInner(researchId, leadId));
+export interface ResearchOptions {
+  /** vyrobiť aj hotový návrh domovskej stránky (Ateliér) a poslať ho v maile */
+  withMockup?: boolean;
+  /** prémiový návrh (koncept od Opusa) */
+  director?: boolean;
 }
 
-async function executeResearchInner(researchId: string, leadId: string): Promise<void> {
+export async function executeResearch(researchId: string, leadId: string, opts: ResearchOptions = {}): Promise<void> {
+  return withSpend({ agent: "nora", ref: leadId }, () => executeResearchInner(researchId, leadId, opts));
+}
+
+async function executeResearchInner(researchId: string, leadId: string, opts: ResearchOptions): Promise<void> {
   const setStep = (step: string) =>
     prisma.leadResearch.update({ where: { id: researchId }, data: { step: step.slice(0, 200) } }).catch(() => {});
   try {
@@ -127,6 +139,7 @@ async function executeResearchInner(researchId: string, leadId: string): Promise
     });
     if (!lead) throw new Error("Lead zmizol.");
     let pending: Promise<unknown> = Promise.resolve();
+    let mockup: { id: string; url: string } | null = null;
     const result = await runResearchAgent({
       lead,
       segmentName: lead.segment?.name ?? "firma",
@@ -134,6 +147,21 @@ async function executeResearchInner(researchId: string, leadId: string): Promise
       onStep: (m) => {
         pending = pending.then(() => setStep(m));
       },
+      beforeEmail: opts.withMockup
+        ? async ({ findings, offer, pack }) => {
+            const started = await startMockup(leadId, { researchId });
+            if (!started.ok) return null;
+            const findingsText =
+              findings.map((f) => `- ${f.claim}`).join("\n") + `\nNAVRHNUTÁ PONUKA: ${offer.name}. ${offer.deliverable}`;
+            // Ateliér má vlastný kontext výdavkov (agent "atelier")
+            const r = await withSpend({ agent: "atelier", ref: leadId }, () =>
+              executeMockup(started.id, { pack, findingsText, director: opts.director }),
+            );
+            if (!r.ok || !r.token) return null;
+            mockup = { id: started.id, url: publicMockupUrl(r.token) };
+            return { url: mockup.url };
+          }
+        : undefined,
     });
     await pending;
     const ok = Boolean(result.offer) && result.findings.length >= 2;
@@ -142,7 +170,7 @@ async function executeResearchInner(researchId: string, leadId: string): Promise
       data: {
         status: ok ? "done" : "failed",
         step: null,
-        brief: toBrief(result) as object,
+        brief: toBrief(result, mockup) as object,
         emailSubject: result.email?.subject ?? null,
         emailBody: result.email?.body ?? null,
         offerName: result.offer?.name ?? null,
@@ -211,4 +239,57 @@ export async function applyResearchEmail(researchId: string, force: boolean): Pr
   }
   await prisma.leadResearch.update({ where: { id: researchId }, data: { appliedAt: new Date() } });
   return { ok: true, emailId, replaced: Boolean(existing) };
+}
+
+
+export type RewriteResult = { ok: true; subject: string; body: string } | { ok: false; status: number; error: string };
+
+/**
+ * Napíše mail znova z uložených overených zistení a ponuky. Používa sa po vyrobení návrhu
+ * domovskej stránky: mail potom ukazuje hotovú vec (s odkazom), nie sľub.
+ */
+export async function rewriteEmailWithMockup(researchId: string, mockupId?: string): Promise<RewriteResult> {
+  const r = await prisma.leadResearch.findUnique({ where: { id: researchId }, include: { lead: true } });
+  if (!r || !r.brief) return { ok: false, status: 404, error: "Výskum sa nenašiel." };
+  const brief = r.brief as unknown as ResearchBrief;
+  if (!brief.offer || brief.findings.length < 2) return { ok: false, status: 422, error: "Výskum nemá dosť overených zistení." };
+  const mockup = await prisma.leadMockup.findFirst({
+    where: { leadId: r.leadId, status: "done", ...(mockupId ? { id: mockupId } : {}) },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, token: true },
+  });
+  if (!mockup) return { ok: false, status: 422, error: "Lead nemá hotový návrh domovskej stránky." };
+  const url = publicMockupUrl(mockup.token);
+  const findings: Finding[] = brief.findings.map((f) => ({
+    id: f.id,
+    claim: f.claim,
+    why_it_matters: f.why,
+    evidence: f.evidence.map((e) => ({ eid: e.eid, quote: e.quote, ok: true })),
+    verified: true,
+    audit: f.audit,
+    auditNote: f.auditNote,
+  }));
+  const segment = await prisma.leadSegment.findFirst({ where: { leads: { some: { id: r.leadId } } }, select: { name: true } });
+  const written = await withSpend({ agent: "nora", ref: r.leadId }, () =>
+    writeOutreachEmail({
+      client: new Anthropic(),
+      lead: r.lead,
+      segmentName: segment?.name ?? "firma",
+      findings,
+      offer: brief.offer!,
+      evidence: brief.evidence,
+      mockupUrl: url,
+    }),
+  );
+  if (!written.email) return { ok: false, status: 422, error: `Mail neprešiel kontrolou kvality (${written.issues.slice(-1)[0] ?? "?"}). Skús znova.` };
+  await prisma.leadResearch.update({
+    where: { id: researchId },
+    data: {
+      emailSubject: written.email.subject,
+      emailBody: written.email.body,
+      appliedAt: null,
+      brief: { ...brief, mockup: { id: mockup.id, url } } as unknown as object,
+    },
+  });
+  return { ok: true, subject: written.email.subject, body: written.email.body };
 }

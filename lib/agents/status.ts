@@ -20,7 +20,7 @@ const HOUR = 60 * MIN;
 async function researchSignals() {
   try {
     const cutoff = new Date(Date.now() - 8 * MIN);
-    const [running, ready, recent] = await Promise.all([
+    const [running, ready, recent, mockupRunning] = await Promise.all([
       prisma.leadResearch.findFirst({
         where: { status: "running", updatedAt: { gt: cutoff } },
         orderBy: { createdAt: "desc" },
@@ -41,10 +41,17 @@ async function researchSignals() {
           lead: { select: { companyName: true } },
         },
       }),
+      prisma.leadMockup
+        .findFirst({
+          where: { status: "running", updatedAt: { gt: cutoff } },
+          orderBy: { createdAt: "desc" },
+          select: { step: true, lead: { select: { companyName: true } } },
+        })
+        .catch(() => null),
     ]);
-    return { running, ready, recent, ok: true as const };
+    return { running, ready, recent, mockupRunning, ok: true as const };
   } catch {
-    return { running: null, ready: 0, recent: [], ok: false as const };
+    return { running: null, ready: 0, recent: [], mockupRunning: null, ok: false as const };
   }
 }
 
@@ -121,6 +128,10 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
     status = "working";
     headline = `Pripravuje ponuku pre ${research.running?.lead.companyName ?? "lead"}.`;
     detail = research.running?.step ?? undefined;
+  } else if (research.mockupRunning) {
+    status = "working";
+    headline = `Ateliér navrhuje domovskú stránku pre ${research.mockupRunning.lead.companyName}.`;
+    detail = research.mockupRunning.step ?? undefined;
   } else if (drafting) {
     status = "working";
     headline = "Píše koncepty mailov.";

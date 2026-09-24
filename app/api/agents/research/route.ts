@@ -81,11 +81,16 @@ export async function POST(req: NextRequest) {
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!process.env.ANTHROPIC_API_KEY)
     return NextResponse.json({ error: "AI nie je nakonfigurované." }, { status: 503 });
-  const { leadId } = (await req.json().catch(() => ({}))) as { leadId?: string };
+  const { leadId, withMockup, director } = (await req.json().catch(() => ({}))) as {
+    leadId?: string;
+    withMockup?: boolean;
+    director?: boolean;
+  };
   if (!leadId) return NextResponse.json({ error: "Chýba leadId." }, { status: 400 });
 
   const started = await startResearch(leadId);
   if (!started.ok) return NextResponse.json({ error: started.error }, { status: started.status });
-  after(() => executeResearch(started.id, leadId));
+  // návrh domovskej stránky je predvolene zapnutý (ponuka je potom hotová vec, nie sľub)
+  after(() => executeResearch(started.id, leadId, { withMockup: withMockup !== false, director: Boolean(director) }));
   return NextResponse.json({ id: started.id });
 }

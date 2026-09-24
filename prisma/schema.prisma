@@ -104,6 +104,7 @@ model Lead {
   segment            LeadSegment? @relation(fields: [segmentId], references: [id], onDelete: SetNull)
   emails             LeadEmail[]
   research           LeadResearch[]
+  mockups            LeadMockup[]
   companyName        String       @map("company_name")
   ico                String?
   websiteUrl         String?      @unique @map("website_url")
@@ -202,6 +203,33 @@ model LeadResearch {
   @@index([leadId, createdAt])
   @@index([status])
   @@map("lead_research")
+}
+
+// Automaticky navrhnutý náhľad novej domovskej stránky (Ateliér). Verejný odkaz je
+// /nahlad/<token> (nehádateľný, noindex); html je hotový dokument, screenshoty sú JPEG.
+model LeadMockup {
+  id           String    @id @default(cuid())
+  leadId       String    @map("lead_id")
+  lead         Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  researchId   String?   @map("research_id")
+  token        String    @unique
+  status       String    @default("running") // running | done | failed
+  step         String?
+  html         String?   @db.Text
+  spec         Json?
+  concept      Json?
+  qa           Json?
+  heroJpg      Bytes?    @map("hero_jpg")
+  fullJpg      Bytes?    @map("full_jpg")
+  costEur      Float?    @map("cost_eur")
+  error        String?
+  views        Int       @default(0)
+  lastViewedAt DateTime? @map("last_viewed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([leadId, createdAt])
+  @@map("lead_mockup")
 }
 
 // Pokladnica agentov: každé platené volanie (Claude, Google Places) sa zapíše sem, aby

@@ -10,6 +10,8 @@ import { getShortlist } from "./skaut";
 export const DAILY_RESEARCH_CAP = 5;
 /** Odhad ceny jedného behu pre kontrolu rozpočtu (AI ≈ 0,13 + Google ≈ 0,06). */
 export const EST_RESEARCH_EUR = 0.2;
+/** Najviac toľko hotových návrhov stránok týždenne v nočnom režime (≈ 40 mesačne). */
+export const WEEKLY_MOCKUP_CAP = 10;
 
 export interface NightResult {
   ran: { leadId: string; company: string; ok: boolean; error?: string | null }[];
@@ -50,7 +52,9 @@ export async function runNightQueue(deadlineAt: number, maxRuns = 2): Promise<Ni
       out.skipped ??= started.error;
       break;
     }
-    await executeResearch(started.id, top.lead.id);
+    // Návrh domovskej stránky (Ateliér) len pre obmedzený počet leadov týždenne (rozpočet).
+    const weekMockups = await prisma.leadMockup.count({ where: { status: "done", createdAt: { gte: new Date(Date.now() - 7 * 24 * 3_600_000) } } }).catch(() => WEEKLY_MOCKUP_CAP);
+    await executeResearch(started.id, top.lead.id, { withMockup: weekMockups < WEEKLY_MOCKUP_CAP });
     const row = await prisma.leadResearch.findUnique({ where: { id: started.id }, select: { status: true, error: true } });
     out.ran.push({ leadId: top.lead.id, company: top.lead.companyName, ok: row?.status === "done", error: row?.error });
   }

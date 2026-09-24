@@ -130,7 +130,7 @@ const stripHtml = (s: string) => {
   return m[0];
 };
 
-function assetsText(b: DesignBrief): string {
+export function assetsText(b: DesignBrief): string {
   const a = b.assets;
   return [
     `FIRMA: ${b.company}${b.city ? `, ${b.city}` : ""} | odbor: ${b.niche} | jazyk webu: ${b.language}`,
@@ -142,7 +142,7 @@ function assetsText(b: DesignBrief): string {
     `Kontakt: tel ${a.contact.phones.join(", ") || "—"}; e-mail ${a.contact.emails.join(", ") || "—"}; adresa ${a.contact.address ?? "—"}; sociálne siete: ${a.social.join(", ") || "—"}`,
     `Farby značky (z loga a CSS): ${a.colors.join(", ") || "nezistené"}${a.themeColor ? ` | theme-color ${a.themeColor}` : ""}`,
     `Logo (URL): ${a.logo ?? "nezistené"}`,
-    `Dostupné fotky (URL, rozmer, alt):\n${a.images.map((i, n) => `  ${n + 1}. ${i.url} | ${i.w}x${i.h}${i.alt ? ` | ${i.alt}` : ""}`).join("\n") || "  ŽIADNE použiteľné fotky"}`,
+    `Dostupné FOTKY (číslo, rozmer, alt; číslo sa používa ako "img"):\n${a.images.map((i, n) => `  ${n + 1}. ${i.w}x${i.h} ${i.w >= i.h ? "na šírku" : "na výšku"}${i.alt ? ` | ${i.alt}` : ""}`).join("\n") || "  ŽIADNE použiteľné fotky (použi grafiku, nie fotky)"}${a.logos.length ? `\n(Loga/odznaky na webe sú len ${a.logos.length}, NIE sú fotky a nepoužívajú sa ako "img".)` : ""}`,
     `OVERENÉ FAKTY (smú byť na stránke):\n${b.facts.map((f) => `  - ${f}`).join("\n") || "  (žiadne)"}`,
     b.research && `VÝSKUM O FIRME:\n${b.research}`,
   ]

@@ -42,11 +42,15 @@ export async function renderHtml(
   const browser = await launch();
   try {
     const page = await browser.newPage();
+    await page.evaluateOnNewDocument("window.__name = function (f) { return f; }");
     await page.setViewport({ width: opts.width, height: opts.height ?? 900, deviceScaleFactor: 1 });
     if (opts.referer) await page.setExtraHTTPHeaders({ Referer: opts.referer });
     await page.setContent(html, { waitUntil: "load", timeout: 40_000 }).catch(() => {});
     await page.waitForNetworkIdle({ idleTime: 900, timeout: 25_000 }).catch(() => {});
     await page.evaluate(() => (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready).catch(() => {});
+    // animácie pri scrollovaní sa v screenshote vypnú (inak by spodok stránky ostal skrytý)
+    await page.evaluate("window.__name = function (f) { return f; }").catch(() => {});
+    await page.evaluate("document.documentElement.classList.remove('js')").catch(() => {});
     await new Promise((r) => setTimeout(r, 700));
     const height = Math.min(
       opts.maxHeight ?? 6000,

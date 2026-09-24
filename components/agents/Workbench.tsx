@@ -13,6 +13,8 @@ import {
   ChevronDown,
   CircleAlert,
   FileSearch,
+  ExternalLink,
+  Layout,
   Loader2,
   Mail,
   Play,
@@ -71,7 +73,10 @@ interface RunDetail extends Omit<RunRow, "lead"> {
 }
 
 const eur = (v: number | null | undefined) => (v == null ? "–" : `${v.toFixed(2).replace(".", ",")} €`);
-const COST_HINT = "≈ 0,15 €";
+const BASE_EUR = 0.19; // výskum (Claude) + Google
+const MOCKUP_EUR = 0.07; // návrh stránky (Sonnet)
+const PREMIUM_EUR = 0.35; // koncept od art directora (Opus)
+const COST_HINT = "≈ 0,25 €";
 
 const STEPS = [
   { key: "collect", label: "Zbieram dôkazy (web, Google profil, konkurenti)" },
@@ -121,6 +126,8 @@ export function Workbench({
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [withMockup, setWithMockup] = useState(true);
+  const [premium, setPremium] = useState(false);
   const qRef = useRef("");
   qRef.current = q;
 
@@ -179,10 +186,11 @@ export function Workbench({
     wasRunning.current = Boolean(running);
   }, [running, onChanged]);
 
+  const runCost = BASE_EUR + (withMockup ? MOCKUP_EUR : 0) + (withMockup && premium ? PREMIUM_EUR : 0);
   const start = async (lead: { id: string; companyName: string }) => {
     if (
       !confirm(
-        `Nora pripraví ponuku pre „${lead.companyName}“.\n\nTrvá 1 až 2 minúty a stojí približne 0,15 € (AI + Google). Nič sa neodošle bez tvojho schválenia.`,
+        `Nora pripraví ponuku pre „${lead.companyName}“${withMockup ? " a Ateliér k nej vyrobí hotový návrh domovskej stránky" : ""}.\n\nTrvá ${withMockup ? "2 až 4" : "1 až 2"} minúty a stojí približne ${runCost.toFixed(2).replace(".", ",")} € (AI + Google). Nič sa neodošle bez tvojho schválenia.`,
       )
     )
       return;
@@ -191,7 +199,7 @@ export function Workbench({
       const r = await fetch("/api/agents/research", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leadId: lead.id }),
+        body: JSON.stringify({ leadId: lead.id, withMockup, director: withMockup && premium }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
@@ -279,11 +287,21 @@ export function Workbench({
               className="w-full rounded-lg border border-white/12 bg-white/[0.04] py-2 pl-8 pr-3 text-[13px] text-foreground outline-none placeholder:text-muted focus:border-white/30"
             />
           </div>
+          <div className="mb-3 space-y-1.5 rounded-xl border border-white/10 bg-white/[0.03] p-2.5 text-[12px]">
+            <label className="flex cursor-pointer items-start gap-2 text-foreground">
+              <input type="checkbox" checked={withMockup} onChange={(e) => setWithMockup(e.target.checked)} className="mt-0.5 accent-sky-400" />
+              <span>Vyrobiť aj hotový návrh domovskej stránky <span className="text-muted">(+ ≈ {MOCKUP_EUR.toFixed(2).replace(".", ",")} €)</span></span>
+            </label>
+            <label className={cn("flex items-start gap-2", withMockup ? "cursor-pointer text-foreground" : "cursor-not-allowed text-muted/50")}>
+              <input type="checkbox" checked={premium && withMockup} disabled={!withMockup} onChange={(e) => setPremium(e.target.checked)} className="mt-0.5 accent-amber-400" />
+              <span>Prémiový návrh od art directora <span className="text-muted">(+ ≈ {PREMIUM_EUR.toFixed(2).replace(".", ",")} €, originálnejší)</span></span>
+            </label>
+          </div>
           <p className="mb-2 px-1 text-[11px] text-muted">
             {q.trim()
               ? "Výsledky hľadania"
               : `Výber Skauta Mira: top ${leadsToShow.length} z ${data?.candidateTotal ?? "…"} vhodných leadov`}{" "}
-            · {COST_HINT} za firmu
+            · ≈ {runCost.toFixed(2).replace(".", ",")} € za firmu
           </p>
           <ul className="mb-4 space-y-1.5">
             {!data && <li className="px-1 text-xs text-muted">Načítavam…</li>}
@@ -376,6 +394,7 @@ export function Workbench({
                   onDiscard={() => discard(detail.id)}
                   onRetry={() => start(detail.lead)}
                   canStart={!running && busy === null}
+                  onReload={() => Promise.all([load(), loadDetail(detail.id)]).then(() => onChanged())}
                 />
               )}
             </>
@@ -407,6 +426,7 @@ function RunView({
   onDiscard,
   onRetry,
   canStart,
+  onReload,
 }: {
   run: RunDetail;
   busy: boolean;
@@ -414,6 +434,7 @@ function RunView({
   onDiscard: () => void;
   onRetry: () => void;
   canStart: boolean;
+  onReload: () => void;
 }) {
   const b = run.brief;
   const evidenceTitle = (eid: string) => {
@@ -569,6 +590,8 @@ function RunView({
             </Section>
           )}
 
+          <MockupCard leadId={run.lead.id} researchId={run.id} hasEmail={Boolean(run.emailBody)} mailHasLink={Boolean(run.emailBody?.includes("/nahlad/"))} onReload={onReload} />
+
           {run.emailBody ? (
             <Section title="Mail" hint="skontroluj vety a fakty, potom z neho urob koncept">
               <div className="rounded-xl border border-white/12 bg-white/[0.04]">
@@ -653,5 +676,166 @@ function RunView({
         </>
       )}
     </div>
+  );
+}
+
+
+// ── návrh domovskej stránky (Ateliér) ─────────────────────────────────────
+
+interface MockupRow {
+  id: string;
+  status: "running" | "done" | "failed";
+  step: string | null;
+  costEur: number | null;
+  error: string | null;
+  views: number;
+  lastViewedAt: string | null;
+  createdAt: string;
+  url: string;
+  qaIssues: number;
+  fontPair: string | null;
+}
+
+function MockupCard({
+  leadId,
+  researchId,
+  hasEmail,
+  mailHasLink,
+  onReload,
+}: {
+  leadId: string;
+  researchId: string;
+  hasEmail: boolean;
+  mailHasLink: boolean;
+  onReload: () => void;
+}) {
+  const [rows, setRows] = useState<MockupRow[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [full, setFull] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/agents/mockup?leadId=${leadId}`, { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      setRows(j.mockups as MockupRow[]);
+      setErr(null);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }, [leadId]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  const latest = rows?.[0] ?? null;
+  const running = latest?.status === "running";
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(load, 3000);
+    return () => clearInterval(t);
+  }, [running, load]);
+
+  const make = async (director: boolean) => {
+    const eur = MOCKUP_EUR + (director ? PREMIUM_EUR : 0);
+    if (!confirm(`Ateliér vyrobí návrh novej domovskej stránky${director ? " (prémiový, koncept od art directora)" : ""}.\n\nTrvá 1 až 2 minúty a stojí približne ${eur.toFixed(2).replace(".", ",")} €.`)) return;
+    setBusy(director ? "p" : "n");
+    try {
+      const r = await fetch("/api/agents/mockup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leadId, director }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      toast.success("Ateliér sa pustil do práce.");
+      await load();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const remove = async (id: string) => {
+    if (!confirm("Zmazať tento návrh? Verejný odkaz prestane fungovať.")) return;
+    await fetch(`/api/agents/mockup/${id}`, { method: "DELETE" });
+    await load();
+  };
+  const rewrite = async (id: string) => {
+    setBusy("mail");
+    try {
+      const r = await fetch(`/api/agents/research/${researchId}/rewrite-email`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mockupId: id }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      toast.success("Mail je napísaný znova, s odkazom na návrh.");
+      onReload();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Section title="Návrh domovskej stránky" hint="hotová ukážka z ich vlastných textov a fotiek">
+      {err && <p className="text-[12px] text-red-300">Nepodarilo sa načítať ({err}). Chýba tabuľka lead_mockup?</p>}
+      {rows && !latest && !err && (
+        <div className="rounded-xl border border-dashed border-white/15 p-3.5">
+          <p className="mb-2.5 text-[13px] text-muted">K tomuto leadu ešte nie je hotový návrh. Mail s hotovým návrhom pôsobí silnejšie než sľub, že ho pripravíš.</p>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => make(false)} disabled={busy !== null} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-primary/90 disabled:opacity-50">
+              {busy === "n" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Layout className="h-3.5 w-3.5" />} Pripraviť návrh (≈ {MOCKUP_EUR.toFixed(2).replace(".", ",")} €)
+            </button>
+            <button onClick={() => make(true)} disabled={busy !== null} className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-[12.5px] font-medium text-foreground hover:bg-white/20 disabled:opacity-50">
+              Prémiový (≈ {(MOCKUP_EUR + PREMIUM_EUR).toFixed(2).replace(".", ",")} €)
+            </button>
+          </div>
+        </div>
+      )}
+      {latest && running && (
+        <div className="rounded-xl border border-white/10 bg-white/[0.035] p-3.5 text-[13px] text-foreground">
+          <p className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin text-sky-300" /> Ateliér pracuje…</p>
+          {latest.step && <p className="mt-1.5 text-[12px] text-muted">{latest.step}</p>}
+        </div>
+      )}
+      {latest && latest.status === "failed" && (
+        <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-3.5 text-[13px]">
+          <p className="text-red-200">Návrh sa nepodarilo vyrobiť: {latest.error}</p>
+          <button onClick={() => make(false)} disabled={busy !== null} className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-[12.5px] text-foreground hover:bg-white/20 disabled:opacity-50">
+            <RotateCcw className="h-3.5 w-3.5" /> Skúsiť znova
+          </button>
+        </div>
+      )}
+      {latest && latest.status === "done" && (
+        <div className="overflow-hidden rounded-xl border border-white/12 bg-white/[0.035]">
+          <a href={latest.url} target="_blank" rel="noreferrer" className="block bg-black/30">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={`/api/agents/mockup/${latest.id}/hero${full ? "?full=1" : ""}`} alt="Návrh domovskej stránky" className="w-full" />
+          </a>
+          <div className="space-y-2.5 p-3.5">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted">
+              <span>{ago(latest.createdAt)}</span>
+              {latest.fontPair && <span>písmo {latest.fontPair}</span>}
+              <span className={latest.qaIssues ? "text-amber-300" : "text-green-400"}>{latest.qaIssues ? `${latest.qaIssues} upozornení z kontroly rozloženia` : "kontrola rozloženia bez chýb"}</span>
+              {latest.costEur != null && <span>Ateliér {eur(latest.costEur)}</span>}
+              <span className={latest.views ? "font-medium text-sky-300" : ""}>{latest.views ? `príjemca otvoril ${latest.views}×` : "zatiaľ neotvorený"}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <a href={latest.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-primary/90">
+                <ExternalLink className="h-3.5 w-3.5" /> Otvoriť návrh
+              </a>
+              <button onClick={() => setFull((v) => !v)} className="rounded-lg bg-white/10 px-3 py-1.5 text-[12.5px] text-foreground hover:bg-white/20">{full ? "Len začiatok" : "Celá stránka"}</button>
+              <button onClick={() => make(false)} disabled={busy !== null} className="rounded-lg bg-white/10 px-3 py-1.5 text-[12.5px] text-foreground hover:bg-white/20 disabled:opacity-50">Iný smer (≈ {MOCKUP_EUR.toFixed(2).replace(".", ",")} €)</button>
+              <button onClick={() => make(true)} disabled={busy !== null} className="rounded-lg bg-white/10 px-3 py-1.5 text-[12.5px] text-foreground hover:bg-white/20 disabled:opacity-50">Prémiový</button>
+              <button onClick={() => remove(latest.id)} className="ml-auto rounded-lg px-2 py-1.5 text-[12px] text-muted hover:bg-white/10 hover:text-red-300"><Trash2 className="h-3.5 w-3.5" /></button>
+            </div>
+            {hasEmail && !mailHasLink && (
+              <div className="rounded-lg border border-amber-400/30 bg-amber-400/[0.07] p-2.5 text-[12.5px]">
+                <p className="text-amber-100">Mail zatiaľ sľubuje návrh, ale ten je už hotový. Napíš mail znova, aby ukázal hotovú vec s odkazom.</p>
+                <button onClick={() => rewrite(latest.id)} disabled={busy !== null} className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1.5 font-medium text-black hover:bg-amber-300 disabled:opacity-50">
+                  {busy === "mail" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />} Napísať mail s odkazom na návrh
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Section>
   );
 }

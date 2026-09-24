@@ -202,13 +202,14 @@ export const AGENTS: AgentDef[] = [
     role: "Stratég ponúk a oslovenia",
     department: "predaj",
     tagline: "Zistí o firme všetko overiteľné a navrhne ponuku, ktorá sa neodmieta.",
-    bio: "Nora pripraví ponuku šitú na mieru pre jeden konkrétny lead. V pracovni jej zadáš firmu a do 1 až 2 minút ti položí na stôl: overené zistenia o firme (každé s citátom zo zdroja), navrhnutú ponuku a hotový koncept mailu. Prečíta ich web, Google profil a recenzie a porovná ich s konkurenciou v meste. Nič neodíde bez tvojho schválenia. Popri tom stráži rad konceptov mailov, ktoré čakajú na tvoje schválenie.",
+    bio: "Nora pripraví ponuku šitú na mieru pre jeden konkrétny lead. V pracovni jej zadáš firmu a do pár minút ti položí na stôl: overené zistenia o firme (každé s citátom zo zdroja), navrhnutú ponuku, HOTOVÝ návrh ich novej domovskej stránky (z ich vlastných textov a fotiek, s verejným odkazom) a koncept mailu, ktorý ten návrh ukazuje. Prečíta ich web, Google profil a recenzie a porovná ich s konkurenciou v meste. Nič neodíde bez tvojho schválenia. Popri tom stráži rad konceptov mailov, ktoré čakajú na tvoje schválenie.",
     skills: [
       "Analýza webov",
       "Google profil a recenzie",
       "Konkurencia v meste",
       "Overené citáty",
       "Ponuky na mieru",
+      "Návrhy domovských stránok",
       "Koncepty mailov",
     ],
     look: {
@@ -227,7 +228,7 @@ export const AGENTS: AgentDef[] = [
     chips: [
       { text: "Google recenzie", color: "#fbbf24" },
       { text: "Citát overený ✓", color: "#4ade80" },
-      { text: "Konkurenti v meste", color: "#60a5fa" },
+      { text: "Návrh stránky", color: "#60a5fa" },
     ],
     links: [
       { label: "Fronta na schválenie", href: "/leads/kampane" },
