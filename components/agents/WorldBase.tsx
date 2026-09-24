@@ -215,8 +215,7 @@ export const PATHS: [number, number, number, number][] = [
   [0, 6.5, 14, 7.5], // vodorovná cesta
   [7.5, 12.5, 11.5, 13.5], // k Nore
   [10.5, 11.4, 11.5, 12.5], // schodík k dverám
-  [7.5, 2.5, 9.2, 3.5], // marketing A
-  [7.5, 4.5, 9.6, 5.5], // marketing B
+  [10.5, 3.4, 11.5, 6.5], // chodník od dverí Mirovho domu k vodorovnej ceste
   [3.8, 10.5, 6.5, 11.5], // technika A
   [5.0, 2.5, 6.5, 3.5], // financie A
 ];

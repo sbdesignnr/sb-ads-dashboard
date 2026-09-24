@@ -1,3 +1,5 @@
+import { backlogCount, PRIORITY_SEGMENT_RE } from "../agents/skaut";
+import { canRunAutonomously } from "../agents/budget";
 import { prisma } from "@/lib/prisma";
 import type { Lead, LeadSegment } from "@prisma/client";
 import {
@@ -491,19 +493,29 @@ export async function scanDaily(
   newLeads: number;
   skipped: boolean;
 }> {
-  const target = opts.targetNew ?? 200;
+  const target = opts.targetNew ?? 60;
   // Each run fully analyzes every discovered site, so keep the daily footprint
   // small enough to finish within the cron time budget.
   const perRun = opts.segmentsPerRun ?? 2;
 
-  const before = await prisma.lead.count({ where: { status: "new" } });
+  // Zásoba = čerstvé VHODNÉ leady s e-mailom v prioritných odboroch, ktoré ešte neboli
+  // oslovené. (Predtým sa počítali všetky "nové" leady vrátane ~1 900 neanalyzovaných
+  // z CSV importu, takže denný sken sa vždy preskočil.)
+  // Denný sken je autonómny: nespustí sa, keď je rozpočet vyčerpaný alebo nefunguje evidencia.
+  const gate = await canRunAutonomously("skaut", 0.6);
+  if (!gate.ok) return { scanned: 0, addedQualified: 0, newLeads: 0, skipped: true };
+
+  const before = await backlogCount();
   if (before >= target) {
     return { scanned: 0, addedQualified: 0, newLeads: before, skipped: true };
   }
 
-  const segments = await prisma.leadSegment.findMany({
+  const allSegments = await prisma.leadSegment.findMany({
     orderBy: { createdAt: "asc" },
   });
+  // Hľadáme len v prioritných odboroch (ak nejaké sú).
+  const prioritySegments = allSegments.filter((s) => PRIORITY_SEGMENT_RE.test(s.name));
+  const segments = prioritySegments.length ? prioritySegments : allSegments;
   if (!segments.length)
     return { scanned: 0, addedQualified: 0, newLeads: before, skipped: false };
 
@@ -522,7 +534,7 @@ export async function scanDaily(
     const r = await scanSegment(s.id, { maxDiscover: 12, region: "both" });
     addedQualified += r.foundQualified;
   }
-  const newLeads = await prisma.lead.count({ where: { status: "new" } });
+  const newLeads = await backlogCount();
   return { scanned: todays.length, addedQualified, newLeads, skipped: false };
 }
 

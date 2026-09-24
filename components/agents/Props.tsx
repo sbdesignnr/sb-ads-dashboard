@@ -417,13 +417,18 @@ export const tint = (base: string, color: string, t = 0.25) => mix(base, color, 
 
 // ── holografické čipy nad stolom (agent práve pracuje) ─────────────────────
 
-const CHIPS: { text: string; color: string; dx: number; dy: number; delay: number }[] = [
-  { text: "Google recenzie", color: "#fbbf24", dx: -62, dy: 0, delay: 0 },
-  { text: "Citát overený ✓", color: "#4ade80", dx: 6, dy: -26, delay: 2.1 },
-  { text: "Konkurenti v meste", color: "#60a5fa", dx: 40, dy: 4, delay: 4.2 },
+const DEFAULT_CHIPS = [
+  { text: "Zbieram dôkazy", color: "#fbbf24" },
+  { text: "Overujem", color: "#4ade80" },
+  { text: "Porovnávam", color: "#60a5fa" },
+];
+const CHIP_POS = [
+  { dx: -62, dy: 0, delay: 0 },
+  { dx: 6, dy: -26, delay: 2.1 },
+  { dx: 40, dy: 4, delay: 4.2 },
 ];
 
-export const HoloChips = memo(function HoloChips({ gx, gy, step }: { gx: number; gy: number; step?: string }) {
+export const HoloChips = memo(function HoloChips({ gx, gy, step, chips = DEFAULT_CHIPS }: { gx: number; gy: number; step?: string; chips?: { text: string; color: string }[] }) {
   const [x, y] = iso(gx + 0.45, gy + 0.25, 132);
   const label = step ? (step.length > 40 ? `${step.slice(0, 39)}…` : step) : null;
   return (
@@ -437,7 +442,9 @@ export const HoloChips = memo(function HoloChips({ gx, gy, step }: { gx: number;
           </text>
         </g>
       )}
-      {CHIPS.map((c) => (
+      {chips.slice(0, 3).map((c0, i) => {
+        const c = { ...c0, ...CHIP_POS[i] };
+        return (
         <g key={c.text} transform={`translate(${c.dx} ${c.dy})`}>
           <g className="ag-holo" style={{ animationDelay: `${c.delay}s` }}>
             <rect x={-6} y={-13} width={c.text.length * 5.7 + 24} height={22} rx={11} fill="#0d1524" opacity={0.86} stroke={c.color} strokeWidth={1.4} />
@@ -447,7 +454,8 @@ export const HoloChips = memo(function HoloChips({ gx, gy, step }: { gx: number;
             </text>
           </g>
         </g>
-      ))}
+        );
+      })}
     </g>
   );
 });

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { scanSegment, scanDaily } from "@/lib/leads/scanner";
+import { withSpend } from "@/lib/agents/budget";
 import { getNotificationSettings } from "@/lib/notifications/settings";
 import { sendTelegram } from "@/lib/notifications/telegram";
 
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
 // has no push).
 export async function GET(req: NextRequest) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const result = await scanDaily();
+  const result = await withSpend({ agent: "skaut" }, () => scanDaily());
 
   try {
     const settings = await getNotificationSettings();

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getAgentSnapshots } from "@/lib/agents/status";
+import { getBudget } from "@/lib/agents/budget";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +11,6 @@ export async function GET() {
   const session = await auth();
   if (!session?.user)
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const agents = await getAgentSnapshots();
-  return NextResponse.json({ agents, at: new Date().toISOString() });
+  const [agents, budget] = await Promise.all([getAgentSnapshots(), getBudget()]);
+  return NextResponse.json({ agents, budget, at: new Date().toISOString() });
 }

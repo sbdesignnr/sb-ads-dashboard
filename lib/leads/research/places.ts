@@ -1,6 +1,7 @@
 // Google Places API (New) pre výskum: profil firmy (hodnotenie, recenzie, otváracie
 // hodiny) a konkurenti v meste. Všetko sú overiteľné verejné údaje z Google Máp.
 
+import { recordPlaces } from "../../agents/budget";
 import { hostOf } from "./web";
 
 const SEARCH = "https://places.googleapis.com/v1/places:searchText";
@@ -60,6 +61,7 @@ async function search(
   const k = key();
   if (!k) return [];
   try {
+    recordPlaces();
     const res = await fetch(SEARCH, {
       method: "POST",
       headers: {

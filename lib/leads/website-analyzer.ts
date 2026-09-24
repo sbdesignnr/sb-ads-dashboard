@@ -7,6 +7,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { captureScreenshot, type Screenshot } from "./screenshot";
 import { QUALIFY_AT } from "./qualification";
+import { recordAnthropic } from "../agents/budget";
 
 export interface WebsiteAnalysis {
   // Total 0-100, higher = more outdated. websiteScore is kept as the canonical
@@ -636,6 +637,7 @@ async function analyzeVisual(
         system: VISUAL_SYSTEM,
         messages: [{ role: "user", content }],
       });
+      recordAnthropic("claude-sonnet-4-6", msg.usage);
       const text = msg.content
         .filter((b): b is Anthropic.TextBlock => b.type === "text")
         .map((b) => b.text)

@@ -1,0 +1,189 @@
+// Pokladnica agentov: zápis každého plateného volania a strážca mesačného stropu.
+// Zápis je "best effort" (nikdy nezhodí hlavnú prácu), ale AUTONÓMNE behy sa bez
+// fungujúcej evidencie nespúšťajú (fail-closed) — pozri canRunAutonomously().
+import { AsyncLocalStorage } from "node:async_hooks";
+import { prisma } from "@/lib/prisma";
+
+export type SpendAgent = "nora" | "skaut" | "atelier" | "leads";
+
+interface SpendCtx {
+  agent: SpendAgent;
+  /** id leadu / behu, ku ktorému výdavok patrí */
+  ref?: string;
+}
+const als = new AsyncLocalStorage<SpendCtx>();
+
+/** Všetky platené volania vnútri `fn` sa zapíšu na daného agenta. */
+export function withSpend<T>(ctx: SpendCtx, fn: () => Promise<T>): Promise<T> {
+  return als.run(ctx, fn);
+}
+
+/** Mesačný strop v EUR (Anthropic + Google spolu). Dá sa zmeniť env premennou. */
+export const MONTHLY_CAP_EUR = Number(process.env.AGENT_MONTHLY_BUDGET_EUR) || 50;
+/** Autonómne (nočné) behy sa zastavia pri tomto podiele stropu; zvyšok je rezerva. */
+export const SOFT_STOP = 0.9;
+/** Orientačné rozdelenie stropu medzi agentov (súčet = 50 €). */
+export const ALLOCATION: Record<SpendAgent, number> = { nora: 26, skaut: 7, atelier: 13, leads: 4 };
+
+// Cenník Anthropic v USD za 1 M tokenov (vstup, výstup). Neznáme modely sa účtujú ako
+// Sonnet; Opus sa počíta konzervatívne.
+const PRICES: { re: RegExp; input: number; output: number }[] = [
+  { re: /haiku/i, input: 1, output: 5 },
+  { re: /opus/i, input: 15, output: 75 },
+  { re: /./, input: 3, output: 15 },
+];
+const EUR_PER_USD = 0.92;
+/** Jedno volanie Google Places (Text Search s hodnoteniami) ≈ 0,035 $ */
+export const PLACES_EUR_PER_CALL = 0.032;
+
+export interface UsageLike {
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+}
+
+export function anthropicEur(model: string, u: UsageLike): number {
+  const p = PRICES.find((x) => x.re.test(model)) ?? PRICES[PRICES.length - 1];
+  const usd =
+    ((u.input_tokens ?? 0) * p.input +
+      (u.output_tokens ?? 0) * p.output +
+      (u.cache_read_input_tokens ?? 0) * p.input * 0.1 +
+      (u.cache_creation_input_tokens ?? 0) * p.input * 1.25) /
+    1_000_000;
+  return usd * EUR_PER_USD;
+}
+
+let warned = false;
+async function insert(data: {
+  agent: string;
+  kind: string;
+  model?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  calls?: number;
+  eur: number;
+  ref?: string;
+}) {
+  try {
+    await prisma.agentSpend.create({ data });
+  } catch (e) {
+    if (!warned) {
+      warned = true;
+      console.warn("[pokladnica] výdavok sa nepodarilo zapísať:", (e as Error).message.slice(0, 160));
+    }
+  }
+}
+
+/** Zapíše jedno volanie Claude. Volá sa po každej odpovedi API. */
+export function recordAnthropic(model: string, usage: UsageLike | undefined): void {
+  if (!usage) return;
+  const ctx = als.getStore();
+  void insert({
+    agent: ctx?.agent ?? "leads",
+    kind: "anthropic",
+    model,
+    inputTokens: usage.input_tokens ?? 0,
+    outputTokens: usage.output_tokens ?? 0,
+    cacheRead: usage.cache_read_input_tokens ?? 0,
+    cacheWrite: usage.cache_creation_input_tokens ?? 0,
+    eur: anthropicEur(model, usage),
+    ref: ctx?.ref,
+  });
+}
+
+/** Zapíše volania Google Places. */
+export function recordPlaces(calls = 1): void {
+  const ctx = als.getStore();
+  void insert({
+    agent: ctx?.agent ?? "leads",
+    kind: "places",
+    calls,
+    eur: calls * PLACES_EUR_PER_CALL,
+    ref: ctx?.ref,
+  });
+}
+
+export interface BudgetSnapshot {
+  available: boolean;
+  capEur: number;
+  spentEur: number;
+  todayEur: number;
+  pctUsed: number;
+  byAgent: Record<SpendAgent, number>;
+  byKind: { anthropic: number; places: number };
+  allocation: Record<SpendAgent, number>;
+  /** odhad výdavkov do konca mesiaca podľa doterajšieho tempa */
+  projectedEur: number;
+  monthStart: string;
+}
+
+const monthStart = () => {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+};
+
+export async function getBudget(): Promise<BudgetSnapshot> {
+  const empty: BudgetSnapshot = {
+    available: false,
+    capEur: MONTHLY_CAP_EUR,
+    spentEur: 0,
+    todayEur: 0,
+    pctUsed: 0,
+    byAgent: { nora: 0, skaut: 0, atelier: 0, leads: 0 },
+    byKind: { anthropic: 0, places: 0 },
+    allocation: ALLOCATION,
+    projectedEur: 0,
+    monthStart: monthStart().toISOString(),
+  };
+  try {
+    const from = monthStart();
+    const dayStart = new Date();
+    dayStart.setUTCHours(0, 0, 0, 0);
+    const [byAgentKind, today] = await Promise.all([
+      prisma.agentSpend.groupBy({
+        by: ["agent", "kind"],
+        where: { createdAt: { gte: from } },
+        _sum: { eur: true },
+      }),
+      prisma.agentSpend.aggregate({ where: { createdAt: { gte: dayStart } }, _sum: { eur: true } }),
+    ]);
+    const out = { ...empty, available: true };
+    for (const r of byAgentKind) {
+      const v = r._sum.eur ?? 0;
+      out.spentEur += v;
+      if (r.agent in out.byAgent) out.byAgent[r.agent as SpendAgent] += v;
+      if (r.kind === "anthropic") out.byKind.anthropic += v;
+      if (r.kind === "places") out.byKind.places += v;
+    }
+    out.todayEur = today._sum.eur ?? 0;
+    out.pctUsed = out.spentEur / out.capEur;
+    const now = new Date();
+    const day = now.getUTCDate();
+    const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+    out.projectedEur = day >= 3 ? (out.spentEur / day) * daysInMonth : out.spentEur;
+    return out;
+  } catch {
+    return empty;
+  }
+}
+
+/**
+ * Smie Skaut / Nora pracovať sami (v noci)? Vyžaduje fungujúcu evidenciu výdavkov a to,
+ * že po odhadovanej cene behu ostane výdavok pod mäkkým stropom a pod podielom agenta.
+ */
+export async function canRunAutonomously(
+  agent: SpendAgent,
+  estimateEur: number,
+): Promise<{ ok: boolean; reason?: string; budget: BudgetSnapshot }> {
+  const budget = await getBudget();
+  if (!budget.available)
+    return { ok: false, reason: "Pokladnica nie je dostupná (chýba tabuľka agent_spend).", budget };
+  if (budget.spentEur + estimateEur > budget.capEur * SOFT_STOP)
+    return { ok: false, reason: `Mesačný rozpočet je vyčerpaný na ${Math.round(budget.pctUsed * 100)} %.`, budget };
+  if (budget.byAgent[agent] + estimateEur > budget.allocation[agent] * 1.25)
+    return { ok: false, reason: `Podiel agenta ${agent} na rozpočte je vyčerpaný.`, budget };
+  return { ok: true, budget };
+}

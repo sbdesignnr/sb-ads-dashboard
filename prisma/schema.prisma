@@ -204,6 +204,27 @@ model LeadResearch {
   @@map("lead_research")
 }
 
+// Pokladnica agentov: každé platené volanie (Claude, Google Places) sa zapíše sem, aby
+// sa dal strážiť mesačný strop. `agent` = nora | skaut | atelier | leads.
+model AgentSpend {
+  id           String   @id @default(cuid())
+  agent        String
+  kind         String // anthropic | places
+  model        String?
+  inputTokens  Int      @default(0) @map("input_tokens")
+  outputTokens Int      @default(0) @map("output_tokens")
+  cacheRead    Int      @default(0) @map("cache_read")
+  cacheWrite   Int      @default(0) @map("cache_write")
+  calls        Int      @default(1)
+  eur          Float
+  ref          String? // id leadu / behu, ktorého sa výdavok týka
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([agent, createdAt])
+  @@map("agent_spend")
+}
+
 // A sending campaign scoped to a segment, with a daily cap + send time.
 model LeadCampaign {
   id           String    @id @default(cuid())

@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { runResearchAgent, type AgentResult, type OfferPlan } from "@/lib/leads/research/strategist";
 import { isEditedByHand } from "@/lib/leads/draft-state";
+import { getBudget, withSpend } from "@/lib/agents/budget";
 
 /** Beh, ktorý sa neozval dlhšie, sa považuje za spadnutý (funkcia mohla skončiť časovým limitom). */
 export const STALE_MS = 8 * 60_000;
@@ -79,6 +80,15 @@ export async function startResearch(leadId: string): Promise<StartResult> {
   if (!lead.websiteUrl)
     return { ok: false, status: 422, error: "Lead nemá web, agent nemá z čoho vychádzať." };
 
+  // Tvrdý strop: ani ručný beh sa nespustí, keď je mesačný rozpočet vyčerpaný.
+  const budget = await getBudget();
+  if (budget.available && budget.spentEur >= budget.capEur)
+    return {
+      ok: false,
+      status: 402,
+      error: `Mesačný rozpočet ${budget.capEur} € je vyčerpaný. Zvýš ho (AGENT_MONTHLY_BUDGET_EUR) alebo počkaj na nový mesiac.`,
+    };
+
   const cutoff = new Date(Date.now() - STALE_MS);
   await prisma.leadResearch.updateMany({
     where: { status: "running", updatedAt: { lt: cutoff } },
@@ -104,6 +114,10 @@ export async function startResearch(leadId: string): Promise<StartResult> {
 
 /** Vykoná beh (1–2 min). Volá sa na pozadí (after()) — chyby sa zapisujú do záznamu. */
 export async function executeResearch(researchId: string, leadId: string): Promise<void> {
+  return withSpend({ agent: "nora", ref: leadId }, () => executeResearchInner(researchId, leadId));
+}
+
+async function executeResearchInner(researchId: string, leadId: string): Promise<void> {
   const setStep = (step: string) =>
     prisma.leadResearch.update({ where: { id: researchId }, data: { step: step.slice(0, 200) } }).catch(() => {});
   try {

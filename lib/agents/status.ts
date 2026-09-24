@@ -2,6 +2,8 @@
 // Pridanie ďalšieho agenta: napíš provider (vráti AgentSnapshot) a zaregistruj ho nižšie.
 import { prisma } from "@/lib/prisma";
 import { QUALIFY_AT } from "@/lib/leads/qualification";
+import { getBudget, SOFT_STOP } from "./budget";
+import { backlogCount, getShortlist } from "./skaut";
 import {
   AGENTS,
   type AgentEvent,
@@ -47,11 +49,9 @@ async function researchSignals() {
 }
 
 /**
- * Nora vlastní pipeline leadov (sken → analýza → ponuka → koncept mailu → odoslanie).
- * Stav sa odvodzuje z toho, čo sa práve deje v tabuľkách leadov a mailov:
- *  - pracuje: beží sken segmentu, alebo sa v poslednej chvíli analyzovali weby / písali koncepty,
- *  - čaká: existujú koncepty čakajúce na schválenie,
- *  - chyba: posledný sken zlyhal v uplynulej pol hodine,
+ * Nora pripravuje ponuky (výskum) a stráži koncepty mailov na schválenie:
+ *  - pracuje: beží jej výskum, alebo sa práve píšu koncepty,
+ *  - čaká: hotové ponuky alebo koncepty čakajú na tvoje posúdenie,
  *  - inak nečinná.
  */
 async function noraSnapshot(): Promise<AgentSnapshot> {
@@ -59,9 +59,6 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
   const since = (ms: number) => new Date(now - ms);
 
   const [
-    scanRunning,
-    lastFailedScan,
-    analysedNow,
     draftedNow,
     draftsWaiting,
     approved,
@@ -71,20 +68,8 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
     repliesWeek,
     openedWeek,
     recentMails,
-    recentScans,
     research,
   ] = await Promise.all([
-    prisma.leadScanJob.findFirst({
-      where: { status: "running", createdAt: { gt: since(20 * MIN) } },
-      orderBy: { createdAt: "desc" },
-      select: { foundTotal: true, segment: { select: { name: true } } },
-    }),
-    prisma.leadScanJob.findFirst({
-      where: { status: "failed", createdAt: { gt: since(30 * MIN) } },
-      orderBy: { createdAt: "desc" },
-      select: { errorMessage: true },
-    }),
-    prisma.lead.count({ where: { lastScannedAt: { gt: since(2 * MIN) } } }),
     prisma.leadEmail.count({ where: { createdAt: { gt: since(2 * MIN) } } }),
     prisma.leadEmail.count({
       where: {
@@ -118,31 +103,16 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
         lead: { select: { companyName: true } },
       },
     }),
-    prisma.leadScanJob.findMany({
-      where: { createdAt: { gt: since(3 * 24 * HOUR) } },
-      orderBy: { createdAt: "desc" },
-      take: 4,
-      select: {
-        status: true,
-        foundTotal: true,
-        foundQualified: true,
-        completedAt: true,
-        createdAt: true,
-        segment: { select: { name: true } },
-      },
-    }),
     researchSignals(),
   ]);
 
   const researchRunning = research.running ? 1 : 0;
   const researchReady = research.ready;
-  const scanning = scanRunning ? 1 : 0;
   // Koncept, ktorý vznikol kliknutím na "Použiť ako koncept", nie je práca na pozadí.
   const appliedJustNow = research.recent.filter(
     (r) => r.appliedAt && r.appliedAt.getTime() > now - 2 * MIN,
   ).length;
   const drafting = draftedNow > appliedJustNow ? 1 : 0;
-  const analysing = analysedNow > 0 ? 1 : 0;
 
   let status: AgentStatus = "idle";
   let headline = "Všetko hotové, čaká na ďalší lead.";
@@ -151,18 +121,9 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
     status = "working";
     headline = `Pripravuje ponuku pre ${research.running?.lead.companyName ?? "lead"}.`;
     detail = research.running?.step ?? undefined;
-  } else if (lastFailedScan && !scanning) {
-    status = "error";
-    headline = `Posledný sken zlyhal${lastFailedScan.errorMessage ? `: ${lastFailedScan.errorMessage.slice(0, 90)}` : "."}`;
-  } else if (scanning) {
-    status = "working";
-    headline = `Skenuje segment ${scanRunning?.segment?.name ?? ""}`.trim() + ` (nájdených ${scanRunning?.foundTotal ?? 0})`;
   } else if (drafting) {
     status = "working";
     headline = "Píše koncepty mailov.";
-  } else if (analysing) {
-    status = "working";
-    headline = `Analyzuje weby (posledné 2 minúty: ${analysedNow}).`;
   } else if (researchReady > 0 || draftsWaiting > 0) {
     status = "waiting";
     headline =
@@ -200,12 +161,6 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
     if (r.status === "failed") push(r.updatedAt, `Výskum sa nepodaril: ${co}`, "warn");
     if (r.appliedAt) push(r.appliedAt, `Mail z výskumu použitý ako koncept: ${co}`, "info");
   }
-  for (const j of recentScans) {
-    const seg = j.segment?.name ?? "segment";
-    if (j.status === "completed")
-      push(j.completedAt ?? j.createdAt, `Sken ${seg}: ${j.foundTotal} webov, ${j.foundQualified} vhodných`, "info");
-    if (j.status === "failed") push(j.createdAt, `Sken ${seg} zlyhal`, "warn");
-  }
   events.sort((a, b) => b.t - a.t);
   const activity = events.slice(0, 8).map(({ at, text, tone }) => ({ at, text, tone }));
 
@@ -216,9 +171,7 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
     counters: {
       researchRunning,
       researchReady,
-      scanning,
       drafting,
-      analysing,
       draftsWaiting,
       approved,
       qualified,
@@ -233,8 +186,114 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
   };
 }
 
+/**
+ * Miro (Skaut) hľadá a hodnotí firmy: pracuje, keď beží sken alebo sa práve hodnotia weby;
+ * čaká, keď je vyčerpaný mesačný rozpočet; inak nečinný a ukazuje zásobu a výber pre Noru.
+ */
+async function miroSnapshot(): Promise<AgentSnapshot> {
+  const now = Date.now();
+  const since = (ms: number) => new Date(now - ms);
+  const [scanRunning, lastFailedScan, analysedNow, analysedWeek, recentScans, shortlist, backlog, budget, noraWeek] =
+    await Promise.all([
+      prisma.leadScanJob.findFirst({
+        where: { status: "running", createdAt: { gt: since(20 * MIN) } },
+        orderBy: { createdAt: "desc" },
+        select: { foundTotal: true, segment: { select: { name: true } } },
+      }),
+      prisma.leadScanJob.findFirst({
+        where: { status: "failed", createdAt: { gt: since(30 * MIN) } },
+        orderBy: { createdAt: "desc" },
+        select: { errorMessage: true },
+      }),
+      prisma.lead.count({ where: { lastScannedAt: { gt: since(2 * MIN) } } }),
+      prisma.lead.count({ where: { lastScannedAt: { gt: since(7 * 24 * HOUR) } } }),
+      prisma.leadScanJob.findMany({
+        where: { createdAt: { gt: since(7 * 24 * HOUR) } },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        select: {
+          status: true,
+          foundTotal: true,
+          foundQualified: true,
+          completedAt: true,
+          createdAt: true,
+          segment: { select: { name: true } },
+        },
+      }),
+      getShortlist(5).catch(() => ({ picks: [], candidates: 0 })),
+      backlogCount().catch(() => 0),
+      getBudget(),
+      prisma.leadResearch.count({ where: { createdAt: { gt: since(7 * 24 * HOUR) } } }).catch(() => 0),
+    ]);
+
+  const scanning = scanRunning ? 1 : 0;
+  const analysing = analysedNow > 0 ? 1 : 0;
+  const budgetTight = budget.available && budget.pctUsed >= SOFT_STOP;
+
+  let status: AgentStatus = "idle";
+  let headline = `Zásoba: ${backlog} vhodných leadov v prioritných odboroch, ${shortlist.candidates} čaká na Noru.`;
+  if (lastFailedScan && !scanning) {
+    status = "error";
+    headline = `Posledný sken zlyhal${lastFailedScan.errorMessage ? `: ${lastFailedScan.errorMessage.slice(0, 90)}` : "."}`;
+  } else if (scanning) {
+    status = "working";
+    headline = `Skenuje segment ${scanRunning?.segment?.name ?? ""}`.trim() + ` (nájdených ${scanRunning?.foundTotal ?? 0})`;
+  } else if (analysing) {
+    status = "working";
+    headline = `Hodnotí weby (posledné 2 minúty: ${analysedNow}).`;
+  } else if (budgetTight) {
+    status = "waiting";
+    headline = `Rozpočet je vyčerpaný na ${Math.round(budget.pctUsed * 100)} %, čaká.`;
+  }
+
+  const events: (AgentEvent & { t: number })[] = [];
+  for (const j of recentScans) {
+    const seg = j.segment?.name ?? "segment";
+    const d = j.completedAt ?? j.createdAt;
+    if (j.status === "completed")
+      events.push({ at: d.toISOString(), t: d.getTime(), text: `Sken ${seg}: ${j.foundTotal} webov, ${j.foundQualified} vhodných`, tone: "info" });
+    if (j.status === "failed")
+      events.push({ at: j.createdAt.toISOString(), t: j.createdAt.getTime(), text: `Sken ${seg} zlyhal`, tone: "warn" });
+  }
+  events.sort((a, b) => b.t - a.t);
+  const activity: AgentEvent[] = [
+    ...shortlist.picks.slice(0, 3).map((p) => ({
+      at: new Date(now).toISOString(),
+      text: `Top výber: ${p.lead.companyName} (skóre ${p.score}) — ${p.reasons.slice(0, 2).join(", ")}`,
+      tone: "ok" as const,
+    })),
+    ...events.slice(0, 4).map(({ at, text, tone }) => ({ at, text, tone })),
+  ];
+
+  const stats: AgentStat[] = [
+    { label: "Zásoba vhodných", value: String(backlog), hint: "prioritné odbory" },
+    { label: "Čaká na Noru", value: String(shortlist.candidates) },
+    { label: "Nora / 7 dní", value: String(noraWeek), hint: "spracované ponuky" },
+    { label: "Hodnotených webov / 7 dní", value: String(analysedWeek) },
+    { label: "Rozpočet spolu", value: `${budget.spentEur.toFixed(1).replace(".", ",")} €`, hint: `z ${budget.capEur} €` },
+    { label: "Skaut tento mesiac", value: `${budget.byAgent.skaut.toFixed(2).replace(".", ",")} €` },
+  ];
+
+  return {
+    status,
+    headline,
+    counters: {
+      scanning,
+      analysing,
+      backlog,
+      picks: shortlist.candidates,
+      tableCount: shortlist.candidates,
+      budgetPct: Math.round(budget.pctUsed * 100),
+    },
+    stats,
+    activity,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 const STATUS_PROVIDERS: Record<string, () => Promise<AgentSnapshot>> = {
   nora: noraSnapshot,
+  miro: miroSnapshot,
 };
 
 export async function getAgentSnapshots(): Promise<AgentSnapshots> {

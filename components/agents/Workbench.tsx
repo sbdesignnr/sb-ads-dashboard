@@ -33,6 +33,9 @@ interface LeadRow {
   websiteScore: number | null;
   companyEmail: string | null;
   segment: { name: string } | null;
+  /** skóre príležitosti a dôvody od Skauta (len pri jeho výbere) */
+  opportunity?: number;
+  reasons?: string[];
 }
 interface RunRow {
   id: string;
@@ -50,6 +53,7 @@ interface RunRow {
 interface ListData {
   runs: RunRow[];
   candidates: LeadRow[];
+  candidateTotal?: number;
   found: LeadRow[];
   pinned: LeadRow | null;
 }
@@ -276,7 +280,10 @@ export function Workbench({
             />
           </div>
           <p className="mb-2 px-1 text-[11px] text-muted">
-            {q.trim() ? "Výsledky hľadania" : "Najlepšie vhodné leady, ktoré Nora ešte neskúmala"} · {COST_HINT} za firmu
+            {q.trim()
+              ? "Výsledky hľadania"
+              : `Výber Skauta Mira: top ${leadsToShow.length} z ${data?.candidateTotal ?? "…"} vhodných leadov`}{" "}
+            · {COST_HINT} za firmu
           </p>
           <ul className="mb-4 space-y-1.5">
             {!data && <li className="px-1 text-xs text-muted">Načítavam…</li>}
@@ -290,7 +297,15 @@ export function Workbench({
                     {l.websiteScore != null && ` · skóre ${l.websiteScore}`}
                     {!l.companyEmail && <span className="text-amber-300"> · bez e-mailu</span>}
                   </p>
+                  {l.reasons && l.reasons.length > 0 && (
+                    <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-snug text-sky-300/80">{l.reasons.slice(0, 3).join(" · ")}</p>
+                  )}
                 </div>
+                {l.opportunity != null && (
+                  <span title="Skóre príležitosti" className="shrink-0 rounded-md bg-sky-400/15 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-sky-300">
+                    {l.opportunity}
+                  </span>
+                )}
                 <button
                   onClick={() => start(l)}
                   disabled={busy !== null || Boolean(running)}

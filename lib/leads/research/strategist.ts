@@ -59,6 +59,34 @@ export interface AgentResult {
   issues: string[];
 }
 
+/** Model občas vráti pole ako JSON reťazec ("[...]") alebo vôbec — vždy z toho spravíme pole. */
+function asArray<T = unknown>(v: unknown): T[] {
+  if (Array.isArray(v)) return v as T[];
+  if (typeof v === "string") {
+    try {
+      const p = JSON.parse(v);
+      return Array.isArray(p) ? (p as T[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+/** Rovnako pre objekt, ktorý prišiel ako JSON reťazec. */
+function asObject<T extends object>(v: unknown): T | undefined {
+  if (v && typeof v === "object" && !Array.isArray(v)) return v as T;
+  if (typeof v === "string") {
+    try {
+      const p = JSON.parse(v);
+      return p && typeof p === "object" && !Array.isArray(p) ? (p as T) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 const norm = (s: string) =>
   s
     .normalize("NFD")
@@ -288,8 +316,8 @@ export async function runResearchAgent(input: {
     understanding = d.understanding ?? "";
     nicheNotes = d.niche_notes ?? "";
     const byId = new Map(pack.items.map((i) => [i.id, i]));
-    const all: Finding[] = (d.findings ?? []).map((f, i) => {
-      const evidence = (f.evidence ?? []).map((e) => ({
+    const all: Finding[] = asArray<NonNullable<typeof d.findings>[number]>(d.findings).map((f, i) => {
+      const evidence = asArray<{ eid?: string; quote?: string }>(f.evidence).map((e) => ({
         eid: String(e.eid ?? ""),
         quote: String(e.quote ?? "").trim(),
         ok: quoteInItem(String(e.quote ?? ""), byId.get(String(e.eid ?? ""))),
@@ -317,8 +345,8 @@ export async function runResearchAgent(input: {
       dropped = [...dropped, ...findings.filter((f) => !f.verified)];
       findings = findings.filter((f) => f.verified);
     }
-    const o = d.offer;
-    const okIds = o?.finding_ids?.filter((id) => findings.some((f) => f.id === id)) ?? [];
+    const o = asObject<Partial<OfferPlan>>(d.offer);
+    const okIds = asArray<string>(o?.finding_ids).filter((id) => findings.some((f) => f.id === id));
     if (o && okIds.length) {
       offer = {
         name: String(o.name ?? ""),
@@ -387,7 +415,7 @@ export async function runResearchAgent(input: {
     let paragraphs = Array.isArray(d.paragraphs)
       ? d.paragraphs.map((p) => normalizeDashes(String(p).trim())).filter(Boolean)
       : [];
-    const used = mailFindings.filter((f) => (d.used_findings ?? []).includes(f.id));
+    const used = mailFindings.filter((f) => asArray<string>(d.used_findings).includes(f.id));
     // Číslo smie byť v maile, ak ho zistenie uvádza A zároveň je v plnom texte niektorej z
     // dôkazných položiek, ktoré cituje (napr. "79" recenzií je v Google profile).
     const byItem = new Map(pack.items.map((i) => [i.id, i]));

@@ -16,27 +16,37 @@ export interface HomeLayout {
   parent: Partial<Record<NodeName, NodeName>>;
 }
 
-export function homeLayout(plot: PlotDef): HomeLayout {
+export function homeLayout(plot: PlotDef, access: "avenue" | "corridor" = "avenue"): HomeLayout {
   const house: HouseGeom = { gx: plot.gx + 0.5, gy: plot.gy + 0.3, w: 3.0, d: 2.4, H: HOUSE_H, RH: HOUSE_RH };
   const front = house.gy + house.d;
   const doorX = house.gx + house.w / 2;
-  const roadY = front + 1.75;
-  return {
+  const base = {
     house,
     front,
     desk: { gx: house.gx, gy: front + 0.55 },
     chair: { gx: house.gx + 0.25, gy: front - 0.02 },
     table: { gx: doorX + 0.8, gy: front + 0.5 },
     mailbox: { gx: plot.gx + plot.w - 0.15, gy: front + 0.3 },
-    nodes: {
-      seat: [house.gx + 0.5, front + 0.4],
-      aisle: [house.gx + 1.05, front + 0.4],
-      yard: [doorX - 0.35, front + 0.95],
-      table: [doorX + 0.5, front + 0.95],
-      road1: [doorX, roadY],
-      road2: [7.0, roadY],
-      plaza: [7.0, 9.1],
-    },
+  };
+  const near = {
+    seat: [house.gx + 0.5, front + 0.4] as [number, number],
+    aisle: [house.gx + 1.05, front + 0.4] as [number, number],
+    yard: [doorX - 0.35, front + 0.95] as [number, number],
+    table: [doorX + 0.5, front + 0.95] as [number, number],
+  };
+  if (access === "corridor") {
+    // dom pri vodorovnej ceste: od dverí ide chodník k ceste a po nej k námestiu
+    const road: [number, number] = [doorX, 7.0];
+    return {
+      ...base,
+      nodes: { ...near, road1: road, road2: road, plaza: [8.9, 7.0] },
+      parent: { seat: "aisle", aisle: "yard", table: "yard", yard: "road1", road1: "plaza" },
+    };
+  }
+  const roadY = front + 1.75;
+  return {
+    ...base,
+    nodes: { ...near, road1: [doorX, roadY], road2: [7.0, roadY], plaza: [7.0, 9.1] },
     parent: { seat: "aisle", aisle: "yard", table: "yard", yard: "road1", road1: "road2", road2: "plaza" },
   };
 }

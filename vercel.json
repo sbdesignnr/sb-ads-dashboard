@@ -31,11 +31,21 @@
     {
       "path": "/api/cron/seo-audit",
       "schedule": "30 5 * * 1"
+    },
+    {
+      "path": "/api/cron/agents-night",
+      "schedule": "*/20 0-3 * * *"
     }
   ],
   "functions": {
-    "app/api/leads/analyze-bulk/route.ts": { "memory": 2048 },
-    "app/api/leads/[id]/ai/route.ts": { "memory": 2048 },
-    "app/api/leads/scan/route.ts": { "memory": 2048 }
+    "app/api/leads/analyze-bulk/route.ts": {
+      "memory": 2048
+    },
+    "app/api/leads/[id]/ai/route.ts": {
+      "memory": 2048
+    },
+    "app/api/leads/scan/route.ts": {
+      "memory": 2048
+    }
   }
 }

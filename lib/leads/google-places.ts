@@ -1,3 +1,4 @@
+import { recordPlaces } from "../agents/budget";
 import { analyzeWebsite, type WebsiteAnalysis } from "./website-analyzer";
 
 const PLACES_API = "https://places.googleapis.com/v1/places:searchText";
@@ -100,6 +101,7 @@ export async function searchBusinesses(
 
     let res: Response;
     try {
+      recordPlaces();
       res = await fetch(PLACES_API, {
         method: "POST",
         headers: {

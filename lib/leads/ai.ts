@@ -1,3 +1,4 @@
+import { recordAnthropic } from "../agents/budget";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Lead } from "@prisma/client";
 import { buildGreeting } from "./person-name";
@@ -144,6 +145,7 @@ export async function generateDossier(f: DossierInput): Promise<LeadDossier> {
     tool_choice: { type: "tool", name: "uloz_dossier" },
     messages: [{ role: "user", content: dossierFacts(f) }],
   });
+  recordAnthropic(MODEL, msg.usage);
   const block = msg.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
   const d = (block?.input ?? {}) as Partial<LeadDossier>;
 
@@ -416,8 +418,9 @@ export interface AiUsage {
 }
 const usageTotals: AiUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0 };
 
-function trackUsage(u: Anthropic.Usage | undefined) {
+function trackUsage(u: Anthropic.Usage | undefined, model?: string) {
   if (!u) return;
+  if (model) recordAnthropic(model, u);
   usageTotals.input += u.input_tokens ?? 0;
   usageTotals.output += u.output_tokens ?? 0;
   usageTotals.cacheRead += u.cache_read_input_tokens ?? 0;
@@ -461,7 +464,7 @@ export async function createMessage(
     if (quirks.autoToolChoice && p.tool_choice?.type === "tool") p.tool_choice = { type: "auto" };
     try {
       const res = await client.messages.create(p);
-      trackUsage(res.usage);
+      trackUsage(res.usage, p.model);
       return res;
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";

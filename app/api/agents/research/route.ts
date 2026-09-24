@@ -1,7 +1,7 @@
 import { NextResponse, after, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { QUALIFY_AT } from "@/lib/leads/qualification";
+import { getShortlist } from "@/lib/agents/skaut";
 import { executeResearch, startResearch, STALE_MS } from "@/lib/agents/research";
 
 export const runtime = "nodejs";
@@ -54,19 +54,7 @@ export async function GET(req: NextRequest) {
           lead: { select: { id: true, companyName: true, companyCity: true } },
         },
       }),
-      q
-        ? Promise.resolve([])
-        : prisma.lead.findMany({
-            where: {
-              status: "new",
-              websiteUrl: { not: null },
-              websiteScore: { gte: QUALIFY_AT },
-              research: { none: {} },
-            },
-            orderBy: { websiteScore: "desc" },
-            take: 40,
-            select: leadSelect,
-          }),
+      q ? Promise.resolve(null) : getShortlist(10),
       q
         ? prisma.lead.findMany({
             where: { websiteUrl: { not: null }, companyName: { contains: q, mode: "insensitive" } },
@@ -79,15 +67,9 @@ export async function GET(req: NextRequest) {
         ? prisma.lead.findUnique({ where: { id: pinnedId }, select: leadSelect })
         : Promise.resolve(null),
     ]);
-    // najprv leady, ktoré majú e-mail (bez neho sa mail nedá poslať)
-    const candidates = [...top]
-      .sort(
-        (a, b) =>
-          Number(Boolean(b.companyEmail)) - Number(Boolean(a.companyEmail)) ||
-          (b.websiteScore ?? 0) - (a.websiteScore ?? 0),
-      )
-      .slice(0, 10);
-    return NextResponse.json({ runs, candidates, found, pinned });
+    // Kandidáti = výber Skauta (skóre príležitosti a dôvody), zoradené od najlepšieho.
+    const candidates = (top?.picks ?? []).map((p) => ({ ...p.lead, opportunity: p.score, reasons: p.reasons }));
+    return NextResponse.json({ runs, candidates, candidateTotal: top?.candidates ?? 0, found, pinned });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }

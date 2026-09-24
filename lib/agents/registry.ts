@@ -38,8 +38,8 @@ export const DEPARTMENTS: DepartmentDef[] = [
   },
   {
     id: "marketing",
-    name: "Marketing",
-    tagline: "Reklamy, obsah, značka",
+    name: "Prieskum a marketing",
+    tagline: "Hľadanie príležitostí, reklamy",
     color: "#ec4899",
     rect: [7.5, 0, 14, 6.5],
     sign: [7.75, 1.4],
@@ -93,6 +93,12 @@ export interface AgentDef {
   plot: string;
   /** agent má pracovňu (zadávanie úloh a výsledky) */
   workbench?: boolean;
+  /** vzhľad domčeka (strecha, múry); predvolene terakotová strecha */
+  house?: { roof: string; wall: string };
+  /** ako sa k domu chodí: "avenue" = po zvislej ceste k Nore, "corridor" = po vodorovnej ceste na námestie */
+  access?: "avenue" | "corridor";
+  /** čipy, ktoré sa vznášajú nad stolom, keď agent pracuje */
+  chips?: { text: string; color: string }[];
   links: AgentLinkDef[];
   /** hlášky podľa stavu; funkcie dostanú živé počítadlá */
   lines: {
@@ -139,26 +145,11 @@ export const PLOTS: PlotDef[] = [
   {
     id: "marketing-a",
     department: "marketing",
-    gx: 9.2,
-    gy: 1.0,
-    w: 3.6,
-    d: 3.0,
-    idea: {
-      title: "Reklamný stratég",
-      text: "Hlída výkon Google a Meta reklamy, navrhuje úpravy rozpočtov a nové kreatívy.",
-    },
-  },
-  {
-    id: "marketing-b",
-    department: "marketing",
-    gx: 9.6,
-    gy: 4.4,
-    w: 2.8,
-    d: 1.8,
-    idea: {
-      title: "Obsahár",
-      text: "Píše blogové články a príspevky na sociálne siete v tvojom hlase.",
-    },
+    gx: 9.0,
+    gy: 0.7,
+    w: 4.0,
+    d: 4.4,
+    idea: { title: "Domov pre Mira", text: "Tu býva Miro, skaut príležitostí." },
   },
   {
     id: "technika-a",
@@ -233,6 +224,11 @@ export const AGENTS: AgentDef[] = [
     },
     plot: "predaj-a",
     workbench: true,
+    chips: [
+      { text: "Google recenzie", color: "#fbbf24" },
+      { text: "Citát overený ✓", color: "#4ade80" },
+      { text: "Konkurenti v meste", color: "#60a5fa" },
+    ],
     links: [
       { label: "Fronta na schválenie", href: "/leads/kampane" },
       { label: "Leady", href: "/leads" },
@@ -341,6 +337,80 @@ export const AGENTS: AgentDef[] = [
       },
       method:
         "Postupujem vždy rovnako. Najprv zozbieram dôkazy: web firmy, Google profil s recenziami a konkurentov v meste. Potom z nich vyvodím zistenia a ku každému pripojím doslovný citát. Kód overí, že citát v zdroji naozaj je, a druhá kontrola posúdi, či z dôkazov vyplýva celé tvrdenie. Nepodložené zahodím. Až z overených zistení navrhnem ponuku a napíšem mail. Číslo, ktoré nemám z dát, v ňom nenájdeš. Stojí to okolo 0,15 € za firmu.",
+    },
+  },
+  {
+    id: "miro",
+    name: "Miro",
+    role: "Skaut príležitostí",
+    department: "marketing",
+    tagline: "Stále hľadá a vyberá firmy, ktoré sa naozaj oplatí osloviť.",
+    bio: "Miro prechádza tvoju zásobu leadov a nové firmy z Google. Najprv všetko lacno vyfiltruje v kóde (web, e-mail, aktívna firma), potom každému leadu spočíta skóre príležitosti a vyberie len tie najlepšie v prioritných odboroch (realitné kancelárie, stavebné firmy, fyzioterapeuti). Vybrané postúpi Nore, ktorá im cez noc pripraví ponuku. Nič neposiela a nič nemení, len vyberá a vysvetľuje prečo.",
+    skills: ["Skóre príležitosti", "Filter leadov", "Overenie firiem", "Výber top leadov", "Nočná fronta pre Noru"],
+    look: {
+      skin: "#e6b08a",
+      hair: "#3a281d",
+      hairStyle: "cap",
+      outfit: "#0f766e",
+      outfitDark: "#0b5b55",
+      pants: "#334155",
+      accent: "#22d3ee",
+      glasses: false,
+      headset: true,
+    },
+    plot: "marketing-a",
+    house: { roof: "#2f80c8", wall: "#e9f1f8" },
+    access: "corridor",
+    chips: [
+      { text: "Skórujem weby", color: "#22d3ee" },
+      { text: "Vyraďujem nevhodné", color: "#f87171" },
+      { text: "Top výber pre Noru", color: "#4ade80" },
+    ],
+    links: [
+      { label: "Leady", href: "/leads" },
+      { label: "Kampane", href: "/leads/kampane" },
+    ],
+    lines: {
+      working: [
+        () => "Prechádzam nové firmy. Čo nemá web, e-mail alebo je reťazec, letí von.",
+        () => "Hodnotím weby. Každý dostane skóre príležitosti a dôvod, prečo.",
+        () => "Ešte pár webov a mám čerstvý výber pre Noru.",
+      ],
+      waiting: [
+        () => "Rozpočet na tento mesiac je takmer vyčerpaný. Radšej počkám, než aby som míňal navyše.",
+        () => "Čakám na nový mesiac alebo na povolenie z rozpočtu.",
+      ],
+      idle: [
+        (c) =>
+          n(c, "backlog")
+            ? `V zásobe je ${n(c, "backlog")} vhodných leadov v mojich odboroch. Nové hľadám, až keď ich ubudne.`
+            : "Zásoba je prázdna. Čas hľadať nové firmy.",
+        (c) =>
+          n(c, "picks")
+            ? `Nora má z môjho výberu ešte ${n(c, "picks")} leadov na spracovanie.`
+            : "Výber pre Noru je momentálne hotový.",
+        () => "Nehľadám naslepo. Kým nemáme čo osloviť, šetrím rozpočet.",
+        () => "Cez noc posielam Nore tých najlepších. Ráno nájdeš ponuky v jej pracovni.",
+      ],
+      error: [() => "Posledné hľadanie sa pokazilo. Pozri, čo hlásia skeny."],
+      greet: [
+        () => "Ahoj Samuel! Práve triedim, kto stojí za oslovenie.",
+        () => "Zdravím. Chceš vedieť, koho som vybral a prečo?",
+      ],
+      hover: [() => "Hm? Práve pozerám horizont.", () => "Klikni, ukážem ti svoj výber."],
+    },
+    answers: {
+      status: (s, c) =>
+        s === "working"
+          ? "Práve hľadám a hodnotím firmy. Až budem hotový, výber postúpi Nore."
+          : s === "waiting"
+            ? "Rozpočet na mesiac je takmer vyčerpaný, tak čakám. Nič nemíňam navyše."
+            : `V zásobe mám ${n(c, "backlog")} vhodných leadov v prioritných odboroch. Nora z nich ešte nespracovala ${n(c, "picks")}.`,
+      needs: () => ({
+        text: "Zatiaľ nič. Pracujem sám a cez noc posielam Nore najlepších. Výsledky uvidíš v jej pracovni.",
+      }),
+      method:
+        "Najprv lacno v kóde: firma musí byť aktívna, mať web a e-mail, nesmie byť reťazec. Potom spočítam skóre príležitosti 0 až 100: zastaraný web, chýbajúce HTTPS alebo mobil, overený konateľ, osobná schránka a prioritný odbor. Vyberám z odborov, ktoré si určil: realitné kancelárie, stavebné firmy a fyzioterapeuti. Najlepších zaradím Nore. Celé je to bez AI, takže ma to nestojí nič.",
     },
   },
 ];

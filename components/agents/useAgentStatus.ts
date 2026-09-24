@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentSnapshots } from "@/lib/agents/registry";
+import type { BudgetSnapshot } from "@/lib/agents/budget";
 
 /** Živý stav agentov z /api/agents/status (obnovuje sa každých 8 s, keď je karta viditeľná). */
 export function useAgentStatus(intervalMs = 8000) {
   const [snapshots, setSnapshots] = useState<AgentSnapshots | null>(null);
+  const [budget, setBudget] = useState<BudgetSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const alive = useRef(true);
@@ -14,9 +16,10 @@ export function useAgentStatus(intervalMs = 8000) {
     try {
       const r = await fetch("/api/agents/status", { cache: "no-store" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = (await r.json()) as { agents: AgentSnapshots };
+      const j = (await r.json()) as { agents: AgentSnapshots; budget?: BudgetSnapshot };
       if (!alive.current) return;
       setSnapshots(j.agents);
+      if (j.budget) setBudget(j.budget);
       setError(null);
       setLoadedAt(Date.now());
     } catch (e) {
@@ -39,5 +42,5 @@ export function useAgentStatus(intervalMs = 8000) {
     };
   }, [load, intervalMs]);
 
-  return { snapshots, error, loadedAt, refresh: load };
+  return { snapshots, budget, error, loadedAt, refresh: load };
 }
