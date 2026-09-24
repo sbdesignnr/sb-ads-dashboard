@@ -17,6 +17,7 @@ import {
   CalendarClock,
   ListChecks,
   FolderKanban,
+  Castle,
   type LucideIcon,
 } from "lucide-react";
 
@@ -43,6 +44,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/projekty", label: "Projekty", icon: FolderKanban },
   { href: "/rezervacie", label: "Rezervácie", icon: CalendarClock },
   { href: "/vzdelavanie", label: "Vzdelávanie", icon: BookOpen },
+  { href: "/agenti", label: "Agenti", icon: Castle },
   { href: "/jarvis", label: "Jarvis", icon: Bot },
   { href: "/settings", label: "Nastavenia", icon: Settings },
 ];
