@@ -9,7 +9,7 @@ const MODEL = "claude-sonnet-4-6";
 // (LEADS_EMAIL_MODEL / LEADS_PROOFREAD_MODEL) bez zásahu do kódu.
 // Sonnet 5: na 6 reálnych leadoch písal tesnejšie a prirodzenejšie než 4.6 a správne
 // preskočil nadnárodný koncern (STRABAG). Opus 5.5 často nevolal nástroj (3 z 6 bez výsledku).
-const WRITER_MODEL = process.env.LEADS_EMAIL_MODEL?.trim() || "claude-sonnet-5";
+export const WRITER_MODEL = process.env.LEADS_EMAIL_MODEL?.trim() || "claude-sonnet-5";
 // Korektúru robí ten istý model ako písanie. Opus 5.5 bol na jeden mail asi 5x drahší
 // a jazykové chyby (cyrilika, počty slovom, klišé) zachytáva deterministická kontrola
 // v email-quality.ts; korektor dopĺňa pravopis a pravdivosť.
@@ -404,7 +404,7 @@ const THREAD_LABEL: Record<string, string> = {
 };
 
 // Segmenty, kde sa píše formálne ("S úctou") aj bez titulu v mene.
-const FORMAL_SEGMENT_RE = /advok|notár|lekár|zubn|doktor|ordinác|akadem|právn|exekút|súdn/i;
+export const FORMAL_SEGMENT_RE = /advok|notár|lekár|zubn|doktor|ordinác|akadem|právn|exekút|súdn/i;
 
 // ── Spotreba tokenov (pre odhad nákladov v UI) ──────────────────────────────────
 export interface AiUsage {
@@ -443,7 +443,7 @@ export function getAiUsage(): AiUsage & { estimatedEur: number } {
 // sa zapamätá — zmena modelu cez env premennú tak nezastaví generovanie mailov.
 const modelQuirks = new Map<string, { noTemperature?: boolean; autoToolChoice?: boolean; noThinkingParam?: boolean }>();
 
-async function createMessage(
+export async function createMessage(
   client: Anthropic,
   params: Anthropic.MessageCreateParamsNonStreaming,
 ): Promise<Anthropic.Message> {
@@ -481,7 +481,7 @@ async function createMessage(
 }
 
 /** Em/en pomlčka → obyčajná "-" (špecifikácia povoľuje len "-"); radšej opraviť než mail zamietnuť. */
-function normalizeDashes(s: string): string {
+export function normalizeDashes(s: string): string {
   return s
     .replace(/\s*[—–]\s*/g, " - ")
     // Slovenské úvodzovky „…" namiesto rovných "…" a anglických “…”.
@@ -489,7 +489,7 @@ function normalizeDashes(s: string): string {
     .replace(/[“”]([^“”\n]+)[“”]/g, "„$1“");
 }
 
-function textFrom(msg: Anthropic.Message): string {
+export function textFrom(msg: Anthropic.Message): string {
   return msg.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
@@ -511,7 +511,7 @@ const KEEP_CAPITAL = new Set([
  * Vy/Váš…, značiek, miest a názvu firmy. Mení len obyčajné slovo s veľkým
  * začiatočným písmenom (domény, skratky a zmiešané zápisy nechá).
  */
-function lowerOpener(paragraph: string, companyName: string): string {
+export function lowerOpener(paragraph: string, companyName: string): string {
   const m = paragraph.match(/^(\p{Lu}\p{Ll}*)(?=[\s,])/u);
   if (!m) return paragraph;
   const word = m[1];

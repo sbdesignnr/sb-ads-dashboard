@@ -14,6 +14,8 @@ export interface LintInput {
   copyrightYear?: number | null;
   /** Ďalšie roky, ktoré sa vyskytujú vo vstupných dátach (napr. "copyright 2015" v nedostatkoch) — tiež povolené. */
   allowedYears?: number[];
+  /** Čísla doložené OVERENÝM zistením (napr. "6" z "6 z 9 konkurentov má online rezerváciu") — tiež povolené. */
+  allowedNumbers?: string[];
 }
 
 export interface LintResult {
@@ -67,7 +69,7 @@ const GENERIC_PHRASES: [RegExp, string][] = [
   [/sedí\s+Vám\s+(?:to|tento|takýto)/iu, "generická otázka \"Sedí Vám tento pohľad?\""],
   [/čo\s+na\s+to\s+hovoríte/iu, "generická otázka \"Čo na to hovoríte?\""],
   [/(?:alebo\s+)?(?:to\s+)?vidíte\s+to\s+(?:inak|podobne)|vnímate\s+to\s+inak|máte\s+na\s+to\s+iný\s+názor/iu, "generická otázka \"…alebo to vidíte inak?\""],
-  [/časť\s+(?:z\s+)?(?:týchto|takýchto|nich|záujemcov|klientov|pacientov|ľudí|hostí|zákazníkov|návštevníkov)/iu, "klišé \"časť záujemcov odíde\""],
+  [/časť\s+(?:z\s+)?(?:tých|týchto|takýchto|nich|záujemcov|klientov|pacientov|ľudí|hostí|zákazníkov|návštevníkov)/iu, "klišé \"časť záujemcov odíde\""],
   [/(?:ku|k|u)\s+konkurenci\p{L}*|odíd\p{L}*\s+(?:inam|inde)|skús\p{L}*\s+to\s+inde|(?:to\s+)?vzd(?:á|ajú|ať)(?:\s+to)?(?![\p{L}])|ľudia\s+odchádzajú|odchádzaj\p{L}*\s+(?:bez|inam|inde)/iu, "klišé \"odíde ku konkurencii / skúsi to inde\""],
 ];
 
@@ -119,7 +121,7 @@ export function lintEmail(input: LintInput): LintResult {
 
   const words = wordCount(body);
   const range: Record<EmailKind, [number, number]> = {
-    initial: [30, 95],
+    initial: [30, 110],
     followup1: [28, 85],
     followup2: [28, 85],
     followup3: [20, 60],
@@ -179,6 +181,9 @@ export function lintEmail(input: LintInput): LintResult {
     if (!clean) continue;
     if (input.copyrightYear && clean === String(input.copyrightYear)) continue;
     if (input.allowedYears?.some((y) => clean === String(y))) continue;
+    // 4,8 ≡ 4.8 a "6 624" ≡ "6624"
+    const canon = (x: string) => x.replace(/\s+/g, "").replace(/,/g, ".");
+    if (input.allowedNumbers?.some((a) => canon(a) === canon(clean))) continue;
     errors.push(`číslo "${clean}" nie je odvoditeľné zo vstupných dát (povolený je len rok, ktorý je vo vstupných dátach)`);
   }
   // Počty slovom ("sedem rokov", "dvadsať klientov", "polovica", "desaťročie") — model ich
@@ -199,9 +204,9 @@ export function lintEmail(input: LintInput): LintResult {
     errors.push("odhad počtu klientov (jediný/pár/niekoľko…) nie je odvoditeľný z dát");
   // Zovšeobecnenia, ktoré dáta nepodporujú ("väčšina záujemcov", "prevažne z mobilu").
   const overgen = noDomains.match(
-    /(?<!\p{L})(?:väčšin\p{L}*|drvivá\p{L}*|prevažn\p{L}*|takmer\s+všetci|všetci\s+(?:klienti|záujemci|pacienti|zákazníci|hostia)|každý\s+(?:záujemca|klient|pacient|zákazník|návštevník|hosť))(?!\p{L})/iu,
+    /(?<!\p{L})(?:väčšin\p{L}*|drvivá\p{L}*|prevažn\p{L}*|spravidla|väčšinou|zvyčajne|obvykle|takmer\s+všetci|všetci\s+(?:klienti|záujemci|pacienti|zákazníci|hostia)|každý\s+(?:záujemca|klient|pacient|zákazník|návštevník|hosť))(?!\p{L})/iu,
   )?.[0];
-  if (overgen) errors.push(`zovšeobecnenie "${overgen}" nie je odvoditeľné z dát (použi "časť z nich")`);
+  if (overgen) errors.push(`zovšeobecnenie "${overgen}" nie je odvoditeľné z dát (vypusti ho, nenahrádzaj ho "časť z nich")`);
   if (/%|percent|\beur\b|€/iu.test(noDomains))
     errors.push("v texte sa nesmú objaviť percentá/sumy");
 
