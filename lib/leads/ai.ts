@@ -340,13 +340,15 @@ export async function proofread(
   facts: string,
   subject: string,
   paragraphs: string[],
+  extraRules = "",
+  maxTokens = 800,
 ): Promise<ProofResult | null> {
   const msg = await createMessage(client, {
     model: PROOF_MODEL,
-    max_tokens: 800,
+    max_tokens: maxTokens,
     temperature: 0,
     system:
-      PROOFREAD_SYSTEM.replace(
+      (PROOFREAD_SYSTEM + extraRules).replace(
         'Výsledok vlož VÝHRADNE cez nástroj "uloz_korekturu".',
         'Odpovedz VÝHRADNE jedným JSON objektom (žiadny iný text, žiadny markdown): {"verdict":"ok"|"fixed"|"reject","subject":"…","paragraphs":["…"],"problems":["…"]}',
       ),
@@ -729,6 +731,136 @@ Kontext o firme (len pomôcka, nekopíruj vety ani klišé): ${clip(lead.aiSumma
     };
   }
 
+  throw new EmailQualityError(lastIssues);
+}
+
+const ROZBOR_SYSTEM = `Si Samuel Bibeň, web developer z Nitry. Adresát ti odpovedal na tvoj e-mail a súhlasil, že mu pošleš krátky rozbor jeho webu. Napíš ten rozbor. Meno adresáta nepoznáš: oslovenie a podpis pridá systém, ty píšeš IBA text (bez "Dobrý deň", bez podpisu, bez mena). Vždy po slovensky.
+
+FORMÁT: PRESNE 5 odsekov oddelených prázdnym riadkom, nič iné (bez číslovania, bez nadpisov, bez odrážok, bez oslovenia a podpisu):
+1. odsek = úvod: 1 veta - poďakuj za odpoveď a povedz, že posielaš sľúbený rozbor (začni malým písmenom, nadväzuje na oslovenie s čiarkou).
+2., 3., 4. odsek = tri body, každý súvislý odsek 2-3 viet v tomto poradí: čo návštevník na webe vidí alebo zažije (konkrétne z dát) → prečo je to pre ich podnikanie problém, cez jednu konkrétnu situáciu jedného človeka, nie zovšeobecnením o skupine → čo by si zmenil (konkrétne a zrozumiteľne, bez žargónu). Tri body sú o TROCH RÔZNYCH veciach.
+5. odsek = záver: 1-2 vety - ak im to dáva zmysel, rád to prejdeš s nimi v krátkom hovore, alebo im pošleš cenovú predstavu; bez tlaku, po svojom.
+
+PRAVIDLÁ
+- Používaj IBA fakty z dát. Nič nevymýšľaj. Žiadne čísla, percentá, sumy, počty, odhady dopadu, počty rokov (ani slovom). Rok z pätičky uveď len ak je v dátach. Rýchlosť načítania opíš len slovami ("pomalá", "podpriemerná") - nikdy nepíš PageSpeed, skóre ani číslo.
+- Bez hodnotiacich slov o firme a jej ľuďoch, BEZ KOMPLIMENTOV (nepíš "pekné", "príjemné", "kvalitné fotky", "čistý layout" ani podobné pochvaly webu), bez klišé ("časť záujemcov odíde", "ku konkurencii", "Dáva Vám to zmysel?").
+- Vykanie: Vy, Vás, Vám, Váš… VŽDY s veľkým V; slovesá v množnom čísle ("mali by ste"). Si MUŽ: "pozrel som", "navrhujem".
+- Iba obyčajná pomlčka "-", nikdy — ani –. Úvodzovky slovenské „takto“.
+- Zakázané: "zastaraný web", "moderný web", "profesionálny web", "online prítomnosť", "digitálna prezentácia", "komplexný", "riešenie", "ponuka", "spolupráca".
+`;
+
+// Korektor je ladený na cold e-mail; rozbor má iné pravidlá — odporúčania sú návrhy.
+const ROZBOR_PROOF_RULES = `
+
+TOTO NIE JE COLD E-MAIL, ale ROZBOR WEBU (5 odsekov: úvod, 3 očíslované body - číslovanie dopĺňa systém, záver). Odlišné pravidlá: (a) FAKTY o webe (čo návštevník vidí) musia byť z dát; (b) ODPORÚČANIA "čo by som zmenil" sú návrhy autora a NEMUSIA byť v dátach, ak logicky vyplývajú z uvedeného zistenia - nezamietaj ich ako "vymyslené"; (c) situácia jedného človeka ("predstavte si hosťa…") je zámerný ilustračný príklad, nie tvrdenie o firme; (d) oslovenie ani podpis nepridávaj; (e) prvý odsek (úvod) sa zámerne začína malým písmenom; (f) tri body musia byť o troch rôznych veciach.`;
+
+/**
+ * Rozbor webu na odpoveď: lead odpovedal "áno" na ponuku krátkeho rozboru z cold emailu.
+ * Vzniká na požiadanie (≈ 2 centy) z už uložených zistení (bez nového skenu webu).
+ * Rovnaká ochrana ako pri mailoch: oslovenie z overeného mena, kontrola pravidiel a
+ * korektúra; nevyhovujúci rozbor sa nevráti.
+ */
+export async function generateRozbor(input: {
+  lead: Lead;
+  segmentName: string;
+}): Promise<{ body: string }> {
+  const { lead, segmentName } = input;
+  const greeting = buildGreeting(greetableOwnerName(lead));
+  const formal = greeting.formal || FORMAL_SEGMENT_RE.test(segmentName);
+  const signoff = formal ? "S úctou," : "S pozdravom,";
+
+  const staleYear =
+    lead.copyrightYear && lead.copyrightYear <= new Date().getFullYear() - 2
+      ? lead.copyrightYear
+      : null;
+  const speed =
+    lead.pageSpeedMobile == null
+      ? "—"
+      : lead.pageSpeedMobile < 50
+        ? "pomalá"
+        : lead.pageSpeedMobile < 70
+          ? "podpriemerná"
+          : "—";
+  const clip = (t: string | null | undefined, n: number) => (t ?? "").trim().slice(0, n) || "—";
+  const facts = `FIRMA
+Názov: ${lead.companyName}
+Odvetvie: ${segmentName}
+Web: ${lead.websiteUrl ?? "—"}
+Mesto: ${lead.companyCity ?? "—"}
+Tón: ${formal ? "formálny, uctivý" : "bežný, vecný, priateľský (stále vykanie)"}
+
+ČO SOM NA WEBE ZISTIL (jediný zdroj faktov)
+Vizuálne problémy: ${(lead.visualIssues ?? []).slice(0, 6).join("; ") || "—"}
+Ďalšie nedostatky: ${(lead.websiteIssues ?? []).slice(0, 8).join("; ") || "—"}
+Rok v pätičke: ${staleYear ?? "—"}
+Rýchlosť načítania na mobile: ${speed}
+Celkový vizuálny dojem: ${clip(lead.aiVisualReason, 260)}
+Kontext o firme (pomôcka, nekopíruj klišé): ${clip(lead.aiSummary, 320)}
+Čo by sa dalo zlepšiť (podklad): ${clip(lead.aiOpportunity, 400)}`;
+  const allowedYears = [...facts.matchAll(/(?<!\d)(?:19|20)\d{2}(?!\d)/g)].map((m) => Number(m[0]));
+
+  const client = new Anthropic();
+  let feedback: string[] = [];
+  let lastIssues: string[] = [];
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const retryNote = feedback.length
+      ? `\n\nPREDCHÁDZAJÚCI POKUS BOL ZAMIETNUTÝ z týchto dôvodov - oprav ich:\n${feedback.map((f) => `- ${f}`).join("\n")}`
+      : "";
+    const msg = await createMessage(client, {
+      model: WRITER_MODEL,
+      max_tokens: 1000,
+      temperature: 0.5,
+      system: ROZBOR_SYSTEM,
+      messages: [{ role: "user", content: `${facts}\n\nNapíš rozbor podľa formátu a pravidiel.${retryNote}` }],
+    });
+    // Čistý text: 5 odsekov oddelených prázdnym riadkom (robustnejšie než viacpoľový nástroj).
+    let paragraphs = textFrom(msg)
+      .split(/\n\s*\n/)
+      .map((t) => normalizeDashes(t.replace(/^\s*(?:\d+[.)]|[-•*])\s*/, "").trim()))
+      .filter(Boolean);
+    if (paragraphs.length !== 5) {
+      lastIssues = [`rozbor má ${paragraphs.length} odsekov, má mať presne 5 (úvod, 3 body, záver)`];
+      feedback = lastIssues;
+      continue;
+    }
+
+    const lint = (paras: string[]) =>
+      lintEmail({ kind: "rozbor", subject: "Rozbor webu", paragraphs: paras, copyrightYear: staleYear, allowedYears });
+    let res = lint(paragraphs);
+    if (res.errors.length) {
+      lastIssues = res.errors;
+      feedback = res.errors;
+      continue;
+    }
+    const pr = await proofread(client, facts, "Rozbor webu", paragraphs, ROZBOR_PROOF_RULES, 1800);
+    if (!pr || pr.verdict === "reject") {
+      lastIssues = pr?.problems.length ? pr.problems : ["korektúra rozbor zamietla"];
+      feedback = lastIssues;
+      continue;
+    }
+    if (pr.verdict === "fixed") {
+      const fixed = pr.paragraphs.map((p) => normalizeDashes(p.trim())).filter(Boolean);
+      if (fixed.length === paragraphs.length) paragraphs = fixed;
+    }
+    res = lint(paragraphs);
+    if (res.errors.length) {
+      lastIssues = res.errors;
+      feedback = res.errors;
+      continue;
+    }
+
+    const [intro, p1, p2, p3, closing] = paragraphs;
+    const body = [
+      greeting.line,
+      lowerOpener(intro, lead.companyName),
+      `1. ${p1}`,
+      `2. ${p2}`,
+      `3. ${p3}`,
+      closing.charAt(0).toUpperCase() + closing.slice(1),
+      `${signoff}\nSamuel Bibeň`,
+    ].join("\n\n");
+    return { body };
+  }
   throw new EmailQualityError(lastIssues);
 }
 

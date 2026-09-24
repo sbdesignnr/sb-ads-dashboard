@@ -4,7 +4,7 @@
 // odoslania. Toto sú tvrdé pravidlá zo špecifikácie mailu; jazykovú korektúru
 // (pravopis, štylistika) robí zvlášť AI korektor (ai.ts → proofreadEmail).
 
-export type EmailKind = "initial" | "followup1" | "followup2" | "followup3";
+export type EmailKind = "initial" | "followup1" | "followup2" | "followup3" | "rozbor";
 
 export interface LintInput {
   kind: EmailKind;
@@ -112,6 +112,9 @@ export function lintEmail(input: LintInput): LintResult {
     errors.push(`follow-up má ${count} odsekov (má mať 2-3)`);
   if (kind === "followup3" && (count < 1 || count > 3))
     errors.push(`záverečný follow-up má ${count} odsekov (má mať 1-3)`);
+  // Rozbor = úvod + 3 body + záver (číslovanie dopĺňa kód).
+  if (kind === "rozbor" && count !== 5)
+    errors.push(`rozbor má ${count} odsekov, má mať 5 (úvod, 3 body, záver)`);
   if (paragraphs.some((p) => !p.trim())) errors.push("prázdny odsek");
 
   const words = wordCount(body);
@@ -120,6 +123,7 @@ export function lintEmail(input: LintInput): LintResult {
     followup1: [28, 85],
     followup2: [28, 85],
     followup3: [20, 60],
+    rozbor: [80, 300],
   };
   const [min, max] = range[kind];
   if (words < min || words > max)

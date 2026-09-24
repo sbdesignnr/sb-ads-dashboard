@@ -223,6 +223,10 @@ export function LeadDetail({ id }: { id: string }) {
   const [copied, setCopied] = useState(false);
   const [findingEmail, setFindingEmail] = useState(false);
   const [enrichingOwner, setEnrichingOwner] = useState(false);
+  // Rozbor webu na odpoveď (sľúbený v cold maile): subject + text, upraviteľný.
+  const [rozbor, setRozbor] = useState<{ subject: string; body: string; to: string | null } | null>(null);
+  const [rozborBusy, setRozborBusy] = useState(false);
+  const [rozborCopied, setRozborCopied] = useState(false);
 
   useEffect(() => {
     fetch(`/api/leads/${id}`, { cache: "no-store" })
@@ -345,6 +349,28 @@ export function LeadDetail({ id }: { id: string }) {
       toast.error("Generovanie zlyhalo");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const makeRozbor = async () => {
+    setRozborBusy(true);
+    try {
+      const res = await fetch(`/api/leads/${id}/rozbor`, { method: "POST" });
+      const j = await res.json();
+      if (res.ok && j.body) setRozbor({ subject: j.subject, body: j.body, to: j.to ?? null });
+      else toast.error(j.error || "Rozbor sa nepodarilo pripraviť");
+    } catch {
+      toast.error("Rozbor sa nepodarilo pripraviť");
+    } finally {
+      setRozborBusy(false);
+    }
+  };
+
+  const copyRozbor = async () => {
+    if (rozbor && (await copyToClipboard(rozbor.body))) {
+      setRozborCopied(true);
+      toast.success("Rozbor skopírovaný");
+      setTimeout(() => setRozborCopied(false), 1800);
     }
   };
 
@@ -909,6 +935,68 @@ export function LeadDetail({ id }: { id: string }) {
                 <p className="py-2 text-sm text-muted">
                   AI napíše krátky personalizovaný cold email pre túto firmu
                   (meno konateľa, konkrétne problémy webu, CTA).
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Rozbor webu: sľúbený v cold maile ("pripravím Vám krátky rozbor…"). */}
+          <Card>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <CardTitle>Rozbor webu na odpoveď</CardTitle>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={makeRozbor}
+                disabled={rozborBusy}
+              >
+                {rozborBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Lightbulb className="h-4 w-4" />
+                )}
+                {rozbor ? "Znova" : "Pripraviť rozbor"}
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {rozbor ? (
+                <>
+                  <input
+                    value={rozbor.subject}
+                    onChange={(e) => setRozbor({ ...rozbor, subject: e.target.value })}
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+                    aria-label="Predmet"
+                  />
+                  <textarea
+                    value={rozbor.body}
+                    onChange={(e) => setRozbor({ ...rozbor, body: e.target.value })}
+                    rows={16}
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" onClick={copyRozbor}>
+                      {rozborCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                      Kopírovať
+                    </Button>
+                    {rozbor.to && (
+                      <Button asChild variant="outline" size="sm">
+                        <a
+                          href={`mailto:${rozbor.to}?subject=${encodeURIComponent(rozbor.subject)}&body=${encodeURIComponent(rozbor.body)}`}
+                        >
+                          <Mail className="h-4 w-4" />
+                          Otvoriť v e-mailovom klientovi
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted">
+                    Pred odoslaním si text prečítaj a uprav - je to tvoj sľub adresátovi.
+                  </p>
+                </>
+              ) : (
+                <p className="py-2 text-sm text-muted">
+                  Keď lead odpovie „áno" na ponuku rozboru, klikni - z uložených zistení sa
+                  pripraví hotový rozbor s tromi konkrétnymi vecami (stojí ≈ 2 centy).
                 </p>
               )}
             </CardContent>
