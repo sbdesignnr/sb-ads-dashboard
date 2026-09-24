@@ -91,6 +91,8 @@ export interface AgentDef {
   look: Look;
   /** parcela z PLOTS, na ktorej agent býva */
   plot: string;
+  /** agent má pracovňu (zadávanie úloh a výsledky) */
+  workbench?: boolean;
   links: AgentLinkDef[];
   /** hlášky podľa stavu; funkcie dostanú živé počítadlá */
   lines: {
@@ -106,7 +108,7 @@ export interface AgentDef {
   /** odpovede na otázky v paneli */
   answers: {
     status: (s: AgentStatus, c: Counters) => string;
-    needs: (s: AgentStatus, c: Counters) => { text: string; href?: string; cta?: string };
+    needs: (s: AgentStatus, c: Counters) => { text: string; href?: string; cta?: string; action?: "workbench" };
     method: string;
   };
 }
@@ -209,14 +211,14 @@ export const AGENTS: AgentDef[] = [
     role: "Stratég ponúk a oslovenia",
     department: "predaj",
     tagline: "Zistí o firme všetko overiteľné a navrhne ponuku, ktorá sa neodmieta.",
-    bio: "Nora sa pozerá na firmy tak, ako by si sa pozeral ty: prečíta ich web, Google profil a recenzie, porovná ich s konkurenciou v meste a až potom navrhne, čo im ponúknuť. Nič si nevymýšľa - každé tvrdenie musí vedieť doložiť citátom zo zdroja.",
+    bio: "Nora pripraví ponuku šitú na mieru pre jeden konkrétny lead. V pracovni jej zadáš firmu a do 1 až 2 minút ti položí na stôl: overené zistenia o firme (každé s citátom zo zdroja), navrhnutú ponuku a hotový koncept mailu. Prečíta ich web, Google profil a recenzie a porovná ich s konkurenciou v meste. Nič neodíde bez tvojho schválenia. Popri tom stráži rad konceptov mailov, ktoré čakajú na tvoje schválenie.",
     skills: [
       "Analýza webov",
       "Google profil a recenzie",
       "Konkurencia v meste",
       "Overené citáty",
       "Ponuky na mieru",
-      "Cold maily",
+      "Koncepty mailov",
     ],
     look: {
       skin: "#f1c4a0",
@@ -230,6 +232,7 @@ export const AGENTS: AgentDef[] = [
       headset: false,
     },
     plot: "predaj-a",
+    workbench: true,
     links: [
       { label: "Fronta na schválenie", href: "/leads/kampane" },
       { label: "Leady", href: "/leads" },
@@ -237,9 +240,11 @@ export const AGENTS: AgentDef[] = [
     lines: {
       working: [
         (c) =>
-          n(c, "scanning")
-            ? "Skenujem nový segment. Každý web si pozriem aj očami zákazníka."
-            : "Prechádzam weby a Google profily. Zatiaľ nič, čo by som nevedela doložiť.",
+          n(c, "researchRunning")
+            ? "Zbieram dôkazy o firme a porovnávam ju s konkurenciou v meste. Ešte chvíľu."
+            : n(c, "scanning")
+              ? "Skenujem nový segment. Každý web si pozriem aj očami zákazníka."
+              : "Prechádzam weby a Google profily. Zatiaľ nič, čo by som nevedela doložiť.",
         () => "Porovnávam firmu s konkurenciou v meste. Čísla nikdy neodhadujem.",
         () => "Každé tvrdenie overujem citátom zo zdroja. Čo nevieme doložiť, netvrdíme.",
         () => "Skladám ponuku šitú na mieru. Šablóny nechávam bokom.",
@@ -251,6 +256,10 @@ export const AGENTS: AgentDef[] = [
       ],
       waiting: [
         (c) =>
+          n(c, "researchReady")
+            ? `Mám hotových ${n(c, "researchReady")} ${sk(n(c, "researchReady"), "ponuku", "ponuky", "ponúk")} s dôkazmi. Pozri ich v pracovni.`
+            : `Mám pripravených ${n(c, "draftsWaiting")} ${sk(n(c, "draftsWaiting"), "koncept", "koncepty", "konceptov")}. Bez tvojho súhlasu nič neodíde.`,
+        (c) =>
           `Mám pripravených ${n(c, "draftsWaiting")} ${sk(n(c, "draftsWaiting"), "koncept", "koncepty", "konceptov")}. Bez tvojho súhlasu nič neodíde.`,
         () => "Čakám na teba. Pozri si koncepty a schváľ tie, ktoré sa ti páčia.",
         (c) =>
@@ -259,7 +268,7 @@ export const AGENTS: AgentDef[] = [
         () => "Ak sa ti nejaký mail nepáči, povedz mi a prepíšem ho.",
       ],
       idle: [
-        () => "Všetko hotové. Hoď na mňa ďalší segment, keď budeš chcieť.",
+        () => "Všetko hotové. Zadaj mi lead v pracovni a pripravím ti ponuku na mieru.",
         () => "Kým nemám čo robiť, sledujem, či nikto neodpovedal.",
         () => "Pokoj pred ďalšou várkou leadov. Dám si kávu.",
         (c) =>
@@ -286,18 +295,28 @@ export const AGENTS: AgentDef[] = [
     answers: {
       status: (s, c) => {
         if (s === "working")
-          return n(c, "scanning")
-            ? "Práve skenujem segment: hľadám firmy, pozerám ich weby a hodnotím, kto by z novej stránky ťažil najviac."
-            : n(c, "drafting")
-              ? "Píšem koncepty mailov z overených zistení. Každý prejde kontrolou kvality, až potom ho uvidíš."
-              : "Analyzujem weby a firmy. Ešte nie som hotová, ale idem podľa plánu.";
+          return n(c, "researchRunning")
+            ? "Práve pripravujem ponuku pre lead, ktorý si mi zadal: zbieram dôkazy, overujem citáty a skladám ponuku. Priebeh vidíš v pracovni."
+            : n(c, "scanning")
+              ? "Práve skenujem segment: hľadám firmy, pozerám ich weby a hodnotím, kto by z novej stránky ťažil najviac."
+              : n(c, "drafting")
+                ? "Píšem koncepty mailov z uložených zistení. Každý prejde kontrolou kvality, až potom ho uvidíš."
+                : "Analyzujem weby a firmy. Ešte nie som hotová, ale idem podľa plánu.";
         if (s === "waiting")
-          return `Moju prácu mám hotovú. ${n(c, "draftsWaiting")} ${sk(n(c, "draftsWaiting"), "koncept", "koncepty", "konceptov")} čaká na teba a bez schválenia nič neodíde.`;
+          return n(c, "researchReady")
+            ? `Mám hotových ${n(c, "researchReady")} ${sk(n(c, "researchReady"), "ponuku", "ponuky", "ponúk")} na tvoje posúdenie a ${n(c, "draftsWaiting")} ${sk(n(c, "draftsWaiting"), "koncept", "koncepty", "konceptov")} mailov čaká na schválenie.`
+            : `Moju prácu mám hotovú. ${n(c, "draftsWaiting")} ${sk(n(c, "draftsWaiting"), "koncept", "koncepty", "konceptov")} čaká na teba a bez schválenia nič neodíde.`;
         if (s === "error")
           return "Posledný beh mi skončil chybou. Ešte som ho neopakovala, aby sme zbytočne neplytvali kreditom.";
         return `Práve nič nerobím. Za posledných 24 hodín odišlo ${n(c, "sent24h")} ${sk(n(c, "sent24h"), "mail", "maily", "mailov")} a odpovedí za týždeň je ${n(c, "repliesWeek")}.`;
       },
       needs: (s, c) => {
+        if (s === "waiting" && n(c, "researchReady"))
+          return {
+            text: `Pozri si ${n(c, "researchReady")} ${sk(n(c, "researchReady"), "hotovú ponuku", "hotové ponuky", "hotových ponúk")} v pracovni. Ak sa ti mail páči, jedným klikom z neho urobíš koncept.`,
+            action: "workbench",
+            cta: "Otvoriť pracovňu",
+          };
         if (s === "waiting")
           return {
             text: `Potrebujem od teba schválenie ${n(c, "draftsWaiting")} ${sk(n(c, "draftsWaiting"), "konceptu", "konceptov", "konceptov")}. Rýchlo ich prejdeš a ja ich môžem poslať.`,
@@ -314,14 +333,14 @@ export const AGENTS: AgentDef[] = [
           };
         return {
           text: n(c, "qualified")
-            ? `Vo fronte je ${n(c, "qualified")} vhodných leadov. Povedz, ktorý segment mám vziať ako prvý.`
+            ? `Vo fronte je ${n(c, "qualified")} vhodných leadov. Vyber v pracovni firmu a pripravím pre ňu ponuku na mieru.`
             : "Potrebujem nový segment leadov. Spusti sken a ja sa do toho pustím.",
-          href: "/leads",
-          cta: "Otvoriť leady",
+          action: "workbench",
+          cta: "Otvoriť pracovňu",
         };
       },
       method:
-        "Postupujem vždy rovnako. Najprv zozbieram dôkazy: web firmy, Google profil s recenziami a konkurentov v meste. Potom z nich vyvodím zistenia a ku každému pripojím doslovný citát. Kód overí, že citát v zdroji naozaj je, a druhá kontrola posúdi, či z dôkazov vyplýva celé tvrdenie. Nepodložené zahodím. Až z overených zistení navrhnem ponuku a napíšem mail. Číslo, ktoré nemám z dát, v ňom nenájdeš.",
+        "Postupujem vždy rovnako. Najprv zozbieram dôkazy: web firmy, Google profil s recenziami a konkurentov v meste. Potom z nich vyvodím zistenia a ku každému pripojím doslovný citát. Kód overí, že citát v zdroji naozaj je, a druhá kontrola posúdi, či z dôkazov vyplýva celé tvrdenie. Nepodložené zahodím. Až z overených zistení navrhnem ponuku a napíšem mail. Číslo, ktoré nemám z dát, v ňom nenájdeš. Stojí to okolo 0,15 € za firmu.",
     },
   },
 ];
@@ -362,6 +381,8 @@ export interface AgentSnapshot {
   status: AgentStatus;
   /** jedna veta o tom, čo práve robí / na čo čaká */
   headline: string;
+  /** aktuálny krok práce (napr. "Overujem citáty…"), ak agent práve pracuje */
+  detail?: string;
   counters: Counters;
   stats: AgentStat[];
   activity: AgentEvent[];

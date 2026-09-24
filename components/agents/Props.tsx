@@ -423,10 +423,20 @@ const CHIPS: { text: string; color: string; dx: number; dy: number; delay: numbe
   { text: "Konkurenti v meste", color: "#60a5fa", dx: 40, dy: 4, delay: 4.2 },
 ];
 
-export const HoloChips = memo(function HoloChips({ gx, gy }: { gx: number; gy: number }) {
+export const HoloChips = memo(function HoloChips({ gx, gy, step }: { gx: number; gy: number; step?: string }) {
   const [x, y] = iso(gx + 0.45, gy + 0.25, 132);
+  const label = step ? (step.length > 40 ? `${step.slice(0, 39)}…` : step) : null;
   return (
     <g transform={`translate(${x} ${y})`} style={{ pointerEvents: "none" }}>
+      {label && (
+        <g transform="translate(-22 -58)">
+          <rect x={-6} y={-13} width={label.length * 5.7 + 24} height={22} rx={11} fill="#0d1524" opacity={0.92} stroke="#4ade80" strokeWidth={1.6} />
+          <circle cx={6} cy={-2} r={3.6} fill="#4ade80" className="ag-pulse-dot" />
+          <text x={15} y={2} fontSize={10.5} fontWeight={700} fill="#f1f5f9" fontFamily="var(--font-sans), system-ui, sans-serif">
+            {label}
+          </text>
+        </g>
+      )}
       {CHIPS.map((c) => (
         <g key={c.text} transform={`translate(${c.dx} ${c.dy})`}>
           <g className="ag-holo" style={{ animationDelay: `${c.delay}s` }}>

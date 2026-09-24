@@ -44,6 +44,7 @@ import { Character, type Pose } from "./Character";
 import { homeLayout, routeNames, type HomeLayout, type NodeName } from "./layout";
 import { depthSort, footprint, iso, type Bounds } from "./iso";
 import { AgentPanel, PlotPanel } from "./AgentPanel";
+import { Workbench } from "./Workbench";
 import { useAgentStatus } from "./useAgentStatus";
 
 // ── čas dňa ────────────────────────────────────────────────────────────────
@@ -175,7 +176,17 @@ const poseAt = (dest: NodeName, status: AgentStatus, night: boolean): Pose => {
 const CS = 0.84; // mierka postavičky
 
 export function AgentWorld() {
-  const { snapshots, error } = useAgentStatus();
+  const { snapshots, error, refresh } = useAgentStatus(5000);
+  const [workbench, setWorkbench] = useState(false);
+  const [pinnedLead, setPinnedLead] = useState<string | null>(null);
+  // /agenti?lead=<id> otvorí pracovňu s daným leadom (odkaz z detailu leadu)
+  useEffect(() => {
+    const lead = new URLSearchParams(window.location.search).get("lead");
+    if (lead) {
+      setPinnedLead(lead);
+      setWorkbench(true);
+    }
+  }, []);
   const [mode, setMode] = useState<PhaseMode>("auto");
   const [hour, setHour] = useState<number>(() => new Date().getHours());
   const phase: Phase = mode === "auto" ? phaseFromHour(hour) : mode;
@@ -761,7 +772,7 @@ export function AgentWorld() {
       list.push({ key: `chair-${agent.id}`, b: { x0: l.chair.gx, x1: l.chair.gx + 0.42, y0: l.chair.gy, y1: l.front + 0.36 }, node: <Chair gx={l.chair.gx} gy={l.chair.gy} /> });
       list.push({ key: `desk-${agent.id}`, b: { x0: l.desk.gx, x1: l.desk.gx + 0.9, y0: l.desk.gy, y1: l.desk.gy + 0.5 }, node: <Workstation gx={l.desk.gx} gy={l.desk.gy} working={st === "working"} /> });
       if (st === "working")
-        list.push({ key: `holo-${agent.id}`, b: { x0: l.desk.gx, x1: l.desk.gx + 0.9, y0: l.desk.gy + 0.6, y1: l.desk.gy + 0.7 }, node: <HoloChips gx={l.desk.gx} gy={l.desk.gy} /> });
+        list.push({ key: `holo-${agent.id}`, b: { x0: l.desk.gx, x1: l.desk.gx + 0.9, y0: l.desk.gy + 0.6, y1: l.desk.gy + 0.7 }, node: <HoloChips gx={l.desk.gx} gy={l.desk.gy} step={snap?.detail} /> });
       list.push({ key: `table-${agent.id}`, b: { x0: l.table.gx, x1: l.table.gx + 0.6, y0: l.table.gy, y1: l.table.gy + 0.6 }, node: <ApprovalTable gx={l.table.gx} gy={l.table.gy} count={snap?.counters.draftsWaiting ?? 0} waiting={st === "waiting"} /> });
       list.push({ key: `mail-${agent.id}`, b: pointBox(l.mailbox.gx, l.mailbox.gy, 0.15), node: <Mailbox gx={l.mailbox.gx} gy={l.mailbox.gy} raised={st === "waiting" || (snap?.counters.draftsWaiting ?? 0) > 0} /> });
       list.push({ key: `lamp-${agent.id}`, b: pointBox(l.nodes.table[0] + 0.55, l.front + 0.32, 0.1), node: <Lamp gx={l.nodes.table[0] + 0.55} gy={l.front + 0.32} /> });
@@ -1060,10 +1071,22 @@ export function AgentWorld() {
             snap={snapshots?.[selectedAgent.id] ?? null}
             onClose={() => select(null)}
             onSay={(t) => say(selectedAgent.id, t, 6500)}
+            onOpenWorkbench={() => setWorkbench(true)}
           />
         )}
         {selectedPlot && <PlotPanel key={selectedPlot.id} plot={selectedPlot} onClose={() => select(null)} />}
       </AnimatePresence>
+
+      {workbench && (
+        <Workbench
+          initialLeadId={pinnedLead}
+          onClose={() => {
+            setWorkbench(false);
+            setPinnedLead(null);
+          }}
+          onChanged={refresh}
+        />
+      )}
 
     </div>
   );

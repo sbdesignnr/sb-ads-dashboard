@@ -14,6 +14,38 @@ import {
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 
+/** Signály z behov výskumného agenta. Ak tabuľka ešte neexistuje, vráti nuly (Nora ostane funkčná). */
+async function researchSignals() {
+  try {
+    const cutoff = new Date(Date.now() - 8 * MIN);
+    const [running, ready, recent] = await Promise.all([
+      prisma.leadResearch.findFirst({
+        where: { status: "running", updatedAt: { gt: cutoff } },
+        orderBy: { createdAt: "desc" },
+        select: { step: true, lead: { select: { companyName: true } } },
+      }),
+      prisma.leadResearch.count({
+        where: { status: "done", appliedAt: null, emailBody: { not: null } },
+      }),
+      prisma.leadResearch.findMany({
+        where: { createdAt: { gt: new Date(Date.now() - 3 * 24 * HOUR) } },
+        orderBy: { createdAt: "desc" },
+        take: 6,
+        select: {
+          status: true,
+          offerName: true,
+          updatedAt: true,
+          appliedAt: true,
+          lead: { select: { companyName: true } },
+        },
+      }),
+    ]);
+    return { running, ready, recent, ok: true as const };
+  } catch {
+    return { running: null, ready: 0, recent: [], ok: false as const };
+  }
+}
+
 /**
  * Nora vlastní pipeline leadov (sken → analýza → ponuka → koncept mailu → odoslanie).
  * Stav sa odvodzuje z toho, čo sa práve deje v tabuľkách leadov a mailov:
@@ -40,6 +72,7 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
     openedWeek,
     recentMails,
     recentScans,
+    research,
   ] = await Promise.all([
     prisma.leadScanJob.findFirst({
       where: { status: "running", createdAt: { gt: since(20 * MIN) } },
@@ -98,15 +131,27 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
         segment: { select: { name: true } },
       },
     }),
+    researchSignals(),
   ]);
 
+  const researchRunning = research.running ? 1 : 0;
+  const researchReady = research.ready;
   const scanning = scanRunning ? 1 : 0;
-  const drafting = draftedNow > 0 ? 1 : 0;
+  // Koncept, ktorý vznikol kliknutím na "Použiť ako koncept", nie je práca na pozadí.
+  const appliedJustNow = research.recent.filter(
+    (r) => r.appliedAt && r.appliedAt.getTime() > now - 2 * MIN,
+  ).length;
+  const drafting = draftedNow > appliedJustNow ? 1 : 0;
   const analysing = analysedNow > 0 ? 1 : 0;
 
   let status: AgentStatus = "idle";
-  let headline = "Všetko hotové, čaká na ďalší segment.";
-  if (lastFailedScan && !scanning) {
+  let headline = "Všetko hotové, čaká na ďalší lead.";
+  let detail: string | undefined;
+  if (researchRunning) {
+    status = "working";
+    headline = `Pripravuje ponuku pre ${research.running?.lead.companyName ?? "lead"}.`;
+    detail = research.running?.step ?? undefined;
+  } else if (lastFailedScan && !scanning) {
     status = "error";
     headline = `Posledný sken zlyhal${lastFailedScan.errorMessage ? `: ${lastFailedScan.errorMessage.slice(0, 90)}` : "."}`;
   } else if (scanning) {
@@ -118,19 +163,23 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
   } else if (analysing) {
     status = "working";
     headline = `Analyzuje weby (posledné 2 minúty: ${analysedNow}).`;
-  } else if (draftsWaiting > 0) {
+  } else if (researchReady > 0 || draftsWaiting > 0) {
     status = "waiting";
-    headline = `${draftsWaiting} konceptov čaká na tvoje schválenie.`;
+    headline =
+      researchReady > 0
+        ? `${researchReady} ${researchReady === 1 ? "ponuka je hotová" : "ponúk je hotových"} na tvoje posúdenie` +
+          (draftsWaiting > 0 ? `, ${draftsWaiting} konceptov čaká na schválenie.` : ".")
+        : `${draftsWaiting} konceptov čaká na tvoje schválenie.`;
   } else if (qualified > 0) {
     headline = `Vo fronte je ${qualified} vhodných leadov, čaká na pokyn.`;
   }
 
   const stats: AgentStat[] = [
-    { label: "Čaká na schválenie", value: String(draftsWaiting), hint: "koncepty mailov" },
+    { label: "Ponuky na posúdenie", value: String(researchReady), hint: "výskum s mailom" },
+    { label: "Koncepty na schválenie", value: String(draftsWaiting), hint: "koncepty mailov" },
     { label: "Vhodné leady", value: String(qualified), hint: "neoslovené" },
     { label: "Odoslané / 24 h", value: String(sent24h) },
     { label: "Odoslané / 7 dní", value: String(sentWeek) },
-    { label: "Otvorené / 7 dní", value: String(openedWeek) },
     { label: "Odpovede / 7 dní", value: String(repliesWeek) },
   ];
 
@@ -145,6 +194,12 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
     push(m.sentAt, `Odoslaný mail: ${co}`, "info");
     if (m.status === "draft") push(m.createdAt, `Pripravený koncept: ${co}`, "warn");
   }
+  for (const r of research.recent) {
+    const co = r.lead.companyName;
+    if (r.status === "done") push(r.updatedAt, `Ponuka pripravená: ${co}${r.offerName ? ` (${r.offerName})` : ""}`, "ok");
+    if (r.status === "failed") push(r.updatedAt, `Výskum sa nepodaril: ${co}`, "warn");
+    if (r.appliedAt) push(r.appliedAt, `Mail z výskumu použitý ako koncept: ${co}`, "info");
+  }
   for (const j of recentScans) {
     const seg = j.segment?.name ?? "segment";
     if (j.status === "completed")
@@ -157,7 +212,10 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
   return {
     status,
     headline,
+    detail,
     counters: {
+      researchRunning,
+      researchReady,
       scanning,
       drafting,
       analysing,

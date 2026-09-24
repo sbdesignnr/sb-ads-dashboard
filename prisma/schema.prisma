@@ -103,6 +103,7 @@ model Lead {
   segmentId          String?      @map("segment_id")
   segment            LeadSegment? @relation(fields: [segmentId], references: [id], onDelete: SetNull)
   emails             LeadEmail[]
+  research           LeadResearch[]
   companyName        String       @map("company_name")
   ico                String?
   websiteUrl         String?      @unique @map("website_url")
@@ -177,6 +178,30 @@ model LeadEmail {
   @@index([leadId])
   @@index([brevoMessageId])
   @@map("lead_emails")
+}
+
+// Beh výskumného agenta (Nora) pre jeden lead: živý krok, overený brief (zistenia s citátmi,
+// ponuka na mieru), napísaný mail a cena. Mail sa do konceptov dostane až po kliknutí
+// "Použiť ako koncept" (appliedAt).
+model LeadResearch {
+  id           String    @id @default(cuid())
+  leadId       String    @map("lead_id")
+  lead         Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  status       String    @default("running") // running | done | failed
+  step         String? // aktuálny krok (živý stav)
+  brief        Json? // zistenia, ponuka, dôkazy (pozri lib/agents/research.ts)
+  emailSubject String?   @map("email_subject")
+  emailBody    String?   @map("email_body") @db.Text
+  offerName    String?   @map("offer_name")
+  costEur      Float?    @map("cost_eur")
+  error        String?
+  appliedAt    DateTime? @map("applied_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([leadId, createdAt])
+  @@index([status])
+  @@map("lead_research")
 }
 
 // A sending campaign scoped to a segment, with a daily cap + send time.

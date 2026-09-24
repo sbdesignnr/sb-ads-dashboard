@@ -940,6 +940,26 @@ export function LeadDetail({ id }: { id: string }) {
             </CardContent>
           </Card>
 
+          {/* Ponuka na mieru z overených dát: agent Nora (pracovňa v module Agenti). */}
+          <Card>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <CardTitle>Ponuka na mieru (agent Nora)</CardTitle>
+              <Link href={`/agenti?lead=${id}`}>
+                <Button variant="secondary" size="sm">
+                  <Sparkles className="h-4 w-4" />
+                  Otvoriť v pracovni
+                </Button>
+              </Link>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted">
+                Nora prečíta web, Google profil a recenzie, porovná firmu s konkurenciou v meste a
+                pripraví overené zistenia, ponuku a koncept mailu (každé tvrdenie so zdrojom). Stojí
+                približne 0,15 €.
+              </p>
+            </CardContent>
+          </Card>
+
           {/* Rozbor webu: sľúbený v cold maile ("pripravím Vám krátky rozbor…"). */}
           <Card>
             <CardHeader className="flex-row items-center justify-between space-y-0">

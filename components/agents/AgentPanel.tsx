@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowUpRight, Hammer, MessageCircle, Sparkles, X } from "lucide-react";
+import { ArrowUpRight, FileSearch, Hammer, MessageCircle, Sparkles, X } from "lucide-react";
 import {
   STATUS_COLOR,
   STATUS_LABEL,
@@ -16,7 +16,7 @@ import {
 } from "@/lib/agents/registry";
 import { cn } from "@/lib/utils";
 
-const ago = (iso: string) => {
+export const ago = (iso: string) => {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return "práve teraz";
   if (s < 3600) return `pred ${Math.floor(s / 60)} min`;
@@ -28,7 +28,7 @@ interface Msg {
   id: number;
   from: "agent" | "me";
   text: string;
-  cta?: { href: string; label: string };
+  cta?: { href?: string; label: string; action?: "workbench" };
 }
 
 /** Text sa "píše" po znakoch, ako keby ho agent práve vyťukával. */
@@ -86,12 +86,14 @@ export function AgentPanel({
   snap,
   onClose,
   onSay,
+  onOpenWorkbench,
 }: {
   agent: AgentDef;
   snap: AgentSnapshot | null;
   onClose: () => void;
   /** agent povie vetu aj v scéne */
   onSay: (text: string) => void;
+  onOpenWorkbench: () => void;
 }) {
   const dept = departmentById(agent.department);
   const status = snap?.status ?? "idle";
@@ -153,7 +155,14 @@ export function AgentPanel({
       run: () => {
         ask("Čo potrebuješ odo mňa?");
         const n = agent.answers.needs(status, counters);
-        setTimeout(() => say(n.text, n.href && n.cta ? { href: n.href, label: n.cta } : undefined), 420);
+        setTimeout(
+          () =>
+            say(
+              n.text,
+              n.cta && (n.href || n.action) ? { href: n.href, action: n.action, label: n.cta } : undefined,
+            ),
+          420,
+        );
       },
     },
     {
@@ -208,6 +217,15 @@ export function AgentPanel({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+        {agent.workbench && (
+          <button
+            onClick={onOpenWorkbench}
+            className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2.5 text-[13.5px] font-semibold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90"
+          >
+            <FileSearch className="h-4 w-4" />
+            Otvoriť pracovňu · pripraviť ponuku
+          </button>
+        )}
         {snap?.headline && (
           <p className="mb-3 rounded-xl border border-white/8 bg-white/[0.04] px-3 py-2 text-[13px] leading-snug text-foreground/90">
             <span className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: color }} />
@@ -228,15 +246,24 @@ export function AgentPanel({
                 )}
               >
                 {m.from === "agent" && i === msgs.length - 1 ? <Typed text={m.text} /> : m.text}
-                {m.cta && (
-                  <Link
-                    href={m.cta.href}
-                    className="mt-2 inline-flex items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-white/20"
-                  >
-                    {m.cta.label}
-                    <ArrowUpRight className="h-3 w-3" />
-                  </Link>
-                )}
+                {m.cta &&
+                  (m.cta.action === "workbench" ? (
+                    <button
+                      onClick={onOpenWorkbench}
+                      className="mt-2 inline-flex items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-white/20"
+                    >
+                      {m.cta.label}
+                      <ArrowUpRight className="h-3 w-3" />
+                    </button>
+                  ) : (
+                    <Link
+                      href={m.cta.href ?? "#"}
+                      className="mt-2 inline-flex items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-white/20"
+                    >
+                      {m.cta.label}
+                      <ArrowUpRight className="h-3 w-3" />
+                    </Link>
+                  ))}
               </div>
             </div>
           ))}
