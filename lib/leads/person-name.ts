@@ -171,8 +171,14 @@ export interface Greeting {
 export function buildGreeting(fullName: string | null | undefined): Greeting {
   const neutral: Greeting = { line: "Dobrý deň,", formal: false, personal: false };
   if (!fullName) return neutral;
+  // Obrana: meno s číslicami, zátvorkami, lomkami či zavináčom nie je meno osoby
+  // (napr. ručne vložené "Palo (prezývka/meno z e-mailu)") → neutrálne oslovenie.
+  if (!/^[\p{L}.\s,'’-]+$/u.test(fullName)) return neutral;
   const p = parseName(fullName);
   if (!p) return neutral;
+  const looksLikeName = (t: string) => /^\p{Lu}[\p{L}'’-]+$/u.test(t);
+  if (!looksLikeName(p.surname) || !p.given.every((t) => looksLikeName(t) || NAME_PARTICLES.has(t)))
+    return neutral;
   const g = genderOf(fullName);
   if (!g) return neutral;
 

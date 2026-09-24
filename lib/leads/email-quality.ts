@@ -10,8 +10,10 @@ export interface LintInput {
   kind: EmailKind;
   subject: string;
   paragraphs: string[];
-  /** Rok v pätičke webu — jediné číslo, ktoré sa smie v texte objaviť. */
+  /** Rok v pätičke webu — povolené číslo v texte. */
   copyrightYear?: number | null;
+  /** Ďalšie roky, ktoré sa vyskytujú vo vstupných dátach (napr. "copyright 2015" v nedostatkoch) — tiež povolené. */
+  allowedYears?: number[];
 }
 
 export interface LintResult {
@@ -129,11 +131,18 @@ export function lintEmail(input: LintInput): LintResult {
   if (FEMALE_WRITER.test(body))
     errors.push("pisateľ je muž — nepoužívaj ženské tvary (pozrela som)");
 
+  // ── Znaky: len latinka (model občas vsunie cyriliku: "часť" namiesto "časť") ──
+  const foreign = `${subj}\n${body}`.match(/[^\p{Script=Latin}\p{N}\p{P}\p{Z}\p{S}\n]/u)?.[0];
+  if (foreign) errors.push(`text obsahuje cudzí znak "${foreign}" (nie latinka)`);
+  if (/[\u0400-\u04FF\u0370-\u03FF\u4E00-\u9FFF]/u.test(`${subj}${body}`))
+    errors.push("text obsahuje cyriliku/gréčtinu/čínske znaky");
+
   // ── Typografia ────────────────────────────────────────────────────────────
   if (/[—–]/u.test(body)) errors.push("telo obsahuje pomlčku — alebo – (povolená len obyčajná -)");
   if (/ {2,}/.test(body)) warnings.push("dvojitá medzera");
   if (/(?<!\p{L})(\p{L}{2,})\s+\1(?!\p{L})/iu.test(body)) warnings.push("opakované slovo za sebou");
-  if (paragraphs.some((p) => /^\p{Ll}/u.test(p.trim()) && !/^[a-z0-9.-]+\.[a-z]{2,}/i.test(p.trim())))
+  // Prvý odsek nadväzuje na oslovenie s čiarkou, preto sa môže začínať malým písmenom.
+  if (paragraphs.slice(1).some((p) => /^\p{Ll}/u.test(p.trim()) && !/^[a-z0-9.-]+\.[a-z]{2,}/i.test(p.trim())))
     warnings.push("odsek začína malým písmenom");
 
   // ── Obsah ─────────────────────────────────────────────────────────────────
@@ -152,8 +161,30 @@ export function lintEmail(input: LintInput): LintResult {
     const clean = n.replace(/[\s.,]+$/g, "").trim();
     if (!clean) continue;
     if (input.copyrightYear && clean === String(input.copyrightYear)) continue;
-    errors.push(`číslo "${clean}" nie je odvoditeľné zo vstupných dát (povolený je len rok z pätičky)`);
+    if (input.allowedYears?.some((y) => clean === String(y))) continue;
+    errors.push(`číslo "${clean}" nie je odvoditeľné zo vstupných dát (povolený je len rok, ktorý je vo vstupných dátach)`);
   }
+  // Počty slovom ("sedem rokov", "dvadsať klientov", "polovica", "desaťročie") — model ich
+  // vie zle vypočítať (2026 - 2018 nie je 7) a sú to čísla, ktoré dáta nepodporujú.
+  const wordNumber = noDomains.match(
+    /(?<!\p{L})(?:dva|dve|tri|štyri|päť|šesť|sedem|osem|deväť|desať|\p{L}*násť|dvadsať|tridsať|štyridsať|päťdesiat|sto|tisíc)\s+(?:rok|rokov|roky|rokmi|mesiac|mesiacov|mesiace|klient|pacient|zákazník|návštev|objednáv|dopyt|percent)\p{L}*/iu,
+  )?.[0];
+  if (wordNumber) errors.push(`počet slovom "${wordNumber}" nie je odvoditeľný z dát`);
+  if (/(?<!\p{L})(?:polovic|tretin|štvrtin|dvojnásob|trojnásob|desaťroč|storoč)\p{L}*/iu.test(noDomains))
+    errors.push("odhad miery/počtu slovom (polovica, dvojnásobne, desaťročie…) nie je odvoditeľný z dát");
+  // Časový odhad dopadu ("ročne ukrátiť o pár klientov", "stačí stratiť jediného klienta mesačne")
+  // — miera dopadu, ktorú dáta nepodporujú.
+  if (/(?<!\p{L})(?:mesačne|ročne|týždenne|denne|ročných|mesačných|ročnej|mesačnej|ročnom|mesačnom)(?!\p{L})/iu.test(noDomains))
+    errors.push("časový odhad dopadu (mesačne/ročne/denne…) nie je odvoditeľný z dát");
+  if (/(?<!\p{L})(?:každý|každé|každú|každom)\s+(?:mesiac|týždeň|rok|deň)|(?<!\p{L})za\s+(?:mesiac|rok|týždeň)(?!\p{L})/iu.test(noDomains))
+    errors.push("časový odhad dopadu (každý mesiac / za rok…) nie je odvoditeľný z dát");
+  if (/(?<!\p{L})(?:jedin\p{L}+|jedn\p{L}+|pár|niekoľk\p{L}+)\s+(?:klient|pacient|zákazník|dopyt|objednáv|hosť|host)\p{L}*/iu.test(noDomains))
+    errors.push("odhad počtu klientov (jediný/pár/niekoľko…) nie je odvoditeľný z dát");
+  // Zovšeobecnenia, ktoré dáta nepodporujú ("väčšina záujemcov", "prevažne z mobilu").
+  const overgen = noDomains.match(
+    /(?<!\p{L})(?:väčšin\p{L}*|drvivá\p{L}*|prevažn\p{L}*|takmer\s+všetci|všetci\s+(?:klienti|záujemci|pacienti|zákazníci|hostia)|každý\s+(?:záujemca|klient|pacient|zákazník|návštevník|hosť))(?!\p{L})/iu,
+  )?.[0];
+  if (overgen) errors.push(`zovšeobecnenie "${overgen}" nie je odvoditeľné z dát (použi "časť z nich")`);
   if (/%|percent|\beur\b|€/iu.test(noDomains))
     errors.push("v texte sa nesmú objaviť percentá/sumy");
 

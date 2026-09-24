@@ -40,7 +40,9 @@ export async function POST(req: NextRequest) {
     );
   // Koľko vygenerovať v JEDNOM behu (kvôli časovému limitu funkcie). UI volá
   // opakovane, kým `remaining` neklesne na 0 — tak sa „načítajú všetky zvyšné".
-  const limit = Math.min(Math.max(1, Number(body.limit) || 30), 40);
+  // Každý mail = písanie + jazyková korektúra (+ prípadné opakovanie), preto menšia dávka
+  // (UI volá dokola, kým `remaining` > 0).
+  const limit = Math.min(Math.max(1, Number(body.limit) || 15), 25);
   const segmentId =
     body.segmentId && body.segmentId !== "all" ? body.segmentId : undefined;
   const segFilter = segmentId ? { segmentId } : {};

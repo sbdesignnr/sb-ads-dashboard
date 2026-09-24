@@ -7,8 +7,12 @@ import { lintEmail } from "./email-quality";
 const MODEL = "claude-sonnet-4-6";
 // Model na písanie a na korektúru cold emailov. Dá sa prepísať env premennou
 // (LEADS_EMAIL_MODEL / LEADS_PROOFREAD_MODEL) bez zásahu do kódu.
-const WRITER_MODEL = process.env.LEADS_EMAIL_MODEL?.trim() || "claude-sonnet-4-6";
-const PROOF_MODEL = process.env.LEADS_PROOFREAD_MODEL?.trim() || WRITER_MODEL;
+// Sonnet 5: na 6 reálnych leadoch písal tesnejšie a prirodzenejšie než 4.6 a správne
+// preskočil nadnárodný koncern (STRABAG). Opus 5.5 často nevolal nástroj (3 z 6 bez výsledku).
+const WRITER_MODEL = process.env.LEADS_EMAIL_MODEL?.trim() || "claude-sonnet-5";
+// Korektúru robí najsilnejší model (jazyková presnosť je dôležitejšia než cena: 1 volanie
+// na mail). Sonnet mal cyriliku ("часť") a "návštevníčok" v texte a nezachytil ich.
+const PROOF_MODEL = process.env.LEADS_PROOFREAD_MODEL?.trim() || "claude-opus-5-5";
 
 export interface LeadDossier {
   ownerName: string | null; // person to address (from website or ORSR)
@@ -244,13 +248,13 @@ Klient, ktorý advokáta hľadá mimo pracovnej doby, sa v tej chvíli nemá ako
 
 Dáva Vám tento pohľad zmysel?
 
-TÓN: prvý odsek začína rovno vetou (bez "Dobrý deň", bez mena) — oslovenie je nad ním. Formálnosť tónu prispôsob údaju "Tón oslovenia" v dátach (formálny = vecnejší a uctivejší, bežný = uvoľnenejší; vykanie platí vždy).
+TÓN: prvý odsek začína rovno vetou (bez "Dobrý deň", bez mena) — oslovenie je nad ním. Oslovenie končí čiarkou, preto prvý odsek začni MALÝM písmenom ("pri kontrole Vášho webu…", "na strabag.sk som nenašiel…"), okrem vlastného mena, značky alebo domény. Formálnosť tónu prispôsob údaju "Tón oslovenia" v dátach (formálny = vecnejší a uctivejší, bežný = uvoľnenejší; vykanie platí vždy).
 
 VYKANIE: Vy, Vás, Vám, Váš, Vaše, Vašu, Vašej. Mali by ste (NIE Mal by ste), Mohli by ste (NIE Mohol by ste), Vedeli by ste (NIE Vedel by ste).
 
 POMLČKY: len bežná pomlčka "-". NIKDY em dash — ani en dash –.
 
-ČÍSLA A ODHADY: žiadne čísla/sumy/odhady, ktoré nie sú doslovne odvoditeľné zo vstupných dát (PageSpeed, rok, konkrétny nedostatok). Surové skóre/čísla z analýzy necituj priamo (nepíš "PageSpeed 36/100"), opíš dôsledok slovami. Ak je nevyhnutný všeobecný trhový odhad, musí byť explicitne označený ako odhad, nie ako údaj z ich webu. Nepridávaj ani mieru dopadu, ktorú dáta nepodporujú — ak dáta hovoria "časť klientov" alebo "niektorí", nepíš "väčšina" ani "všetci".
+ČÍSLA A ODHADY: žiadne čísla/sumy/odhady, ktoré nie sú doslovne odvoditeľné zo vstupných dát (PageSpeed, rok, konkrétny nedostatok). Surové skóre/čísla z analýzy necituj priamo (nepíš "PageSpeed 36/100"), opíš dôsledok slovami. NEPOČÍTAJ ani neodhaduj počet rokov, mesiacov ani iné počty - ani slovom ("sedem rokov", "desaťročie", "polovica"): uveď iba rok z pätičky presne tak, ako je v dátach (napr. "v pätičke je rok 2018"). Ak je nevyhnutný všeobecný trhový odhad, musí byť explicitne označený ako odhad, nie ako údaj z ich webu. Nepridávaj ani mieru dopadu, ktorú dáta nepodporujú — ak dáta hovoria "časť klientov" alebo "niektorí", nepíš "väčšina" ani "všetci".
 
 TVRDÝ BLOCKLIST — tieto frázy a vzory NIKDY nepoužiješ, bez výnimky:
 - "všimol som si, že váš web pôsobí zastarano" (ani žiadny variant tejto vety)
@@ -376,25 +380,61 @@ const PROOFREAD_SYSTEM = `Si jazykový redaktor slovenčiny a kontrolór kvality
 4. PRAVDIVOSŤ: každé tvrdenie o firme/webe musí vyplývať z DÁT; nič nesmie byť vymyslené, zveličené ani zosilnené (ak dáta hovoria "časť klientov", nesmie tam byť "väčšina"). Čísla, percentá a sumy mimo dát sú zakázané (povolený je iba rok z pätičky webu).
 5. Pomlčky: iba obyčajná "-", nikdy — ani –.
 
+VÝNIMKA: prvý odsek sa ZÁMERNE začína malým písmenom (nadväzuje na oslovenie zakončené čiarkou, ktoré pridá systém) - to NIE je chyba, nemeň to. Riadok predmetu je zámerne písaný malými písmenami.
+
 PRAVIDLÁ ÚPRAV: Oprav MINIMÁLNE. Zachovaj počet odsekov, zmysel, tón a približnú dĺžku. Nepridávaj oslovenie ani podpis ani meno adresáta. Nepridávaj nové fakty. Ak je text v poriadku, vráť verdikt "ok" a text nezmeň.
 Ak sa problém nedá opraviť bez prepísania emailu (nepravdivé/vymyslené tvrdenie, nezrozumiteľný text), vráť verdikt "reject" a v "problems" stručne uveď dôvod.
 
 Výsledok vlož VÝHRADNE cez nástroj "uloz_korekturu".`;
 
-const PROOFREAD_TOOL: Anthropic.Tool = {
-  name: "uloz_korekturu",
-  description: "Uloží výsledok korektúry emailu.",
-  input_schema: {
-    type: "object",
-    properties: {
-      verdict: { type: "string", enum: ["ok", "fixed", "reject"], description: "ok = bez zmien, fixed = opravené, reject = nedá sa opraviť bez prepísania" },
-      subject: { type: "string", description: "Predmet (opravený alebo pôvodný)" },
-      paragraphs: { type: "array", items: { type: "string" }, description: "Odseky (opravené alebo pôvodné), rovnaký počet ako na vstupe" },
-      problems: { type: "array", items: { type: "string" }, description: "Zistené problémy (aj tie, čo sa opravili) - stručne" },
-    },
-    required: ["verdict", "subject", "paragraphs", "problems"],
-  } as Anthropic.Tool.InputSchema,
-};
+interface ProofResult {
+  verdict: "ok" | "fixed" | "reject";
+  subject: string;
+  paragraphs: string[];
+  problems: string[];
+}
+
+/**
+ * AI jazykový korektor. Výsledok berie ako čistý JSON v texte (nie cez nástroj) —
+ * silnejšie modely (Opus) vynútený tool_choice nepodporujú a nástroj občas nezavolajú.
+ */
+export async function proofread(
+  client: Anthropic,
+  facts: string,
+  subject: string,
+  paragraphs: string[],
+): Promise<ProofResult | null> {
+  const msg = await createMessage(client, {
+    model: PROOF_MODEL,
+    max_tokens: 1200,
+    temperature: 0,
+    system:
+      PROOFREAD_SYSTEM.replace(
+        'Výsledok vlož VÝHRADNE cez nástroj "uloz_korekturu".',
+        'Odpovedz VÝHRADNE jedným JSON objektom (žiadny iný text, žiadny markdown): {"verdict":"ok"|"fixed"|"reject","subject":"…","paragraphs":["…"],"problems":["…"]}',
+      ),
+    messages: [
+      {
+        role: "user",
+        content: `DÁTA O FIRME:\n${facts}\n\nNÁVRH EMAILU:\nPredmet: ${subject}\n\n${paragraphs.map((p, i) => `Odsek ${i + 1}: ${p}`).join("\n\n")}`,
+      },
+    ],
+  });
+  const m = textFrom(msg).match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try {
+    const j = JSON.parse(m[0]) as Partial<ProofResult>;
+    if (j.verdict !== "ok" && j.verdict !== "fixed" && j.verdict !== "reject") return null;
+    return {
+      verdict: j.verdict,
+      subject: typeof j.subject === "string" ? j.subject : subject,
+      paragraphs: Array.isArray(j.paragraphs) ? j.paragraphs.map(String) : paragraphs,
+      problems: Array.isArray(j.problems) ? j.problems.map(String) : [],
+    };
+  } catch {
+    return null;
+  }
+}
 
 export interface OutreachEmail {
   subject: string;
@@ -427,11 +467,78 @@ const THREAD_LABEL: Record<string, string> = {
 // Segmenty, kde sa píše formálne ("S úctou") aj bez titulu v mene.
 const FORMAL_SEGMENT_RE = /advok|notár|lekár|zubn|doktor|ordinác|akadem|právn|exekút|súdn/i;
 
+// Novšie modely majú iné obmedzenia API (napr. Sonnet 5 odmieta `temperature`, Opus 5.5
+// odmieta vynútený `tool_choice`). Volanie sa pri takejto chybe raz upraví a model
+// sa zapamätá — zmena modelu cez env premennú tak nezastaví generovanie mailov.
+const modelQuirks = new Map<string, { noTemperature?: boolean; autoToolChoice?: boolean }>();
+
+async function createMessage(
+  client: Anthropic,
+  params: Anthropic.MessageCreateParamsNonStreaming,
+): Promise<Anthropic.Message> {
+  const quirks = modelQuirks.get(params.model) ?? {};
+  for (let i = 0; i < 3; i++) {
+    const p = { ...params };
+    if (quirks.noTemperature) delete p.temperature;
+    if (quirks.autoToolChoice && p.tool_choice?.type === "tool") p.tool_choice = { type: "auto" };
+    try {
+      return await client.messages.create(p);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (!quirks.noTemperature && /temperature/i.test(msg) && /deprecated|not supported|unsupported/i.test(msg)) {
+        quirks.noTemperature = true;
+      } else if (!quirks.autoToolChoice && /tool_choice/i.test(msg)) {
+        quirks.autoToolChoice = true;
+      } else {
+        throw e;
+      }
+      modelQuirks.set(params.model, quirks);
+    }
+  }
+  return client.messages.create(params);
+}
+
+/** Em/en pomlčka → obyčajná "-" (špecifikácia povoľuje len "-"); radšej opraviť než mail zamietnuť. */
+function normalizeDashes(s: string): string {
+  return s
+    .replace(/\s*[—–]\s*/g, " - ")
+    // Slovenské úvodzovky „…" namiesto rovných "…" a anglických “…”.
+    .replace(/"([^"\n]+)"/g, "„$1“")
+    .replace(/[“”]([^“”\n]+)[“”]/g, "„$1“");
+}
+
 function textFrom(msg: Anthropic.Message): string {
   return msg.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("");
+}
+
+// Slová, ktoré sa na začiatku odseku NIKDY nezmenšujú: zámená pri vykaní a známe značky/mestá.
+const KEEP_CAPITAL = new Set([
+  "Vy", "Vás", "Vám", "Váš", "Vaša", "Vaše", "Vašu", "Vašej", "Vašich", "Vaším", "Vaši",
+  "Vašim", "Vašimi", "Vami", "Vašom", "Vášho", "Vašou",
+  "Google", "Facebook", "Instagram", "WordPress", "Shoptet", "Wix", "PageSpeed", "Booking",
+  "Airbnb", "Slovensko", "Česko", "Bratislava", "Nitra", "Košice", "Žilina", "Praha", "Brno",
+  "Trnava", "Prešov", "Banská", "Poprad",
+]);
+
+/**
+ * Prvý odsek nadväzuje na oslovenie s čiarkou ("Dobrý deň, pán Novák," → "pri
+ * kontrole…"), takže začiatočné slovo sa píše malým písmenom — okrem zámen
+ * Vy/Váš…, značiek, miest a názvu firmy. Mení len obyčajné slovo s veľkým
+ * začiatočným písmenom (domény, skratky a zmiešané zápisy nechá).
+ */
+function lowerOpener(paragraph: string, companyName: string): string {
+  const m = paragraph.match(/^(\p{Lu}\p{Ll}*)(?=[\s,])/u);
+  if (!m) return paragraph;
+  const word = m[1];
+  if (KEEP_CAPITAL.has(word)) return paragraph;
+  const company = new Set(
+    companyName.split(/[\s,.|&/-]+/).filter(Boolean).map((t) => t.toLowerCase()),
+  );
+  if (company.has(word.toLowerCase())) return paragraph;
+  return word.toLowerCase() + paragraph.slice(word.length);
 }
 
 /** Skladá finálny plain-text mail: oslovenie (z kódu) + odseky + [booking] + podpis. */
@@ -496,6 +603,13 @@ Pain point: ${lead.aiPainPoint ?? "—"}`;
         .join("\n\n")}`
     : "";
 
+  // Rok v pätičke je nedostatok len ak je naozaj starý; aktuálny/nedávny rok model
+  // nesmie spomenúť ("v pätičke je už rok 2026" je nezmysel).
+  const staleYear =
+    lead.copyrightYear && lead.copyrightYear <= new Date().getFullYear() - 2
+      ? lead.copyrightYear
+      : null;
+
   // Meno adresáta MODEL NEDOSTÁVA (oslovenie robí kód) — nemá ako ho použiť zle.
   const facts = `DÁTA O FIRME (použi konkrétne, nevymýšľaj; surové skóre/čísla z analýzy necituj):
 Firma: ${lead.companyName}
@@ -503,12 +617,15 @@ Segment (odvetvie): ${segmentName}
 Web: ${lead.websiteUrl ?? "—"}
 Mesto: ${lead.companyCity ?? "—"}
 Tón oslovenia: ${formal ? "formálny (odborník / uctivý tón)" : "bežný (vecný, priateľský, stále vykanie)"}
-Rok v pätičke webu (copyright): ${lead.copyrightYear ?? "—"}
+Rok v pätičke webu (copyright): ${staleYear ?? "—"}
 PageSpeed mobil: ${lead.pageSpeedMobile != null ? `${lead.pageSpeedMobile}/100` : "—"}
 Vizuálny dojem (AI): ${lead.aiVisualReason ?? "—"}
 Hlavné vizuálne problémy: ${(lead.visualIssues ?? []).slice(0, 4).join("; ") || "—"}
 Ďalšie nedostatky webu: ${(lead.websiteIssues ?? []).slice(0, 5).join("; ") || "—"}${briefBlock}
 Zhrnutie stavu webu: ${lead.aiSummary ?? "—"}${threadBlock}`;
+
+  // Roky, ktoré sa smú v maile objaviť, lebo sú v dátach (napr. "copyright 2015").
+  const allowedYears = [...facts.matchAll(/(?<!\d)(?:19|20)\d{2}(?!\d)/g)].map((m) => Number(m[0]));
 
   const initialSubject = previousEmails[0]?.subject || lead.companyName;
   const instruction =
@@ -539,7 +656,7 @@ Zhrnutie stavu webu: ${lead.aiSummary ?? "—"}${threadBlock}`;
       : "";
 
     // 1) písanie
-    const msg = await client.messages.create({
+    const msg = await createMessage(client, {
       model: WRITER_MODEL,
       max_tokens: 800,
       temperature: 0.6,
@@ -557,13 +674,19 @@ Zhrnutie stavu webu: ${lead.aiSummary ?? "—"}${threadBlock}`;
     if (d.skipReason)
       return { subject: "", body: "", skipReason: String(d.skipReason).trim() };
 
-    let subject = (d.subject ?? "").trim().slice(0, 120);
+    let subject = normalizeDashes((d.subject ?? "").trim()).slice(0, 120);
     let paragraphs = Array.isArray(d.paragraphs)
-      ? d.paragraphs.map((p) => String(p).trim()).filter(Boolean)
+      ? d.paragraphs.map((p) => normalizeDashes(String(p).trim())).filter(Boolean)
       : [];
 
     const lint = (subj: string, paras: string[]) =>
-      lintEmail({ kind: type, subject: subj, paragraphs: paras, copyrightYear: lead.copyrightYear });
+      lintEmail({
+        kind: type,
+        subject: subj,
+        paragraphs: paras,
+        copyrightYear: staleYear,
+        allowedYears,
+      });
 
     // 2) tvrdé pravidlá
     let res = lint(subject, paragraphs);
@@ -573,40 +696,25 @@ Zhrnutie stavu webu: ${lead.aiSummary ?? "—"}${threadBlock}`;
       continue;
     }
 
-    // 3) jazyková korektúra (AI, temperature 0)
-    const proof = await client.messages.create({
-      model: PROOF_MODEL,
-      max_tokens: 900,
-      temperature: 0,
-      system: PROOFREAD_SYSTEM,
-      tools: [PROOFREAD_TOOL],
-      tool_choice: { type: "tool", name: "uloz_korekturu" },
-      messages: [
-        {
-          role: "user",
-          content: `DÁTA O FIRME:\n${facts}\n\nNÁVRH EMAILU:\nPredmet: ${subject}\n\n${paragraphs.map((p, i) => `Odsek ${i + 1}: ${p}`).join("\n\n")}`,
-        },
-      ],
-    });
-    const pb = proof.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-    const pd = (pb?.input ?? {}) as {
-      verdict?: string;
-      subject?: string;
-      paragraphs?: unknown;
-      problems?: unknown;
-    };
-    const problems = Array.isArray(pd.problems) ? pd.problems.map(String) : [];
-    if (pd.verdict === "reject") {
-      lastIssues = problems.length ? problems : ["korektor mail zamietol"];
+    // 3) jazyková korektúra (AI). Nedostupná/nezrozumiteľná korektúra mail NEPUSTÍ
+    // ďalej — bez nej by sa preklepy (napr. cyrilika) dostali k adresátovi.
+    const pr = await proofread(client, facts, subject, paragraphs);
+    if (!pr) {
+      lastIssues = ["korektúra nevrátila použiteľný výsledok"];
+      feedback = [];
+      continue;
+    }
+    if (pr.verdict === "reject") {
+      lastIssues = pr.problems.length ? pr.problems : ["korektor mail zamietol"];
       feedback = lastIssues;
       continue;
     }
-    if (pd.verdict === "fixed" && Array.isArray(pd.paragraphs)) {
-      const fixedParas = pd.paragraphs.map((p) => String(p).trim()).filter(Boolean);
+    if (pr.verdict === "fixed") {
+      const fixedParas = pr.paragraphs.map((p) => normalizeDashes(p.trim())).filter(Boolean);
       // Korektor nesmie meniť štruktúru (počet odsekov).
       if (fixedParas.length === paragraphs.length) {
         paragraphs = fixedParas;
-        if (type === "initial" && pd.subject?.trim()) subject = pd.subject.trim().slice(0, 120);
+        if (type === "initial" && pr.subject.trim()) subject = normalizeDashes(pr.subject.trim()).slice(0, 120);
       }
     }
 
@@ -620,7 +728,12 @@ Zhrnutie stavu webu: ${lead.aiSummary ?? "—"}${threadBlock}`;
 
     return {
       subject,
-      body: assembleBody({ greeting: greeting.line, paragraphs, signoff, bookingLine }),
+      body: assembleBody({
+        greeting: greeting.line,
+        paragraphs: [lowerOpener(paragraphs[0], lead.companyName), ...paragraphs.slice(1)],
+        signoff,
+        bookingLine,
+      }),
       skipReason: null,
     };
   }
