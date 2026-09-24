@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { QUALIFY_AT, EMAIL_PIPELINE_SINCE } from "@/lib/leads/qualification";
 import { isLegacyDraft } from "@/lib/leads/draft-state";
-import { generateOutreachEmail, EmailQualityError } from "@/lib/leads/ai";
+import { generateOutreachEmail, EmailQualityError, getAiUsage, resetAiUsage } from "@/lib/leads/ai";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
   }
   const segmentId = scope(req, body.segmentId);
 
+  resetAiUsage();
   const batch = (await legacyDrafts(segmentId)).slice(0, BATCH);
   let regenerated = 0;
   let removed = 0;
@@ -111,5 +112,6 @@ export async function POST(req: NextRequest) {
     removed,
     remaining,
     problems: problems.slice(0, 20),
+    usage: getAiUsage(),
   });
 }

@@ -46,7 +46,13 @@ import {
   type LeadStatus,
   LEAD_STATUS_LABEL,
 } from "@/lib/leads/types";
-import { QUALIFY_AT, BORDERLINE_AT, scoreTier } from "@/lib/leads/qualification";
+import {
+  QUALIFY_AT,
+  BORDERLINE_AT,
+  scoreTier,
+  COST_EUR_PER_ANALYSIS,
+  formatEur,
+} from "@/lib/leads/qualification";
 import {
   getAnalysisRunState,
   getServerAnalysisRunState,
@@ -269,6 +275,18 @@ export default function LeadsPage() {
   // (server volá enrichLead). Obmedzené na aktuálne zvolený segment — z dialógu
   // po importe (kde ešte nemusí byť segment vybraný) ide bez obmedzenia.
   const runAnalyze = (scopeToSegment = true) => {
+    // Každý web stojí kredit Anthropic (screenshot + AI): pri väčšom počte to najprv
+    // povedz, nech ťa účet nepresvedčí o opaku ("Ostatné" má 1500+ leadov = desiatky €).
+    const n = scopeToSegment ? pendingAnalysis : (analyzeAsk ?? pendingAnalysis);
+    if (
+      n >= 30 &&
+      !confirm(
+        `Analýza ${n} webov spotrebuje približne ${formatEur(n * COST_EUR_PER_ANALYSIS)} kreditu Anthropic (asi 2 centy na web). Pokračovať?`,
+      )
+    ) {
+      setAnalyzeAsk(null);
+      return;
+    }
     setAnalyzeAsk(null);
     const scope = scopeToSegment && segment !== "all" ? segment : "all";
     // Slučka beží v analysis-runner (prežije prechod na detail leadu); druhé
@@ -301,7 +319,7 @@ export default function LeadsPage() {
         : `v segmente „${segments.find((s) => s.id === segment)?.name ?? ""}"`;
     if (
       !confirm(
-        `Preanalyzovať ${staleCount} leadov so starým skóre ${scopeLabel}? Každý web sa preskenuje odznova (PageSpeed, screenshot, AI vizuál) — potrvá to. Staré skóre sa prepíše novým. Beh môžeš nechať bežať a prechádzať appku.`,
+        `Preanalyzovať ${staleCount} leadov so starým skóre ${scopeLabel}? Každý web sa preskenuje odznova (PageSpeed, screenshot, AI vizuál) — spotrebuje to približne ${formatEur(staleCount * COST_EUR_PER_ANALYSIS)} kreditu Anthropic a potrvá to. Staré skóre sa prepíše novým. Beh môžeš nechať bežať a prechádzať appku.`,
       )
     )
       return;

@@ -60,6 +60,17 @@ const BLOCKLIST: [RegExp, string][] = [
   [/(?:pekné|pekná|pekný)\s+(?:fotky|fotka|web)/iu, "pozitívne hodnotenie webu/fotiek"],
 ];
 
+// Generické záverečné otázky a stopové klišé — znejú ako hromadný e-mail (používateľ:
+// "úplne AI, nič hodnotné"). Zakázané v každom maile.
+const GENERIC_PHRASES: [RegExp, string][] = [
+  [/dáva\s+(?:Vám\s+)?(?:to|tento\s+pohľad|tento\s+názor|toto)\s+zmysel/iu, "generická otázka \"Dáva Vám to zmysel?\""],
+  [/sedí\s+Vám\s+(?:to|tento|takýto)/iu, "generická otázka \"Sedí Vám tento pohľad?\""],
+  [/čo\s+na\s+to\s+hovoríte/iu, "generická otázka \"Čo na to hovoríte?\""],
+  [/(?:alebo\s+)?(?:to\s+)?vidíte\s+to\s+(?:inak|podobne)|vnímate\s+to\s+inak|máte\s+na\s+to\s+iný\s+názor/iu, "generická otázka \"…alebo to vidíte inak?\""],
+  [/časť\s+(?:z\s+)?(?:týchto|takýchto|nich|záujemcov|klientov|pacientov|ľudí|hostí|zákazníkov|návštevníkov)/iu, "klišé \"časť záujemcov odíde\""],
+  [/(?:ku|k|u)\s+konkurenci\p{L}*|odíd\p{L}*\s+(?:inam|inde)|skús\p{L}*\s+to\s+inde|(?:to\s+)?vzd(?:á|ajú|ať)(?:\s+to)?(?![\p{L}])|ľudia\s+odchádzajú|odchádzaj\p{L}*\s+(?:bez|inam|inde)/iu, "klišé \"odíde ku konkurencii / skúsi to inde\""],
+];
+
 // Oslovenie a podpis pridáva kód — v odsekoch nemajú čo robiť.
 const FORBIDDEN_IN_BODY: [RegExp, string][] = [
   [/dobrý\s+deň/iu, "oslovenie \"Dobrý deň\" (pridáva sa automaticky)"],
@@ -95,8 +106,8 @@ export function lintEmail(input: LintInput): LintResult {
 
   // ── Štruktúra a dĺžka ─────────────────────────────────────────────────────
   const count = paragraphs.length;
-  if (kind === "initial" && count !== 3)
-    errors.push(`počet odsekov je ${count}, má byť presne 3`);
+  if (kind === "initial" && (count < 2 || count > 3))
+    errors.push(`počet odsekov je ${count}, má byť 2-3`);
   if ((kind === "followup1" || kind === "followup2") && (count < 2 || count > 3))
     errors.push(`follow-up má ${count} odsekov (má mať 2-3)`);
   if (kind === "followup3" && (count < 1 || count > 3))
@@ -105,7 +116,7 @@ export function lintEmail(input: LintInput): LintResult {
 
   const words = wordCount(body);
   const range: Record<EmailKind, [number, number]> = {
-    initial: [45, 110],
+    initial: [30, 95],
     followup1: [28, 85],
     followup2: [28, 85],
     followup3: [20, 60],
@@ -148,6 +159,8 @@ export function lintEmail(input: LintInput): LintResult {
   // ── Obsah ─────────────────────────────────────────────────────────────────
   for (const [re, label] of BLOCKLIST)
     if (re.test(body) || re.test(subj)) errors.push(`zakázaná fráza: ${label}`);
+  for (const [re, label] of GENERIC_PHRASES)
+    if (re.test(body)) errors.push(`zakázané: ${label}`);
   for (const [re, label] of FORBIDDEN_IN_BODY)
     if (re.test(body)) errors.push(`v tele sa nesmie objaviť ${label}`);
 

@@ -39,7 +39,7 @@ import { TemplateBar } from "@/components/leads/TemplateBar";
 import { OwnerCheckPanel } from "@/components/leads/OwnerCheckPanel";
 import { QueueHealthPanel } from "@/components/leads/QueueHealthPanel";
 import { registerLink } from "@/lib/leads/registers";
-import { QUALIFY_AT, scoreTier } from "@/lib/leads/qualification";
+import { QUALIFY_AT, scoreTier, formatEur } from "@/lib/leads/qualification";
 import { isVerifiedOwnerSource } from "@/lib/leads/owner-source";
 import { type EmailTemplateDTO } from "@/lib/leads/templates";
 import {
@@ -387,6 +387,7 @@ export default function CampaignsPage() {
     let lastMissing = 0;
     let lastBelowThreshold = 0;
     let lastUnscored = 0;
+    let costEur = 0;
     toast.loading("Generujem emaily…", { id: "gen" });
     try {
       for (let round = 0; round < 30; round++) {
@@ -403,6 +404,7 @@ export default function CampaignsPage() {
           break;
         }
         totalGen += j.generated ?? 0;
+        costEur += j.usage?.estimatedEur ?? 0;
         lastMissing = j.missingEmail ?? 0;
         lastBelowThreshold = j.belowThreshold ?? 0;
         lastUnscored = j.unscored ?? 0;
@@ -423,7 +425,7 @@ export default function CampaignsPage() {
         lastUnscored ? `${lastUnscored} bez skóre / čaká na analýzu` : null,
       ].filter(Boolean);
       toast.success(
-        `Načítaných ${totalGen} emailov na schválenie${skippedParts.length ? ` · preskočené: ${skippedParts.join(", ")}` : ""}`,
+        `Načítaných ${totalGen} emailov na schválenie · spotreba kreditu ≈ ${formatEur(costEur)}${skippedParts.length ? ` · preskočené: ${skippedParts.join(", ")}` : ""}`,
         { id: "gen", duration: 6000 },
       );
       loadQueues();

@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import { CheckCircle2, ListChecks, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { QUALIFY_AT } from "@/lib/leads/qualification";
+import { QUALIFY_AT, COST_EUR_PER_EMAIL, formatEur } from "@/lib/leads/qualification";
 
 interface Health {
   leads: { qualified: number; borderline: number; good: number; unscored: number };
@@ -92,10 +92,18 @@ export function QueueHealthPanel({
   };
 
   const rewrite = async () => {
+    if (!h) return;
+    if (
+      !confirm(
+        `Prepísať ${h.legacyQualified} konceptov novým generátorom? Spotrebuje to približne ${formatEur(h.legacyQualified * COST_EUR_PER_EMAIL)} kreditu Anthropic (asi 2 centy na mail).`,
+      )
+    )
+      return;
     setRewriting(true);
     const tid = toast.loading("Prepisujem koncepty novým generátorom…");
     let done = 0;
     let removed = 0;
+    let costEur = 0;
     try {
       for (let round = 0; round < 60; round++) {
         const r = await fetch("/api/leads/emails/regenerate-legacy", {
@@ -107,6 +115,7 @@ export function QueueHealthPanel({
         const j = await r.json();
         done += j.regenerated ?? 0;
         removed += j.removed ?? 0;
+        costEur += j.usage?.estimatedEur ?? 0;
         toast.loading(
           `Prepisujem… ${done} hotových${removed ? `, ${removed} vyradených` : ""}${j.remaining ? `, ešte ${j.remaining}` : ""}`,
           { id: tid },
@@ -114,7 +123,7 @@ export function QueueHealthPanel({
         if (!j.remaining || !(j.regenerated || j.removed)) break;
       }
       toast.success(
-        `Prepísaných ${done} konceptov${removed ? `, ${removed} nesplnilo kontrolu kvality a bolo vyradených` : ""}`,
+        `Prepísaných ${done} konceptov${removed ? `, ${removed} nesplnilo kontrolu kvality a bolo vyradených` : ""} · spotreba ≈ ${formatEur(costEur)}`,
         { id: tid, duration: 8000 },
       );
     } catch {

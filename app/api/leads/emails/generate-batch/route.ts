@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { generateOutreachEmail } from "@/lib/leads/ai";
+import { generateOutreachEmail, getAiUsage, resetAiUsage } from "@/lib/leads/ai";
 import { fillTemplate } from "@/lib/leads/templates";
 import { QUALIFY_AT } from "@/lib/leads/qualification";
 import { greetableOwnerName } from "@/lib/leads/owner-source";
@@ -23,6 +23,8 @@ export async function POST(req: NextRequest) {
   } catch {
     /* defaults */
   }
+
+  resetAiUsage(); // spotreba tejto dávky (pre odhad nákladov v UI)
 
   // Ak je zvolená šablóna, generujeme deterministicky z nej (bez AI) — mail
   // vyzerá presne ako šablóna so značkami nahradenými údajmi leadu.
@@ -261,5 +263,6 @@ export async function POST(req: NextRequest) {
     unscored, // ešte nezanalyzované (websiteScore je null) — treba spustiť "Analyzovať"
     failed,
     details: details.slice(0, 50),
+    usage: getAiUsage(), // tokeny + odhad ceny tejto dávky
   });
 }

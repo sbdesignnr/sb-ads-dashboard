@@ -51,3 +51,15 @@ export function scoreTier(score: number | null | undefined): ScoreTier {
   if (score >= BORDERLINE_AT) return "borderline";
   return "good";
 }
+
+/**
+ * Hrubé odhady spotreby kreditu Anthropic (EUR) na jednu položku — pre upozornenie pred
+ * hromadnými akciami. Zmerané 24. 9. 2026 (Sonnet-class cenník, ≈ $3/$15 za 1M tokenov):
+ *  - analýza webu: screenshot + vizuálne hodnotenie ≈ 1 cent, k tomu AI podklad
+ *    (dossier) ≈ 2 centy len pre vhodné leady (~30 %) → ≈ 2 centy na web,
+ *  - e-mail: písanie + korektúra ≈ 2 centy.
+ * Skutočnú cenu ukazuje Anthropic Console → Usage.
+ */
+export const COST_EUR_PER_ANALYSIS = 0.02;
+export const COST_EUR_PER_EMAIL = 0.02;
+export const formatEur = (v: number) => `${v.toFixed(2).replace(".", ",")} €`;
