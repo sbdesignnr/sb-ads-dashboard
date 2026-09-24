@@ -57,7 +57,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     // enrichLead robí AI podklad (súhrn / pain point / príležitosť) len pre weby so skóre
-    // ≥ 65; pri ostatných ho preskočí. Tlačidlo ho má vytvoriť vždy — z už uložených
+    // ≥ QUALIFY_AT (lib/leads/qualification.ts); pri ostatných ho preskočí. Tlačidlo ho má vytvoriť vždy — z už uložených
     // zistení, bez opätovného scanu webu. Čerstvo naskenovaný lead, ktorý podklad už má,
     // nepočítame druhýkrát.
     const hasDossier = Boolean(current.aiSummary || current.aiPainPoint || current.aiOpportunity);

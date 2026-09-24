@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import {
@@ -38,6 +45,14 @@ import {
   type LeadStatus,
   LEAD_STATUS_LABEL,
 } from "@/lib/leads/types";
+import { QUALIFY_AT, BORDERLINE_AT, scoreTier } from "@/lib/leads/qualification";
+import {
+  getAnalysisRunState,
+  getServerAnalysisRunState,
+  startAnalysis,
+  subscribeAnalysisRun,
+} from "@/lib/leads/analysis-runner";
+import { AnalysisProgress } from "@/components/leads/AnalysisProgress";
 
 type StatusFilter = LeadStatus | "all";
 
@@ -68,11 +83,20 @@ const STATUS_VARIANT: Record<
   rejected: "default",
 };
 
+// Farba podľa úrovne (zdieľaný prah z lib/leads/qualification): červená = zlý web
+// = vhodný lead, žltá = hraničný, zelená = web v poriadku. Predtým sa farbilo
+// pevnými číslami 40/60, takže zjavne zastaraný web so skóre 28 svietil zelený.
 function scoreClasses(score: number | null): string {
-  if (score === null) return "bg-surface-2 text-muted";
-  if (score >= 60) return "bg-danger/15 text-danger";
-  if (score >= 40) return "bg-warning/15 text-warning";
-  return "bg-success/15 text-success";
+  switch (scoreTier(score)) {
+    case "qualified":
+      return "bg-danger/15 text-danger";
+    case "borderline":
+      return "bg-warning/15 text-warning";
+    case "good":
+      return "bg-success/15 text-success";
+    default:
+      return "bg-surface-2 text-muted";
+  }
 }
 
 function host(url: string | null): string {
@@ -103,8 +127,15 @@ export default function LeadsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [analyzeAsk, setAnalyzeAsk] = useState<number | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
+  // "Beží analýza" žije v module analysis-runner (mimo tejto stránky), takže
+  // prechod na detail leadu a späť ho nezresetuje ani nedovolí spustiť druhý beh.
+  const analyzing = useSyncExternalStore(
+    subscribeAnalysisRun,
+    () => getAnalysisRunState().running,
+    () => getServerAnalysisRunState().running,
+  );
   const [pendingAnalysis, setPendingAnalysis] = useState(0);
+  const [staleCount, setStaleCount] = useState(0);
 
   // Obmedzené na aktuálne zvolený segment (rovnaká logika ako loadLeads) — nech
   // tlačidlo ukazuje, koľko treba analyzovať PRE TENTO segment, nie naprieč všetkými.
@@ -122,6 +153,23 @@ export default function LeadsPage() {
   useEffect(() => {
     loadPendingAnalysis();
   }, [loadPendingAnalysis]);
+
+  // Koľko leadov v segmente má skóre zo staršej verzie skórovania (tlačidlo
+  // "Preanalyzovať staré" sa ukáže len keď je čo preanalyzovať).
+  const loadStaleCount = useCallback(async () => {
+    try {
+      const j = await fetch(
+        `/api/leads/reset-analysis?segment=${encodeURIComponent(segment)}`,
+      ).then((r) => r.json());
+      setStaleCount(j.stale ?? 0);
+    } catch {
+      /* ponechaj starú hodnotu */
+    }
+  }, [segment]);
+
+  useEffect(() => {
+    loadStaleCount();
+  }, [loadStaleCount]);
 
   // Restore the segment filter from the URL (?segment=) so returning from a lead
   // detail lands back on the same segment.
@@ -203,66 +251,40 @@ export default function LeadsPage() {
   // Po importe (alebo kedykoľvek): analyzuj weby po dávkach, kým nie je hotovo
   // (server volá enrichLead). Obmedzené na aktuálne zvolený segment — z dialógu
   // po importe (kde ešte nemusí byť segment vybraný) ide bez obmedzenia.
-  const runAnalyze = async (scopeToSegment = true) => {
+  const runAnalyze = (scopeToSegment = true) => {
     setAnalyzeAsk(null);
-    setAnalyzing(true);
-    const segParam =
-      scopeToSegment && segment !== "all"
-        ? `?segment=${encodeURIComponent(segment)}`
-        : "";
-    const tid = toast.loading("Spúšťam analýzu…");
-    try {
-      const first = await fetch(`/api/leads/analyze-bulk${segParam}`).then(
-        (r) => r.json(),
-      );
-      const total: number = first.remaining ?? 0;
-      if (!total) {
-        toast.success("Nič na analýzu.", { id: tid });
-        return;
-      }
-      let remaining = total;
-      let guard = 0;
-      while (remaining > 0 && guard < 5000) {
-        guard++;
-        const r = await fetch("/api/leads/analyze-bulk", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            segmentId: scopeToSegment && segment !== "all" ? segment : "all",
-          }),
-        }).then((x) => x.json());
-        if (!r || typeof r.remaining !== "number" || r.processed === 0) break;
-        remaining = r.remaining;
-        toast.loading(`Analyzujem weby… ${total - remaining}/${total}`, {
-          id: tid,
-        });
-        // Priebežný refresh každých pár dávok (nie zakaždým, nech zoznam nebliká).
-        if (guard % 4 === 0) await loadLeads();
-      }
-      toast.success(`✅ Analýza dokončená (${total} webov)`, {
-        id: tid,
-        duration: 6000,
-      });
-      await Promise.all([loadSegments(), loadLeads(), loadPendingAnalysis()]);
-    } catch {
-      toast.error("Analýza zlyhala", { id: tid });
-    } finally {
-      setAnalyzing(false);
-    }
+    const scope = scopeToSegment && segment !== "all" ? segment : "all";
+    // Slučka beží v analysis-runner (prežije prechod na detail leadu); druhé
+    // spustenie počas behu sa ignoruje. Progres ukazuje <AnalysisProgress>.
+    if (!startAnalysis(scope)) toast("Analýza už beží.");
   };
 
-  // Vynuluje lastScannedAt pre už raz naskenované leady v aktuálnom segmente
-  // a spustí analýzu odznova — na použitie po oprave skórovacej logiky, keď
-  // staré skóre sedí ešte pred opravou (kliknutie na "Prepočítať" v detaile
-  // leadu web nescanuje odznova, len prepíše text z pôvodného skóre).
+  // Obnovenie všetkého, čo analýza mení (zoznam, počty segmentov, počítadlá) —
+  // volá ho ukazovateľ progresu priebežne počas behu a po jeho skončení.
+  const refreshAfterAnalysis = useCallback(() => {
+    loadSegments();
+    loadLeads();
+    loadPendingAnalysis();
+    loadStaleCount();
+  }, [loadSegments, loadLeads, loadPendingAnalysis, loadStaleCount]);
+
+  // Vynuluje lastScannedAt pre leady so skóre zo STARŠEJ verzie skórovania v
+  // aktuálnom segmente a spustí analýzu odznova — po oprave skórovacej logiky
+  // (kliknutie na "Prepočítať" v detaile leadu web nescanuje odznova, len
+  // prepíše text z pôvodného skóre). Bezpečné kliknúť opakovane: leady už
+  // preanalyzované novou verziou sa nedotknú.
   const reanalyzeOld = async () => {
+    if (analyzing) {
+      toast("Analýza už beží.");
+      return;
+    }
     const scopeLabel =
       segment === "all"
         ? "vo všetkých segmentoch"
         : `v segmente „${segments.find((s) => s.id === segment)?.name ?? ""}"`;
     if (
       !confirm(
-        `Preanalyzovať UŽ SKÓROVANÉ leady ${scopeLabel}? Každý web sa preskenuje odznova (PageSpeed, screenshot, AI vizuál) — môže to chvíľu trvať. Staré skóre sa prepíše novým.`,
+        `Preanalyzovať ${staleCount} leadov so starým skóre ${scopeLabel}? Každý web sa preskenuje odznova (PageSpeed, screenshot, AI vizuál) — potrvá to. Staré skóre sa prepíše novým. Beh môžeš nechať bežať a prechádzať appku.`,
       )
     )
       return;
@@ -273,20 +295,21 @@ export default function LeadsPage() {
         body: JSON.stringify({ segmentId: segment }),
       }).then((x) => x.json());
       toast.success(`Pripravených ${r.reset ?? 0} leadov na preanalyzovanie`);
-      await loadPendingAnalysis();
-      await runAnalyze(true);
+      await Promise.all([loadPendingAnalysis(), loadStaleCount()]);
+      runAnalyze(true);
     } catch {
       toast.error("Reset zlyhal");
     }
   };
 
-  // Hromadné skrytie leadov s dobrým webom (skóre < 65) v aktuálnom segmente.
+  // Hromadné skrytie leadov s JEDNOZNAČNE dobrým webom (skóre pod BORDERLINE_AT)
+  // v aktuálnom segmente. Vhodné ani hraničné leady sa nikdy neskryjú.
   const hideGoodWebs = async () => {
     const scope =
       segment === "all" ? "vo všetkých segmentoch" : "v tomto segmente";
     if (
       !confirm(
-        `Skryť neoslovené leady s dobrým webom (skóre < 65) ${scope}? Označia sa ako zamietnuté — zmiznú zo zoznamu, ale ostanú v databáze a dajú sa vrátiť.`,
+        `Skryť neoslovené leady s jednoznačne dobrým webom (skóre < ${BORDERLINE_AT}) ${scope}? Označia sa ako zamietnuté — zmiznú zo zoznamu, ale ostanú v databáze a dajú sa vrátiť. Vhodné a hraničné leady sa nedotknú.`,
       )
     )
       return;
@@ -296,7 +319,7 @@ export default function LeadsPage() {
       const res = await fetch("/api/leads/bulk-reject", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ segment, maxScore: 65 }),
+        body: JSON.stringify({ segment, maxScore: BORDERLINE_AT }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error();
@@ -405,15 +428,17 @@ export default function LeadsPage() {
                 : `Analyzovať weby (${pendingAnalysis})`}
             </button>
           )}
-          <button
-            onClick={reanalyzeOld}
-            disabled={analyzing || importing}
-            title="Leady, ktoré už majú skóre spočítané pred dnešnou opravou (PageSpeed timeout, screenshot pre AI vizuál) — toto ich preanalyzuje odznova s opraveným skórovaním. Použi po oprave alebo keď skóre nesedí s tým, čo vidíš na webe."
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-muted transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-60"
-          >
-            <RotateCw className="h-4 w-4" />
-            Preanalyzovať staré
-          </button>
+          {staleCount > 0 && (
+            <button
+              onClick={reanalyzeOld}
+              disabled={analyzing || importing}
+              title="Leady, ktoré majú skóre spočítané staršou verziou skórovania (pred opravou PageSpeedu, screenshotu, prahu) — toto ich preanalyzuje odznova. Už preanalyzované leady sa nedotkne, takže je bezpečné kliknúť opakovane."
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-muted transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-60"
+            >
+              <RotateCw className="h-4 w-4" />
+              {`Preanalyzovať staré (${staleCount})`}
+            </button>
+          )}
           <Link
             href="/leads/metriky"
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/40"
@@ -437,6 +462,10 @@ export default function LeadsPage() {
           </Link>
         </div>
       </div>
+
+      {/* Progres analýzy webov: X z Y hotových, zostáva Z (z DB, prežije návrat
+          z detailu leadu aj reload). */}
+      <AnalysisProgress segment={segment} onRefresh={refreshAfterAnalysis} />
 
       <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
         {/* Segment sidebar (desktop) */}
@@ -529,9 +558,16 @@ export default function LeadsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Všetky weby</SelectItem>
-                <SelectItem value="bad">Len zlé weby (skóre ≥ 65)</SelectItem>
-                <SelectItem value="good">Web v poriadku (&lt; 65)</SelectItem>
-                <SelectItem value="unscored">Nezanalyzované</SelectItem>
+                <SelectItem value="bad">
+                  Vhodné na oslovenie (skóre ≥ {QUALIFY_AT})
+                </SelectItem>
+                <SelectItem value="borderline">
+                  Hraničné — pozri ručne ({BORDERLINE_AT}–{QUALIFY_AT - 1})
+                </SelectItem>
+                <SelectItem value="good">
+                  Web v poriadku (&lt; {BORDERLINE_AT})
+                </SelectItem>
+                <SelectItem value="unscored">Bez skóre / nezanalyzované</SelectItem>
               </SelectContent>
             </Select>
 

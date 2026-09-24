@@ -8,6 +8,8 @@ interface ScoreGaugeProps {
   grade?: string;
   size?: number;
   label?: string;
+  /** Prepíše farbu oblúka — pre škály, kde vyššie skóre NIE JE lepšie (napr. zastaralosť webu). */
+  color?: string;
 }
 
 function colorFor(score: number): string {
@@ -17,7 +19,7 @@ function colorFor(score: number): string {
   return "#EF4444";
 }
 
-export function ScoreGauge({ score, grade, size = 180, label = "Skóre účtu" }: ScoreGaugeProps) {
+export function ScoreGauge({ score, grade, size = 180, label = "Skóre účtu", color: colorOverride }: ScoreGaugeProps) {
   const stroke = 14;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -25,7 +27,7 @@ export function ScoreGauge({ score, grade, size = 180, label = "Skóre účtu" }
   const arcFraction = 0.75;
   const arcLength = circumference * arcFraction;
   const progress = Math.max(0, Math.min(100, score)) / 100;
-  const color = colorFor(score);
+  const color = colorOverride ?? colorFor(score);
 
   return (
     <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>

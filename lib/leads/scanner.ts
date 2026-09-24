@@ -112,19 +112,34 @@ export async function enrichLead(
     aiVisualReason: analysis.aiVisualReason,
   };
 
-  // Not qualified (score < 65) → store the analysis but KEEP the lead visible.
-  // Only a hard disqualifier (broken / parked / social / modern framework) drops
-  // it to "rejected"; a low score alone is just an indicator, not a filter.
+  // Web sa načítal, ale vizuál sa nepodarilo posúdiť (AI/screenshot zlyhali) →
+  // skóre by bolo len technické a zavádzajúco nízke. Lead NEoznačíme za "dobrý
+  // web" ani nezamietneme: ostane bez skóre (—) na ručnú kontrolu / opakovanie.
+  if (analysis.visualUnavailable) {
+    await prisma.lead.update({
+      where: { id: leadId },
+      data: {
+        ...analysisData,
+        websiteScore: null,
+        visualScore: null,
+        disqualifyReason:
+          "Vizuál webu sa nepodarilo posúdiť — pozri ručne alebo preanalyzuj.",
+        lastScannedAt: new Date(),
+      },
+    });
+    return { qualified: false, active: null };
+  }
+
+  // Not qualified (score < QUALIFY_AT) → store the analysis but KEEP the lead
+  // visible. Only a hard disqualifier (broken / parked / social / modern
+  // framework) drops it to "rejected"; a low score alone is just an indicator,
+  // not a filter.
   //
-  // ZÁMERNÉ ROZHODNUTIE: pôvodne som toto chcel zmeniť na
-  // auto-zamietanie pri každom nekvalifikovanom skóre, ale na reálnom prípade
-  // (ayurfyzio.sk) sa ukázalo, že vizuálne skóre bez skutočného screenshotu
-  // webu (SCREENSHOT_API_KEY nenastavený) systematicky podhodnocuje zjavne
-  // zastarané weby — AI si to sama uvedomuje a hlási nízku istotu. Auto-reject
-  // na takomto skóre by ticho a nenávratne strácal reálne dobré leady presne
-  // tak, ako sa obával používateľ. Kým skóre nie je spoľahlivejšie (ideálne cez
-  // screenshot), nízke skóre ostáva len indikátor — používateľ má kontrolu cez
-  // filter "Kvalita webu" a tlačidlo "Skryť tieto", nie automatiku.
+  // ZÁMERNÉ ROZHODNUTIE: auto-zamietanie pri každom nekvalifikovanom skóre som
+  // nezapol — na reálnom prípade (ayurfyzio.sk) sa ukázalo, že skóre vie
+  // zastaraný web podhodnotiť a auto-reject by ticho a nenávratne stratil
+  // reálne dobré leady. Nízke skóre ostáva len indikátor — používateľ má
+  // kontrolu cez filter "Kvalita webu" a tlačidlo "Skryť tieto", nie automatiku.
   // Skip the expensive ORSR + AI dossier for these.
   if (!analysis.qualified) {
     await prisma.lead.update({

@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateOutreachEmail } from "@/lib/leads/ai";
 import { fillTemplate } from "@/lib/leads/templates";
-import { QUALIFY_AT } from "@/lib/leads/website-analyzer";
+import { QUALIFY_AT } from "@/lib/leads/qualification";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

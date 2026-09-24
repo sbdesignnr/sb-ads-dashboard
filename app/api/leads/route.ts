@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { serializeLead } from "@/lib/leads/store";
+import { QUALIFY_AT, BORDERLINE_AT } from "@/lib/leads/qualification";
 
 export const dynamic = "force-dynamic";
 
@@ -14,16 +15,19 @@ const KNOWN_STATUSES = [
   "rejected",
 ];
 
-// Prah kvalifikácie: skóre ≥ 65 = zastaralý web = „reálny" lead na oslovenie.
-const QUALIFY_SCORE = 65;
+// Prah kvalifikácie: skóre ≥ QUALIFY_AT = zastaralý web = „reálny" lead na oslovenie.
+// (jediný zdroj pravdy: lib/leads/qualification.ts)
+const QUALIFY_SCORE = QUALIFY_AT;
 
 // Filter podľa kvality webu (skóre zastaralosti). „bad" = leady, ktoré chceme.
 function qualityWhere(quality: string | null): Prisma.LeadWhereInput {
   switch (quality) {
     case "bad": // zlé weby — kvalifikované
       return { websiteScore: { gte: QUALIFY_SCORE } };
-    case "good": // web v poriadku — nekvalifikované (analyzované, pod prahom)
-      return { websiteScore: { lt: QUALIFY_SCORE } };
+    case "borderline": // hraničné — pozrieť ručne
+      return { websiteScore: { gte: BORDERLINE_AT, lt: QUALIFY_SCORE } };
+    case "good": // web v poriadku — jednoznačne pod hraničnou zónou
+      return { websiteScore: { lt: BORDERLINE_AT } };
     case "unscored": // ešte nezanalyzované
       return { websiteScore: null };
     default:

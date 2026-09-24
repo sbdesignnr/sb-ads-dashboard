@@ -5,9 +5,8 @@
 // Modern-framework / broken / parked / social sites are disqualified outright.
 
 import Anthropic from "@anthropic-ai/sdk";
-import { captureScreenshot } from "./screenshot";
-
-export const QUALIFY_AT = 65;
+import { captureScreenshot, type Screenshot } from "./screenshot";
+import { QUALIFY_AT } from "./qualification";
 
 export interface WebsiteAnalysis {
   // Total 0-100, higher = more outdated. websiteScore is kept as the canonical
@@ -21,6 +20,10 @@ export interface WebsiteAnalysis {
 
   technicalScore: number; // 0-40
   visualScore: number | null; // 0-60 (null if the AI could not judge it)
+  // true = web sa načítal a mal sa hodnotiť vizuálne, ale AI ho neposúdila.
+  // Celkové skóre je vtedy NEPLATNÉ (len technická časť) — volajúci lead nesmie
+  // označiť za "dobrý web", ale nechať ho bez skóre na ručnú kontrolu.
+  visualUnavailable: boolean;
 
   pageSpeedMobile: number | null;
   pageSpeedDesktop: number | null;
@@ -540,8 +543,10 @@ const VISUAL_SYSTEM = `Si expert na web dizajn. Ohodnoť KAŽDÉ z 5 kritérií 
 4. OBRÁZKY (0-10): nízka kvalita, štvorhranné bez zaoblenia, staré/lacné stock fotky, chýbajúce obrázky.
 5. CELKOVÝ DOJEM (0-15): pôsobila by firma na prvý pohľad profesionálne a dôveryhodne v roku ${new Date().getFullYear()}? Ak nie, vyššia hodnota.
 
+Ak dostaneš screenshot, NAJPRV posúď, či vôbec ukazuje skutočný obsah webu: "pageRendered" je false, keď je to prázdna/biela plocha, len cookie lišta alebo pop-up, chybová stránka, načítavacia obrazovka alebo prekrytie, ktoré bráni posúdiť dizajn. V takom prípade nehádaj — daj všetkým kritériám 0 a pageRendered false.
+
 Odpovedz VÝHRADNE v JSON (žiadny iný text):
-{"typography": číslo 0-10, "layout": číslo 0-15, "colors": číslo 0-10, "images": číslo 0-10, "impression": číslo 0-15, "reason": "stručný dôvod po slovensky, max 2 vety", "mainIssues": ["problém1","problém2","problém3"]}`;
+{"pageRendered": true alebo false, "typography": číslo 0-10, "layout": číslo 0-15, "colors": číslo 0-10, "images": číslo 0-10, "impression": číslo 0-15, "reason": "stručný dôvod po slovensky, max 2 vety", "mainIssues": ["problém1","problém2","problém3"]}`;
 
 interface VisualResult {
   score: number | null;
@@ -549,13 +554,20 @@ interface VisualResult {
   mainIssues: string[];
 }
 
-function parseVisualJson(
-  text: string,
-): { score: number; reason: string; mainIssues: string[] } | null {
+interface ParsedVisual {
+  score: number;
+  reason: string;
+  mainIssues: string[];
+  /** false = screenshot neukazuje skutočný obsah webu (cookie banner, prázdna stránka…). */
+  pageRendered: boolean;
+}
+
+function parseVisualJson(text: string): ParsedVisual | null {
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) return null;
   try {
     const j = JSON.parse(m[0]) as {
+      pageRendered?: unknown;
       typography?: unknown;
       layout?: unknown;
       colors?: unknown;
@@ -579,78 +591,106 @@ function parseVisualJson(
       mainIssues: Array.isArray(j.mainIssues)
         ? j.mainIssues.map(String).slice(0, 5)
         : [],
+      pageRendered: j.pageRendered !== false,
     };
   } catch {
     return null;
   }
 }
 
+const NO_VISUAL: VisualResult = { score: null, reason: null, mainIssues: [] };
+
 /**
- * Score the visual outdatedness 0-60 via Claude. Keď je nakonfigurovaný
- * SCREENSHOT_API_KEY, AI vidí REÁLNY screenshot webu (oveľa spoľahlivejšie —
- * font, farby, layout sa zo strohého textu odhadujú len nepriamo). Bez neho
- * padá späť na HTML/textový obsah. Vracia nully bez ANTHROPIC_API_KEY alebo pri
- * zlyhaní.
+ * Score the visual outdatedness 0-60 via Claude. AI vidí REÁLNY screenshot webu
+ * (vlastný headless prehliadač) — font, farby, layout sa zo strohého textu
+ * odhadujú len nepriamo.
+ *
+ * Ak screenshot nezachytil skutočný obsah (cookie banner, prázdna stránka,
+ * preloader — AI to sama nahlási cez pageRendered=false), zopakuje sa raz
+ * pomalším zachytením. Ak sa ani potom nepodarí (alebo screenshot vôbec nevznikol),
+ * padne na odhad len z textu — ten sa v dôvode ČESTNE označí, aby bolo vidno, že
+ * je menej spoľahlivý. Vracia nully len bez ANTHROPIC_API_KEY alebo keď zlyhá
+ * samotné AI volanie (volajúci potom lead označí ako "bez skóre", nie ako dobrý web).
  */
 async function analyzeVisual(
   url: string,
   pageText: string,
 ): Promise<VisualResult> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return { score: null, reason: null, mainIssues: [] };
-  }
-
-  const screenshot = await captureScreenshot(url).catch(() => null);
+  if (!process.env.ANTHROPIC_API_KEY) return NO_VISUAL;
 
   const client = new Anthropic();
-  try {
-    const content: Anthropic.MessageParam["content"] = screenshot
-      ? [
-          {
-            type: "text",
-            text: `Pozri sa na tento screenshot webu (${url}) a ohodnoť jeho vizuálnu zastaralosť podľa kritérií zo system promptu.`,
-          },
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: screenshot.mediaType,
-              data: screenshot.base64,
-            },
-          } as Anthropic.ImageBlockParam,
-        ]
-      : `Screenshot webu (${url}) sa nepodarilo zachytiť — hodnoť vizuálnu zastaralosť IBA z HTML/textového obsahu nižšie (menej spoľahlivé pre typografiu/farby/obrázky, tie z textu priamo nevidno — ak sa kritérium nedá z textu vôbec posúdiť, daj mu nízku hodnotu namiesto hádania vysokej).\n\nOBSAH:\n${pageText.slice(0, 4000)}`;
 
-    const msg = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 500,
-      system: VISUAL_SYSTEM,
-      messages: [{ role: "user", content }],
-    });
+  const ask = async (
+    content: Anthropic.MessageParam["content"],
+  ): Promise<ParsedVisual | null> => {
+    try {
+      const msg = await client.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 500,
+        // Hodnotenie, nie tvorivé písanie: bez tohto (default 1.0) dostal ten istý
+        // web raz 35 a raz 20 a prah sa nedá nastaviť spoľahlivo. 0 = opakovateľné.
+        temperature: 0,
+        system: VISUAL_SYSTEM,
+        messages: [{ role: "user", content }],
+      });
+      const text = msg.content
+        .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+      return parseVisualJson(text);
+    } catch {
+      return null;
+    }
+  };
 
-    const text = msg.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("");
-    const parsed = parseVisualJson(text);
-    if (!parsed) return { score: null, reason: null, mainIssues: [] };
+  const withImage = (shot: Screenshot): Anthropic.MessageParam["content"] => [
+    {
+      type: "text",
+      text: `Pozri sa na tento screenshot webu (${url}) a ohodnoť jeho vizuálnu zastaralosť podľa kritérií zo system promptu.`,
+    },
+    {
+      type: "image",
+      source: { type: "base64", media_type: shot.mediaType, data: shot.base64 },
+    } as Anthropic.ImageBlockParam,
+  ];
+
+  const shot = await captureScreenshot(url).catch(() => null);
+  let parsed = shot ? await ask(withImage(shot)) : null;
+  if (shot && parsed && !parsed.pageRendered) {
+    const retry = await captureScreenshot(url, { slow: true }).catch(() => null);
+    if (retry) parsed = await ask(withImage(retry));
+  }
+  if (parsed?.pageRendered) {
     return {
       score: parsed.score,
       reason: parsed.reason,
       mainIssues: parsed.mainIssues,
     };
-  } catch {
-    return { score: null, reason: null, mainIssues: [] };
   }
+
+  // Bez použiteľného screenshotu — odhad len z textu (menej spoľahlivý).
+  const fromText = await ask(
+    `Screenshot webu (${url}) sa nepodarilo použiť — hodnoť vizuálnu zastaralosť IBA z HTML/textového obsahu nižšie (menej spoľahlivé pre typografiu/farby/obrázky, tie z textu priamo nevidno — ak sa kritérium nedá z textu vôbec posúdiť, daj mu nízku hodnotu namiesto hádania vysokej). pageRendered nastav na true.\n\nOBSAH:\n${pageText.slice(0, 4000)}`,
+  );
+  if (!fromText) return NO_VISUAL;
+  return {
+    score: fromText.score,
+    reason: `(Bez screenshotu — odhad len z textu, menej spoľahlivý.) ${fromText.reason}`,
+    mainIssues: fromText.mainIssues,
+  };
 }
 
 export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
   const url = normalizeUrl(rawUrl);
-  const [site, psMobile, psDesktop] = await Promise.all([
-    loadSite(url),
+  // PageSpeed (Lighthouse) trvá 15-35 s. Spustíme ho HNEĎ a nečakáme naň — načítanie
+  // webu, podstránky a hlavne screenshot + AI vizuál bežia súbežne, takže čas
+  // jedného leadu je max(PageSpeed, zvyšok), nie ich súčet (~50 s → ~30 s).
+  // pageSpeed() nikdy nevyhadzuje výnimku (pri chybe vráti null).
+  const pageSpeedPromise = Promise.all([
     pageSpeed(url, "mobile"),
     pageSpeed(url, "desktop"),
   ]);
+  const site = await loadSite(url);
 
   // Scrape contact/about pages too — that's where the owner name, e-mail and
   // phone usually live (and Places/ORSR often miss them).
@@ -678,6 +718,38 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
   const isResponsive = hasViewport;
   const cy = copyrightYear(site.html);
   const currentYear = new Date().getFullYear();
+
+  // ---- Cheap disqualifiers FIRST, so we skip the expensive visual AI (Claude)
+  // on sites we'd reject anyway: modern stack, broken, parked, or a social
+  // profile. Critical for scanning large volumes. ----
+  let disqualifyReason: string | null = null;
+  if (isSocialUrl(url))
+    disqualifyReason = "Odkaz je profil na sociálnej sieti, nie vlastný web.";
+  else if (!site.reachable)
+    disqualifyReason = "Web sa nenačítal (404/500 alebo nedostupný).";
+  else if (isParkedDomain(site.html))
+    disqualifyReason = "Parkovaná / nepoužívaná doména.";
+  else if (fw.kind === "hard")
+    disqualifyReason = `Web už beží na modernom nástroji (${fw.name}).`;
+
+  // Only the cheap pre-checks above are "hard" disqualifiers (not-a-lead). A low
+  // score alone must NOT reject a lead — the score is just a quality indicator.
+  const hardDisqualified = disqualifyReason !== null;
+
+  // ---- Visual score (0-60): only spent on real candidates. Beží súbežne s
+  // dokončovaním PageSpeedu (čakáme na oboje naraz). ----
+  const shouldJudgeVisually = !disqualifyReason && site.reachable;
+  const [[psMobile, psDesktop], visual] = await Promise.all([
+    pageSpeedPromise,
+    shouldJudgeVisually ? analyzeVisual(url, pageText) : Promise.resolve(NO_VISUAL),
+  ]);
+  const visualScore = visual.score;
+  // Vizuál sa mal posúdiť, ale nevyšlo to → skóre by bolo len technické a
+  // zavádzajúco nízke (vyzeralo by ako "dobrý web").
+  const visualUnavailable =
+    shouldJudgeVisually &&
+    visualScore === null &&
+    Boolean(process.env.ANTHROPIC_API_KEY);
 
   // ---- Technical score (0-40): measurable signals ----
   let technical = 0;
@@ -726,44 +798,18 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
   else if (fw.kind === "soft" && !genuinelyOld) technical -= 6;
   const technicalScore = Math.max(0, Math.min(40, technical));
 
-  // ---- Cheap disqualifiers FIRST, so we skip the expensive visual AI (Claude)
-  // on sites we'd reject anyway: modern stack, broken, parked, or a social
-  // profile. Critical for scanning large volumes. ----
-  let disqualifyReason: string | null = null;
-  if (isSocialUrl(url))
-    disqualifyReason = "Odkaz je profil na sociálnej sieti, nie vlastný web.";
-  else if (!site.reachable)
-    disqualifyReason = "Web sa nenačítal (404/500 alebo nedostupný).";
-  else if (isParkedDomain(site.html))
-    disqualifyReason = "Parkovaná / nepoužívaná doména.";
-  else if (fw.kind === "hard")
-    disqualifyReason = `Web už beží na modernom nástroji (${fw.name}).`;
-
-  // Only the cheap pre-checks above are "hard" disqualifiers (not-a-lead). A low
-  // score alone must NOT reject a lead — the score is just a quality indicator.
-  const hardDisqualified = disqualifyReason !== null;
-
-  // ---- Visual score (0-60): only spent on real candidates ----
-  const visual =
-    !disqualifyReason && site.reachable
-      ? await analyzeVisual(url, pageText)
-      : { score: null, reason: null, mainIssues: [] };
-  const visualScore = visual.score;
-
   const totalScore = Math.max(
     0,
     Math.min(100, technicalScore + (visualScore ?? 0)),
   );
 
-  // ---- Score-based disqualifiers (only if not already disqualified) ----
-  if (!disqualifyReason) {
-    if (totalScore < 40)
-      disqualifyReason = `Web je dostatočne dobrý (skóre ${totalScore}/100).`;
-    else if (totalScore < QUALIFY_AT)
-      disqualifyReason = `Skóre ${totalScore}/100 – pod prahom ${QUALIFY_AT}.`;
-  }
+  // ---- Score-based "disqualifier" (iba informatívny dôvod, nie zamietnutie) ----
+  // Pri nedostupnom vizuáli skóre nie je platné, takže dôvod "web je dobrý" nedávame.
+  if (!disqualifyReason && !visualUnavailable && totalScore < QUALIFY_AT)
+    disqualifyReason = `Web je dostatočne dobrý (skóre ${totalScore}, prah ${QUALIFY_AT}).`;
 
-  const qualified = !disqualifyReason && totalScore >= QUALIFY_AT;
+  const qualified =
+    !disqualifyReason && !visualUnavailable && totalScore >= QUALIFY_AT;
 
   // The concrete findings the AI turns into pain points: scoring reasons plus
   // the business gaps (only when the page actually loaded).
@@ -785,6 +831,7 @@ export async function analyzeWebsite(rawUrl: string): Promise<WebsiteAnalysis> {
     hardDisqualified,
     technicalScore,
     visualScore,
+    visualUnavailable,
     pageSpeedMobile: psMobile,
     pageSpeedDesktop: psDesktop,
     hasSsl: site.hasSsl,

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { BORDERLINE_AT } from "@/lib/leads/qualification";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,9 +22,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
 
-  const maxScore = Number(body.maxScore);
-  if (!Number.isFinite(maxScore) || maxScore < 1 || maxScore > 100)
+  const requested = Number(body.maxScore);
+  if (!Number.isFinite(requested) || requested < 1 || requested > 100)
     return NextResponse.json({ error: "invalid_maxScore" }, { status: 400 });
+  // BEZPEČNOSTNÝ STROP: hromadne skrývame LEN jednoznačne dobré weby (pod
+  // BORDERLINE_AT). Vhodné ani hraničné leady sa týmto nikdy neskryjú, nech
+  // klient (alebo zastaraná otvorená stránka) pošle akékoľvek číslo — pôvodný
+  // pevný prah 65 by pri súčasnom skórovaní skryl prakticky všetky leady.
+  const maxScore = Math.min(requested, BORDERLINE_AT);
 
   const where: Prisma.LeadWhereInput = {
     // Len ešte neoslovené leady — kontaktované/reagované nechávame na pokoji.

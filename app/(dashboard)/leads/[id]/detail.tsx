@@ -36,6 +36,26 @@ import { ScoreGauge } from "@/components/ai/ScoreGauge";
 import { copyToClipboard } from "@/lib/export";
 import { cn } from "@/lib/utils";
 import {
+  QUALIFY_AT,
+  BORDERLINE_AT,
+  scoreTier,
+  type ScoreTier,
+} from "@/lib/leads/qualification";
+
+// Farba a popis podľa úrovne skóre (rovnaká logika ako zoznam leadov).
+const TIER_COLOR: Record<ScoreTier, string> = {
+  qualified: "#EF4444", // červená = zlý web = vhodný lead
+  borderline: "#F59E0B",
+  good: "#10B981",
+  unscored: "#64748B",
+};
+const TIER_HINT: Record<ScoreTier, string> = {
+  qualified: `Vhodný na oslovenie (skóre ≥ ${QUALIFY_AT}).`,
+  borderline: `Hraničný web (${BORDERLINE_AT}–${QUALIFY_AT - 1}) — pozri ručne, či sa oplatí osloviť.`,
+  good: `Web je v poriadku (skóre < ${BORDERLINE_AT}).`,
+  unscored: "Web zatiaľ nie je zanalyzovaný (alebo vizuál sa nepodarilo posúdiť).",
+};
+import {
   type LeadDTO,
   type LeadEmailDTO,
   type LeadStatus,
@@ -509,11 +529,12 @@ export function LeadDetail({ id }: { id: string }) {
               <ScoreGauge
                 score={lead.websiteScore ?? 0}
                 size={160}
-                label="Web Quality"
+                label="Zastaralosť webu"
+                color={TIER_COLOR[scoreTier(lead.websiteScore)]}
               />
               <p className="text-center text-xs text-muted">
-                Vyššie skóre = zastaralejší web (lepší lead). Prah kvalifikácie
-                65.
+                Vyššie skóre = zastaralejší web (lepší lead).{" "}
+                {TIER_HINT[scoreTier(lead.websiteScore)]}
               </p>
               <div className="flex w-full justify-center gap-8 text-sm">
                 <div className="text-center">

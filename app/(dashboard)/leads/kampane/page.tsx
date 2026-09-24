@@ -37,6 +37,7 @@ import {
 import { cn } from "@/lib/utils";
 import { TemplateBar } from "@/components/leads/TemplateBar";
 import { registerLink } from "@/lib/leads/registers";
+import { QUALIFY_AT } from "@/lib/leads/qualification";
 import { type EmailTemplateDTO } from "@/lib/leads/templates";
 import {
   type LeadEmailDTO,
@@ -410,8 +411,10 @@ export default function CampaignsPage() {
       // nezanalyzovaný) — inak to vyzerá, že appka „stratila" leady.
       const skippedParts = [
         lastMissing ? `${lastMissing} bez emailu` : null,
-        lastBelowThreshold ? `${lastBelowThreshold} má web v poriadku` : null,
-        lastUnscored ? `${lastUnscored} čaká na analýzu` : null,
+        lastBelowThreshold
+          ? `${lastBelowThreshold} s webom pod prahom (skóre < ${QUALIFY_AT})`
+          : null,
+        lastUnscored ? `${lastUnscored} bez skóre / čaká na analýzu` : null,
       ].filter(Boolean);
       toast.success(
         `Načítaných ${totalGen} emailov na schválenie${skippedParts.length ? ` · preskočené: ${skippedParts.join(", ")}` : ""}`,
