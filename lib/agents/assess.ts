@@ -12,6 +12,9 @@ export const SCOUT_MODEL = process.env.AGENT_SCOUT_MODEL?.trim() || "claude-sonn
 /** Od tohto skóre sa lead považuje za vhodný (a musí mať doložený dôkaz). */
 export const FIT_MIN = 6;
 export const ARCHIVE_PREFIX = "Archivované pri čistom štarte";
+export const VERDICT_VERSION = 2;
+/** dôvody vyradenia, ktoré vznikli chybou v pravidlách v1 (chýbajúci e-mail): také posúdenia sa opakujú */
+export const RETRY_REASON_RE = /e-?mail|nedá sa osloviť|neda sa oslovit|konate[ľl]|aktivit/i;
 
 export interface Verdict {
   suitable: boolean;
@@ -27,6 +30,8 @@ export interface Verdict {
   risks: string[];
   rejectReason: string | null;
   source: "sken" | "výber" | "obnova";
+  /** verzia pravidiel posúdenia (2 = e-mail a overenie aktivity nie sú kritérium) */
+  v: number;
 }
 
 export type AssessLead = Lead & { segment: { name: string } | null };
@@ -38,13 +43,15 @@ PRIORITNÉ ODBORY: realitné kancelárie, stavebné firmy a remeselníci, fyziot
 VHODNÁ FIRMA (suitable=true) MUSÍ mať naraz:
 1. malá firma (1 až 25 ľudí), rozhoduje majiteľ, patrí do uvedeného odboru,
 2. aspoň jednu KONKRÉTNU príležitosť doloženú dátami (evidence), napr.: zastaraný alebo vizuálne slabý web (rok v pätičke, staré písmo a rozloženie), pomalý mobil (PageSpeed), web nie je prispôsobený mobilu, chýba HTTPS, zlé alebo chýbajúce kontaktné prvky, chýbajúca rezervácia alebo dopyt pri službe, kde je to bežné, technológia, ktorá sa už nevyvíja,
-3. e-mailový kontakt (alebo aspoň web, na ktorom sa dá kontakt nájsť).
+3. funkčný web (bez neho nie je čo posudzovať).
+
+DÔLEŽITÉ: chýbajúci e-mail, neznámy konateľ a neoverená aktivita firmy NIE SÚ kritériom. E-maily dohľadáva kód osobitne a konateľa overuje register. NIKDY nevyraď firmu z týchto dôvodov, posudzuj IBA to, či je v dátach doložená príležitosť.
 
 NEVHODNÁ FIRMA (suitable=false):
 - web je moderný, rýchly a funkčný a dáta neukazujú žiadnu konkrétnu slabinu (nemáme čo ponúknuť),
 - koncerny, siete pobočiek, franšízy, verejné inštitúcie, školy, e-shopy a veľkoobchod, agentúry a firmy, ktoré samy robia weby,
 - firma podľa dát nepatrí do odboru (napr. stomatológ vo fyzioterapii),
-- poškodený záznam (rozbité znaky v názve, telefón namiesto názvu), neaktívna firma.
+- poškodený záznam (rozbité znaky v názve, telefón namiesto názvu), firma výslovne označená ako neaktívna ("aktívna: NIE").
 
 PRAVIDLÁ
 - Dôkazy (evidence) musia byť doslovné fakty z dát (napr. "rok v pätičke 2014", "PageSpeed mobil 38", "web nie je prispôsobený mobilu"), nie odhady. Bez doloženého faktu nie je príležitosť.
@@ -70,9 +77,7 @@ const line = (l: AssessLead) =>
     `nedostatky: ${[...(l.websiteIssues ?? []), ...(l.visualIssues ?? [])].slice(0, 6).join("; ") || "—"}`,
     `vizuálny dojem: ${(l.aiVisualReason ?? "").slice(0, 200) || "—"}`,
     `o firme: ${(l.aiSummary ?? "").slice(0, 240) || "—"}`,
-    `e-mail: ${l.companyEmail ? "má" : "nemá"}`,
-    `konateľ: ${l.ownerName ? (l.ownerSource ? "overený" : "neoverený") : "neznámy"}`,
-    `aktívna: ${l.companyActive == null ? "?" : l.companyActive ? "áno" : "NIE"}`,
+    ...(l.companyActive === false ? ["aktívna: NIE"] : []),
   ].join(" | ");
 
 const asStrings = (v: unknown, n: number): string[] => (Array.isArray(v) ? v.map((x) => String(x).slice(0, 200)).filter(Boolean).slice(0, n) : []);
@@ -126,6 +131,7 @@ export async function assessLeads(leads: AssessLead[], source: Verdict["source"]
         risks: asStrings(r.risks, 3),
         rejectReason: suitable ? null : String(r.reject_reason || r.why || "Nie je doložená konkrétna príležitosť.").slice(0, 300),
         source,
+        v: VERDICT_VERSION,
       });
     }
   } catch {
@@ -153,13 +159,15 @@ export async function applyVerdicts(leads: AssessLead[], verdicts: Map<string, V
       body: v.why,
       data: v,
     });
+    const reason = l.disqualifyReason ?? "";
+    // lead skrytý pri čistom štarte alebo skorším (chybným) posúdením Mira sa môže vrátiť
+    const reopenable = l.status === "rejected" && (reason.startsWith(ARCHIVE_PREFIX) || reason.startsWith("Miro:"));
     if (v.suitable) {
       suitable++;
-      const archived = l.status === "rejected" && (l.disqualifyReason ?? "").startsWith(ARCHIVE_PREFIX);
-      if (archived) await prisma.lead.update({ where: { id: l.id }, data: { status: "new", disqualifyReason: null } }).catch(() => {});
+      if (reopenable) await prisma.lead.update({ where: { id: l.id }, data: { status: "new", disqualifyReason: null } }).catch(() => {});
     } else {
       rejected++;
-      if (l.status === "new" || (l.status === "rejected" && (l.disqualifyReason ?? "").startsWith(ARCHIVE_PREFIX)))
+      if (l.status === "new" || reopenable)
         await prisma.lead
           .update({ where: { id: l.id }, data: { status: "rejected", disqualifyReason: `Miro: ${v.rejectReason}`.slice(0, 300) } })
           .catch(() => {});

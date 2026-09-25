@@ -5,7 +5,7 @@
 // rozpočtom, každé rozhodnutie sa zapisuje (agent_notes) a nič sa neodosiela.
 import { prisma } from "@/lib/prisma";
 import { AGENTS_START, canRunAutonomously, withSpend } from "./budget";
-import { applyVerdicts, assessLeads, ARCHIVE_PREFIX, type AssessLead } from "./assess";
+import { applyVerdicts, assessLeads, ARCHIVE_PREFIX, RETRY_REASON_RE, VERDICT_VERSION, type AssessLead, type Verdict } from "./assess";
 import { latestVerdicts, listNotes, notesAvailable, writeNote } from "./notes";
 import { getShortlist, PRIORITY_KEYWORDS } from "./skaut";
 import { QUALIFY_AT } from "@/lib/leads/qualification";
@@ -184,14 +184,25 @@ async function assessAndFindEmails(res: ScoutResult, left: () => number, onlySeg
       ...(onlySegmentId ? { segmentId: onlySegmentId } : {}),
       websiteUrl: { not: null },
       websiteScore: { not: null },
-      OR: [{ status: "new" }, { status: "rejected", disqualifyReason: { startsWith: ARCHIVE_PREFIX } }],
+      OR: [
+        { status: "new" },
+        { status: "rejected", disqualifyReason: { startsWith: ARCHIVE_PREFIX } },
+        // skoršie posúdenie vyradilo firmu pre chýbajúci e-mail (chyba pravidiel v1): posúdi sa znova
+        { status: "rejected", disqualifyReason: { startsWith: "Miro:" } },
+      ],
     },
     orderBy: [{ websiteScore: "desc" }],
-    take: 60,
+    take: 120,
     include: { segment: { select: { name: true } } },
   });
   const done = await latestVerdicts(candidates.map((l) => l.id));
-  const todo = candidates.filter((l) => !done.has(l.id)).slice(0, MAX_ASSESS) as AssessLead[];
+  const stale = (l: AssessLead) => {
+    const v = done.get(l.id)?.data as Verdict | undefined;
+    return l.status === "rejected" && (l.disqualifyReason ?? "").startsWith("Miro:") && RETRY_REASON_RE.test(l.disqualifyReason ?? "") && (v?.v ?? 1) < VERDICT_VERSION;
+  };
+  const todo = (candidates as AssessLead[])
+    .filter((l) => (l.status === "rejected" && (l.disqualifyReason ?? "").startsWith("Miro:") ? stale(l) : !done.has(l.id)))
+    .slice(0, MAX_ASSESS);
   if (!todo.length || left() < 60_000) return;
   for (let i = 0; i < todo.length; i += 8) {
     const batch = todo.slice(i, i + 8);
