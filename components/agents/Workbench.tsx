@@ -701,7 +701,7 @@ function RunView({
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold text-foreground">{ANGLES.find((a) => a.id === v.angle)?.label ?? v.angle}</span>
                       {v.chosen && <span className="rounded-full bg-emerald-400/20 px-2 py-0.5 text-[11px] font-medium text-emerald-300">vybraný</span>}
-                      {v.score && <span className="text-muted">otvorí {Math.round(v.score.open)} % · odpíše {Math.round(v.score.reply)} % · dôvera {v.score.trust}/10 · strojový dojem {v.score.aiSmell}/10</span>}
+                      {v.score && <span className="text-muted">otvorí {Math.round(v.score.open)} % · odpíše {Math.round(v.score.reply)} % · dôvera {v.score.trust}/10 · hodnota {v.score.value ?? 0}/10 · strojový dojem {v.score.aiSmell}/10</span>}
                     </div>
                     <p className="mt-1 text-muted">Predmet: {v.subject}. {v.preview}</p>
                     {v.lintErrors.length > 0 && <p className="mt-1 text-red-300/90">Vyradený: {v.lintErrors.join("; ")}</p>}

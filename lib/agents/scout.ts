@@ -11,6 +11,8 @@ import { getShortlist, PRIORITY_KEYWORDS } from "./skaut";
 import { QUALIFY_AT } from "@/lib/leads/qualification";
 import { enrichLead, scanSegment } from "@/lib/leads/scanner";
 import { findEmailForLead } from "@/lib/leads/email-finder";
+import { ensureOwner } from "./owner";
+import { agentMarket, marketWhere, type Market } from "./market";
 
 /** Zásoba vhodných leadov pre Noru, pod ktorou Miro skenuje ďalej (nad ňou šetrí rozpočet). */
 export const POOL_TARGET = 60;
@@ -20,6 +22,7 @@ export const SCAN_EST_EUR = 0.35;
 const MAX_ENRICH = 4;
 const MAX_ASSESS = 16;
 const MAX_EMAIL = 6;
+const MAX_OWNER = 8;
 /** Poradie odborov pri systematickom skenovaní. */
 const NICHE_ORDER = ["realit", "stav", "fyzio"];
 
@@ -34,8 +37,9 @@ export interface ScoutResult {
   scan?: { segment: string; regions: string[]; found: number; qualified: number; suitable: number; sweepDone: boolean };
 }
 
-const priorityWhere = () => ({
+const priorityWhere = (market: Market) => ({
   segment: { is: { OR: PRIORITY_KEYWORDS.map((k) => ({ name: { contains: k, mode: "insensitive" as const } })) } },
+  ...marketWhere(market),
 });
 
 const dayStart = () => {
@@ -80,6 +84,8 @@ export async function runScoutCycle(deadlineAt: number, opts: { dry?: boolean } 
   if (!(await notesAvailable())) return { ...res, skipped: "Chýba tabuľka agent_notes (spusti SQL z postupu)." };
   const gate = await canRunAutonomously("skaut", 0.15);
   if (!gate.ok) return { ...res, skipped: gate.reason };
+  const { market, reason: marketReason } = await agentMarket();
+  if (market === "both") res.log.push(`Trh: ${marketReason}.`);
 
   await withSpend({ agent: "skaut" }, async () => {
     const left = () => deadlineAt - Date.now();
@@ -87,7 +93,7 @@ export async function runScoutCycle(deadlineAt: number, opts: { dry?: boolean } 
     // 1) analýza neanalyzovaných prioritných leadov (nové aj archivované pri čistom štarte)
     const unanalysed = await prisma.lead.findMany({
       where: {
-        ...priorityWhere(),
+        ...priorityWhere(market),
         websiteUrl: { not: null },
         websiteScore: null,
         OR: [{ status: "new" }, { status: "rejected", disqualifyReason: { startsWith: ARCHIVE_PREFIX } }],
@@ -105,7 +111,7 @@ export async function runScoutCycle(deadlineAt: number, opts: { dry?: boolean } 
     }
     if (res.enriched) res.log.push(`Analyzoval som ${res.enriched} webov.`);
 
-    await assessAndFindEmails(res, left);
+    await assessAndFindEmails(res, left, market);
 
     // 2) systematický sken: ďalší segment, ak je zásoba pre Noru nízka
     const pool = await getShortlist(1).then((r) => r.candidates).catch(() => 0);
@@ -121,7 +127,7 @@ export async function runScoutCycle(deadlineAt: number, opts: { dry?: boolean } 
     } else {
       const g = await canRunAutonomously("skaut", SCAN_EST_EUR);
       if (!g.ok) res.log.push(`Sken preskočený: ${g.reason}`);
-      else await scanOnce(res, left);
+      else await scanOnce(res, left, market);
     }
   });
   return res;
@@ -129,10 +135,12 @@ export async function runScoutCycle(deadlineAt: number, opts: { dry?: boolean } 
 
 /** Skúška bez zásahu: len spočíta, čo by cyklus urobil (žiadne zápisy, žiadne volania AI ani Google). */
 async function dryCycle(res: ScoutResult): Promise<ScoutResult> {
+  const { market, reason } = await agentMarket();
+  res.log.push(`Trh: ${reason}.`);
   const [unanalysed, noMail, toAssess, pool, seg, notes] = await Promise.all([
-    prisma.lead.count({ where: { ...priorityWhere(), websiteUrl: { not: null }, websiteScore: null, OR: [{ status: "new" }, { status: "rejected", disqualifyReason: { startsWith: ARCHIVE_PREFIX } }] } }),
-    prisma.lead.count({ where: { ...priorityWhere(), status: "new", websiteUrl: { not: null }, websiteScore: { gte: QUALIFY_AT }, OR: [{ companyEmail: null }, { companyEmail: "" }] } }),
-    prisma.lead.count({ where: { ...priorityWhere(), websiteUrl: { not: null }, websiteScore: { not: null }, OR: [{ status: "new" }, { status: "rejected", disqualifyReason: { startsWith: ARCHIVE_PREFIX } }] } }),
+    prisma.lead.count({ where: { ...priorityWhere(market), websiteUrl: { not: null }, websiteScore: null, OR: [{ status: "new" }, { status: "rejected", disqualifyReason: { startsWith: ARCHIVE_PREFIX } }] } }),
+    prisma.lead.count({ where: { ...priorityWhere(market), status: "new", websiteUrl: { not: null }, websiteScore: { gte: QUALIFY_AT }, OR: [{ companyEmail: null }, { companyEmail: "" }] } }),
+    prisma.lead.count({ where: { ...priorityWhere(market), websiteUrl: { not: null }, websiteScore: { not: null }, OR: [{ status: "new" }, { status: "rejected", disqualifyReason: { startsWith: ARCHIVE_PREFIX } }] } }),
     getShortlist(1).then((r) => r.candidates).catch(() => -1),
     chooseSegment().catch(() => null),
     notesAvailable(),
@@ -144,11 +152,11 @@ async function dryCycle(res: ScoutResult): Promise<ScoutResult> {
 }
 
 /** Posúdi leady bez verdiktu a doplní chýbajúce e-maily vhodným. */
-async function assessAndFindEmails(res: ScoutResult, left: () => number, onlySegmentId?: string): Promise<void> {
+async function assessAndFindEmails(res: ScoutResult, left: () => number, market: Market, onlySegmentId?: string): Promise<void> {
   // e-maily: analyzované, kvalifikované leady bez e-mailu (najviac MAX_EMAIL, každý najviac raz za 14 dní)
   const noMail = await prisma.lead.findMany({
     where: {
-      ...priorityWhere(),
+      ...priorityWhere(market),
       ...(onlySegmentId ? { segmentId: onlySegmentId } : {}),
       status: "new",
       websiteUrl: { not: null },
@@ -177,10 +185,31 @@ async function assessAndFindEmails(res: ScoutResult, left: () => number, onlySeg
     if (res.emailsFound) res.log.push(`Našiel som ${res.emailsFound} e-mailov.`);
   }
 
+  // konateľ pre oslovenie: vhodné leady bez overeného mena sa overia v obchodnom registri (každý najviac raz)
+  const noOwner = await prisma.lead.findMany({
+    where: {
+      ...priorityWhere(market),
+      ...(onlySegmentId ? { segmentId: onlySegmentId } : {}),
+      status: "new",
+      websiteUrl: { not: null },
+      ownerCheckedAt: null,
+      OR: [{ ownerSource: null }, { ownerSource: "" }],
+    },
+    orderBy: { websiteScore: "desc" },
+    take: MAX_OWNER,
+  });
+  let owners = 0;
+  for (const l of noOwner) {
+    if (left() < 60_000) break;
+    const r = await ensureOwner(l);
+    if (r.found) owners++;
+  }
+  if (noOwner.length) res.log.push(`Konateľ: overil som ${owners} z ${noOwner.length} v registri.`);
+
   // posúdenie: analyzované leady bez verdiktu (nové aj archivované)
   const candidates = await prisma.lead.findMany({
     where: {
-      ...priorityWhere(),
+      ...priorityWhere(market),
       ...(onlySegmentId ? { segmentId: onlySegmentId } : {}),
       websiteUrl: { not: null },
       websiteScore: { not: null },
@@ -215,14 +244,15 @@ async function assessAndFindEmails(res: ScoutResult, left: () => number, onlySeg
   res.log.push(`Posúdil som ${res.assessed} leadov: ${res.suitable} vhodných, ${res.rejected} skrytých s dôvodom.`);
 }
 
-async function scanOnce(res: ScoutResult, left: () => number): Promise<void> {
+async function scanOnce(res: ScoutResult, left: () => number, market: Market): Promise<void> {
   const seg = await chooseSegment();
   if (!seg) {
     res.log.push("Nenašiel som segment na sken (chýbajú kľúčové slová).");
     return;
   }
   const started = new Date();
-  const s = await scanSegment(seg.id, { maxDiscover: 12, region: "both" });
+  const s = await scanSegment(seg.id, { maxDiscover: 12, region: market === "SK" ? "SK" : "both" });
+  const fresh = await prisma.lead.count({ where: { segmentId: seg.id, createdAt: { gte: started } } }).catch(() => 0);
   const after = await prisma.leadSegment.findUnique({ where: { id: seg.id }, select: { scanOffset: true } });
   const job = s.jobId ? await prisma.leadScanJob.findUnique({ where: { id: s.jobId }, select: { regions: true } }) : null;
   const sweepDone = (after?.scanOffset ?? 1) === 0;
@@ -231,7 +261,7 @@ async function scanOnce(res: ScoutResult, left: () => number): Promise<void> {
   // novo nájdené leady hneď posúdi (len z tohto segmentu)
   const before = res.suitable;
   const beforeRej = res.rejected;
-  await assessAndFindEmails(res, left, seg.id);
+  await assessAndFindEmails(res, left, market, seg.id);
   const spend = await prisma.agentSpend.aggregate({ where: { agent: "skaut", createdAt: { gte: started } }, _sum: { eur: true } }).catch(() => ({ _sum: { eur: 0 } }));
   const summary = {
     segmentId: seg.id,
@@ -242,6 +272,8 @@ async function scanOnce(res: ScoutResult, left: () => number): Promise<void> {
     suitable: res.suitable - before,
     rejectedByMiro: res.rejected - beforeRej,
     sweepDone,
+    market,
+    fresh,
     costEur: Math.round((spend._sum.eur ?? 0) * 1000) / 1000,
     error: s.error ?? null,
   };
@@ -253,7 +285,7 @@ async function scanOnce(res: ScoutResult, left: () => number): Promise<void> {
     data: summary,
   });
   res.scan = { segment: seg.name, regions: summary.regions, found: s.foundTotal, qualified: s.foundQualified, suitable: summary.suitable, sweepDone };
-  res.log.push(`Sken ${seg.name} (${summary.regions.join(", ")}): ${s.foundTotal} firiem, ${summary.suitable} vhodných${s.error ? `, chyba: ${s.error}` : ""}.`);
+  res.log.push(`Sken ${seg.name} (${summary.regions.join(", ")}): ${s.foundTotal} firiem, z toho ${fresh} nových, ${summary.suitable} vhodných${s.error ? `, chyba: ${s.error}` : ""}.`);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -285,14 +317,17 @@ export interface Funnel {
   scansToday: number;
   segments: FunnelSegment[];
   available: boolean;
+  /** trh, na ktorom agenti pracujú (Slovensko; české firmy až po vyčerpaní slovenského trhu) */
+  market: Market;
+  marketNote: string;
 }
 
 export async function scoutFunnel(days = 7): Promise<Funnel> {
   const since = new Date(Math.max(Date.now() - days * 86_400_000, AGENTS_START.getTime()));
-  const empty: Funnel = { days, scans: 0, found: 0, assessed: 0, suitable: 0, rejected: 0, pool: 0, researched: 0, sent: 0, lastCycleAt: null, scansToday: 0, segments: [], available: false };
+  const empty: Funnel = { days, scans: 0, found: 0, assessed: 0, suitable: 0, rejected: 0, pool: 0, researched: 0, sent: 0, lastCycleAt: null, scansToday: 0, segments: [], available: false, market: "SK", marketNote: "Slovensko" };
   if (!(await notesAvailable())) return empty;
   try {
-    const [scanNotes, verdictNotes, sweepNotes, segs, pool, researched, sent, focus] = await Promise.all([
+    const [scanNotes, verdictNotes, sweepNotes, segs, pool, researched, sent, focus, mk] = await Promise.all([
       listNotes({ kind: "scan", since }, 300),
       listNotes({ kind: "verdict", since }, 1000),
       listNotes({ kind: "sweep", since: AGENTS_START }, 200),
@@ -301,6 +336,7 @@ export async function scoutFunnel(days = 7): Promise<Funnel> {
       prisma.leadResearch.count({ where: { status: "done", createdAt: { gte: since } } }).catch(() => 0),
       prisma.leadEmail.count({ where: { status: "sent", sentAt: { gte: since } } }).catch(() => 0),
       chooseSegment().catch(() => null),
+      agentMarket(),
     ]);
     const per = new Map<string, { scans: number; found: number; suitable: number; last: Date | null }>();
     let found = 0;
@@ -323,7 +359,7 @@ export async function scoutFunnel(days = 7): Promise<Funnel> {
     const suitable = verdictNotes.filter((n) => (n.data as { suitable?: boolean } | null)?.suitable).length;
     const modern = segs.filter((s) => s.keywords.length > 0);
     const list = modern.filter((s) => /SK\+CZ/i.test(s.name) || !modern.some((o) => /SK\+CZ/i.test(o.name) && nicheIndex(o.name) === nicheIndex(s.name)));
-    const windows = 8; // 22 krajov po 3 = 8 okien
+    const windows = mk.market === "SK" ? 3 : 8; // 8 slovenských krajov po 3 = 3 okná; 22 krajov = 8 okien
     const segments: FunnelSegment[] = list
       .map((s) => {
         const p = per.get(s.id);
@@ -355,6 +391,8 @@ export async function scoutFunnel(days = 7): Promise<Funnel> {
       scansToday: scanNotes.filter((n) => n.createdAt >= dayStart()).length,
       segments,
       available: true,
+      market: mk.market,
+      marketNote: mk.reason,
     };
   } catch {
     return empty;

@@ -6,6 +6,7 @@ import { AGENTS_START, getBudget } from "@/lib/agents/budget";
 import { DAILY_RESEARCH_CAP } from "@/lib/agents/night";
 import { draftsWaitingWhere, researchReadyWhere } from "@/lib/agents/queue";
 import { PRIORITY_KEYWORDS, poolWhere, getShortlist } from "@/lib/agents/skaut";
+import { agentMarket } from "@/lib/agents/market";
 import { WEEK_TARGET } from "@/lib/agents/status";
 import { listNotes, notesAvailable } from "@/lib/agents/notes";
 import { scoutFunnel, type Funnel } from "@/lib/agents/scout";
@@ -206,7 +207,7 @@ async function healthChecks(): Promise<HealthItem[]> {
       const [pool, mails] = await Promise.all([
         prisma.lead.groupBy({
           by: ["segmentId"],
-          where: { ...poolWhere(), segment: { is: { OR: PRIORITY_KEYWORDS.map((k) => ({ name: { contains: k, mode: "insensitive" as const } })) } } },
+          where: { ...poolWhere((await agentMarket()).market), segment: { is: { OR: PRIORITY_KEYWORDS.map((k) => ({ name: { contains: k, mode: "insensitive" as const } })) } } },
           _count: { _all: true },
         }),
         prisma.leadEmail.findMany({ where: { status: { in: ["draft", "approved"] } }, select: { lead: { select: { segmentId: true } } }, take: 800 }),
@@ -262,7 +263,7 @@ export function digestTelegram(d: Digest): string {
   lines.push(`• Týždeň: ${d.week.offers} z ${d.week.target} ponúk, odoslaných ${d.week.sent}, otvorení ${d.week.opened}, odpovedí ${d.week.replied}`);
   lines.push(`• Zásoba pre Noru: ${d.supply.ready} leadov (~${d.supply.daysLeft} dní)`);
   if (d.autopilot.available)
-    lines.push(`• Miro za 7 dní: ${d.autopilot.scans} skenov, ${d.autopilot.found} firiem, ${d.autopilot.suitable} vhodných, ${d.autopilot.rejected} skrytých s dôvodom`);
+    lines.push(`• Miro za 7 dní (${d.autopilot.market === "SK" ? "Slovensko" : "Slovensko + Česko"}): ${d.autopilot.scans} skenov, ${d.autopilot.found} firiem, ${d.autopilot.suitable} vhodných, ${d.autopilot.rejected} skrytých s dôvodom`);
   if (d.news) lines.push(`• Novinky z AI: ${escapeHtml(d.news.body.slice(0, 200))}`);
   lines.push("", "<b>Čo musíš ty</b>");
   if (!d.todo.length) lines.push("• Nič, všetko je vybavené.");

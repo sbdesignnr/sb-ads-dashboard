@@ -22,9 +22,11 @@ import { buildGreeting } from "../person-name";
 import { greetableOwnerName } from "../owner-source";
 import { collectEvidence, type EvidenceItem, type EvidencePack } from "./collect";
 import { PROCESS, REFERENCES, referencesFor, SERVICES, STARTER_OFFERS } from "./catalog";
+import { ensureOwner } from "@/lib/agents/owner";
+import { isVerifiedOwnerSource } from "@/lib/leads/owner-source";
 import { holdCouncil, type Council, type ScoutNote } from "./council";
 import { lessonsBlock } from "@/lib/agents/notes";
-import { judgeMails, planMail, type MailCraft, type MailVariantNote, type VariantScore } from "./mailcraft";
+import { COPY_MODEL, effortFor, judgeMails, planMail, type MailCraft, type MailVariantNote, type VariantScore } from "./mailcraft";
 import { ANGLES, nicheCard } from "./playbook";
 
 export interface Finding {
@@ -184,41 +186,43 @@ const ANALYSIS_TOOL: Anthropic.Tool = {
   } as Anthropic.Tool.InputSchema,
 };
 
-const EMAIL_SYSTEM = `Si Samuel Bibeň, web developer z Nitry. Píšeš krátky osobný e-mail majiteľovi firmy - ako človek človeku, nie ako agentúra. Meno adresáta nepoznáš: oslovenie a podpis pridá systém, ty píšeš IBA odseky (bez "Dobrý deň", bez podpisu, bez mena, bez slov "pán/pani/konateľ"). Vždy po slovensky.
+const EMAIL_SYSTEM = `Si Samuel Bibeň (SB Design, Nitra: weby na mieru, e-shopy a reklamy pre malé firmy) a zároveň špičkový copywriter, ktorý napísal tisíce studených e-mailov s mimoriadne vysokou odpoveďou. Píšeš PRVÝ e-mail majiteľovi firmy, ktorý ťa nepozná. Oslovenie, podpis a odkaz na referenciu pridá systém: ty píšeš IBA text medzi oslovením a podpisom. Vždy po slovensky.
 
-DOSTANEŠ overené zistenia o ich firme a návrh ponuky. Z toho napíš e-mail, ktorý znie, akoby si sa naozaj pozrel práve na nich.
+CIEĽ: majiteľ si e-mail dočíta do konca a odpíše. Nepredávaš web. Predávaš JEDEN maličký krok (odpoveď "áno") a dôvod ho urobiť.
 
-ŠTÝL (dôležité - žiadny "AI" tón)
-- MAX 5 viet, spolu 45-90 slov (viac ako 100 sa neschváli), 2-3 krátke odseky. Jedna hlavná myšlienka, jedna ponuka. Ponuku zhrň JEDNOU vetou - podrobnosti (čo presne obsahuje, ako to vzniká) pošleš, keď odpovedia.
-- Prvá veta je konkrétny fakt o NICH z overených zistení (nie o webe všeobecne). Prvý odsek začni malým písmenom (nadväzuje na oslovenie s čiarkou), okrem vlastného mena, značky alebo domény.
-- Ponuku uveď priamo a konkrétne: čo dostanú a dokedy, a že pre nich nie je žiadne riziko. Referenciu NESPOMÍNAJ - pridá ju systém ako odkaz na konci. Číslo dní uveď tak, ako je v termíne ponuky.
-- Záver = jedna konkrétna veta o ďalšom kroku (napr. "Stačí odpísať a dohodneme si krátky hovor."), NIE otázka na názor. Žiadne dni v týždni ani dátumy; termín iba ten z ponuky.
-- Píš jednoducho, hovorovo-spisovne. Krátke a dlhšie vety striedaj. Konkrétne podstatné mená namiesto prívlastkov.
-- ZAKÁZANÉ otvárania a frázy: "všimol som si", "pozrel som sa na Váš web", pochvala v prvej vete ("slušná vizitka", "naozaj skvelé"), "viem, čo v tomto odbore funguje", "rád by som", "dovoľte mi". Nehodnoť ich vopred - fakty nech hovoria samy.
-- ZAKÁZANÉ "AI" vzory: trojice vymenovaní ("A, B a C"), "nielen X, ale aj Y", "Keď X, tak Y", "To znamená, že…", rétorické otázky, superlatívy a prívlastky ("výnimočný", "kľúčový", "komplexný"), otváracie otázky, zovšeobecnenia o skupine ľudí, "odíde ku konkurencii", "časť záujemcov".
-- Čísla iba z overených zistení (napr. "z ôsmich ambulancií v Nitre má online objednávanie šesť"), inak žiadne čísla, percentá ani sumy. Cenu neuvádzaj.
-- Píš ľudsky, nie technicky: žiadne názvy technológií, verzie a skratky (PHP, CMS, WordPress verzie, "PageSpeed 44"), ktorým majiteľ firmy nerozumie. Povedz dôsledok, ktorý pozná (web je z roku X, na mobile sa zle číta, formulár chýba).
-- Žiadne poučky a všeobecné múdrosti po fakte ("dôvera sa buduje roky", "to je presne ten druh…"): po fakte hneď konkrétny dôsledok pre NICH.
+AKO SA ČITATEĽ ROZHODUJE
+- Prečíta dva riadky a rozhodne. Prvá veta musí byť taká konkrétna, že je zjavné: toto napísal človek, ktorý sa skutočne pozrel práve na nich (ich web, profil, recenzie, konkurenciu v meste).
+- Zaujíma ho jediné: čo mu uniká (zákazky, pacienti, mandáty, dôvera), nie čo ponúkaš.
+- Cudzím neverí. Dôveru dáva konkrétnosť, jeden dôkaz o tebe a nulové riziko.
+- Odpíše, keď je krok maličký a jasný a keď dostane niečo užitočné ešte pred odpoveďou.
 
-Zistenia NEPREBERAJ doslova - povedz ich po svojom. Zakázané frázy: "pôsobí zastarano", "zastaraný web", "chýba kontaktný formulár", "chýba rezervačný systém", "moderný web", "profesionálny web", "online prítomnosť", "komplexný".
-PRAVDIVOSŤ: používaj IBA overené zistenia a ponuku zo zadania. Nič nevymýšľaj.
-JAZYK: vykanie (Vy, Vás, Vám, Váš… VŽDY s veľkým V; slovesá v množnom čísle: "mali by ste"). Si MUŽ ("pozrel som", "pripravím"). Iba obyčajná pomlčka "-", úvodzovky slovenské „takto“.
-Predmet: 2-4 slová malými písmenami, obsahuje doménu alebo konkrétny nález.
-Výsledok vlož VÝHRADNE cez nástroj "uloz_email".`;
+ŠTRUKTÚRA (3 až 4 odseky a voliteľné P. S., spolu 90 až 150 slov)
+1. NÁLEZ (1-2 vety): najsilnejší overený fakt o NICH a hneď čo znamená pre ich zákazníka: čo zákazník nemôže urobiť, nenájde alebo nevidí. Žiadny úvod, žiadna pochvala.
+2. STÁVKA (1-2 vety): prečo na tom TEJTO firme záleží, ich očami (dôvera, zákazky, konkurencia v meste). Použi interpretáciu zo zadania prirodzeným jazykom a porovnanie s konkurenciou v ich meste, ak ho máš (napíš ho jednoducho a doslovne z údajov, napr. "z desiatich konkurentov s webom má formulár päť", nie zložitými obratmi).
+3. HODNOTA A DÔVERA (1-2 vety): jeden konkrétny nápad, ktorý môže majiteľ použiť HNEĎ a bez programátora (aby získal hodnotu aj bez odpovede): podaj ho ako hotovú vec, napr. rovno navrhnutý nadpis alebo veta pre ich stránku poskladaná z ich vlastných faktov, alebo presný postup ("po odovzdaní stavby pošlite zákazníkovi odkaz na recenziu"), nie ako všeobecnú radu a nie technickú úpravu ("úprava v kóde"). Potom jedna vecná veta o tebe (čo robíš a pre koho z ich odboru, ak referenciu máš v zadaní; inak len čo robíš).
+4. KROK (1-2 vety): jeden maličký krok zadarmo a bez záväzku, na ktorý stačí odpovedať jedným slovom, s termínom z ponuky. Prvý krok nie je stretnutie ani telefonát.
+P. S. (voliteľné, jedna veta): druhý háčik = ĎALŠIE konkrétne zistenie alebo porovnanie z údajov, ktoré v tele nezaznelo (napr. recenzie vs. konkurenti). Nikdy nezopakuj termín rozboru ani nič z tela; ak nemáš nový fakt, P. S. vynechaj (ps = ""). Začína "P. S. ".
 
-const EMAIL_TOOL: Anthropic.Tool = {
-  name: "uloz_email",
-  description: "Uloží predmet a odseky e-mailu (bez oslovenia a podpisu).",
-  input_schema: {
-    type: "object",
-    properties: {
-      subject: { type: "string" },
-      paragraphs: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 3 },
-      used_findings: { type: "array", items: { type: "string" }, description: "id zistení, ktoré e-mail používa" },
-    },
-    required: ["subject", "paragraphs", "used_findings"],
-  } as Anthropic.Tool.InputSchema,
-};
+TÓN: ľudský, priamy, pokojne sebavedomý, ako remeselník remeselníkovi. Hovor ich jazykom (stavbár: zákazky, obhliadky, rozpočet; realitka: mandáty, obhliadky, predávajúci; fyzioterapeut: pacienti, objednanie, prvé sedenie). Konkrétne podstatné mená, krátke vety, striedaj dĺžku. Bez korporátnej reči, bez skratiek a technických názvov (nepíš PHP, CMS, PageSpeed, HTTPS; povedz slovom: "web nie je zabezpečený", "na mobile sa načítava pomaly", "nie je prispôsobený mobilu"), bez nadšenia a výkričníkov.
+
+ZLÝ A DOBRÝ PRÍKLAD (iný odbor a iná firma; NEKOPÍRUJ vety ani čísla, prevezmi len úroveň konkrétnosti a stavbu)
+ZLÝ: "na webe je jediný kontakt telefón a e-mail, žiadny formulár. ... stačí 15-20 minútový telefonát, kde ukážem smer." Prečo je zlý: nič nestojí v stávke, o autorovi sa nevie nič, prvý krok je stretnutie (vysoké trenie) a čitateľ nedostane žiadnu hodnotu.
+DOBRÝ: "pacient, ktorý Vás o desiatej večer nájde na Googli s bolesťou chrbta, sa na fyzioplus.sk nemá ako objednať: termín sa dá dohodnúť len telefonátom v ordinačných hodinách. Z ôsmich ambulancií v Nitre, ktoré som porovnával, má objednanie cez web šesť.
+
+Vy pritom robíte inak než ostatní: pacienti v recenziách opakovane píšu, že im terapeutka všetko vysvetlí. Na webe to nie je nikde, a práve to by mal vidieť každý, kto Vás ešte nepozná.
+
+Robím weby pre ordinácie (napríklad Fyzioterapiu pre každého), preto Vám pošlem jednostranový rozbor: tri zmeny, ktoré by Vám priniesli najviac objednaní, s postupom. Zadarmo a bez záväzku, stačí odpísať "áno".
+
+P. S. Vašu terapeutku spomínajú v recenziách štyria pacienti, na webe o nej nie je ani slovo."
+
+NIKDY NEKRITIZUJ ich prácu ani vzhľad ("zastaraný", "škaredý", "pôsobí neprofesionálne", "firma už nefunguje"): hovor o tom, čo zákazník nemôže urobiť alebo nenájde. Mail otvor nálezom o ICH zákazníkoch, recenziách, konkurencii alebo vlastných textoch; technický nález (rok v pätičke, mobil, zabezpečenie) je vhodný len ako druhý argument, nikdy ako hlavná téma, ak existuje silnejší nález o ich podnikaní.
+
+PRAVDIVOSŤ (najdôležitejšie): fakty o firme IBA z overených zistení a údajov v zadaní. Interpretácie ("čo to znamená pre zákazníka") sú logický dôsledok, nie fakt: formuluj ich opatrne, bez čísel, percent, súm, odhadov dopadu v čase ("mesačne", "ročne") a bez zovšeobecnení ("väčšina", "zvyčajne"). Čísla používaj len tie, ktoré sú v zadaní. Nič nevymýšľaj: žiadne referencie, ocenenia, výsledky, sumy (ani "státisíce") ani mená mimo zadania. Nepíš vzor "nejde o X, ale o Y" ani "nielen X, ale aj Y".
+FRÁZY, KTORÉ SA ZAMIETAJÚ: "všimol som si", "pozrel som sa na Váš web", pochvala v prvej vete, "rád by som", "dovoľte mi", rétorické otázky, superlatívy a prívlastky ("výnimočný", "kľúčový", "komplexný"), "moderný web", "profesionálny web", "online prítomnosť", poučky ("dôvera sa buduje roky", "to je presne ten druh"), "odíde ku konkurencii", "časť záujemcov".
+JAZYK: vykanie (Vy, Vás, Vám, Váš, VŽDY s veľkým V; slovesá v množnom čísle: "mali by ste"), si MUŽ ("pozrel som", "pošlem"), iba obyčajná pomlčka "-", slovenské úvodzovky „takto“. Prvý odsek začni malým písmenom (nadväzuje na oslovenie s čiarkou), okrem mena, značky alebo domény.
+PREDMET: 2 až 5 slov, malé písmená, konkrétny pre nich (názov firmy, doména alebo konkrétny nález), vzbudzuje zvedavosť, bez slov ponuka, spolupráca, riešenie.
+
+VÝSTUP: iba jeden JSON objekt bez markdownu: {"hook":"1 veta: najsilnejší háčik pre tohto čitateľa a prečo","subject":"…","paragraphs":["odsek 1","odsek 2","odsek 3","voliteľne odsek 4"],"ps":"P. S. … alebo prázdny reťazec","used_findings":["F1","F2"]}`;
 
 /**
  * Kontrolór faktov: kód overil len CITÁTY; toto overí, či zistenie ako CELOK vyplýva
@@ -280,13 +284,17 @@ export async function writeOutreachEmail(input: {
   segmentName: string;
   findings: Finding[];
   offer: OfferPlan;
-  /** dôkazné položky (id + text) — z nich sa overuje, že čísla v maile majú oporu */
-  evidence: { id: string; text: string }[];
+  /** dôkazné položky — z nich sa overuje, že čísla v maile majú oporu; kind a title umožňujú vybrať trh a Google profil */
+  evidence: { id: string; text: string; kind?: string; title?: string }[];
+  /** ako Nora firme rozumie (2-4 vety) */
+  understanding?: string;
   mockupUrl?: string | null;
   /** rozhodnutie porady (dôraz a uhol), ak porada prebehla */
   guidance?: string;
   /** false = úsporný režim: jeden pokus podľa pôvodného postupu bez plánu uhlov a variantov */
   craft?: boolean;
+  /** hlboký režim (silné leady): texty píše model s vyšším úsilím (drahšie, lepšie) */
+  deep?: boolean;
 }): Promise<{ email: { subject: string; body: string } | null; issues: string[]; craft: MailCraft | null }> {
   const { client, lead, segmentName, findings, offer, evidence } = input;
   const mockupUrl = input.mockupUrl ?? null;
@@ -294,13 +302,20 @@ export async function writeOutreachEmail(input: {
   // Do e-mailu idú iba úplne podložené zistenia (audit "ok"); "partial" ostáva len v správe.
   const mailFindings = findings.filter((f) => f.audit !== "partial");
   const usedFacts = mailFindings
-    .map((f) => `${f.id}: ${f.claim} (dôkaz: „${f.evidence[0].quote}“)`)
+    .map((f) => `${f.id}: ${f.claim} (dôkaz: „${f.evidence[0].quote}“)${f.why_it_matters ? `\n   INTERPRETÁCIA (úvaha, nie fakt): ${f.why_it_matters}` : ""}`)
     .join("\n");
-  const refLine = offer.reference_slug ? REFERENCES.find((r) => r.slug === offer.reference_slug) : null;
+  // referencia z ich odboru: vždy sa použije (dôveryhodnosť), ak ju katalóg pre odbor má
+  const refLine = (offer.reference_slug ? REFERENCES.find((r) => r.slug === offer.reference_slug) : null) ?? referencesFor(segmentName)[0] ?? null;
+  // údaje, ktoré vypočítal kód (porovnanie s konkurenciou v meste, Google profil): overené, smú sa použiť
+  const marketItem = evidence.find((e) => e.kind === "market");
+  const placesItem = evidence.find((e) => e.kind === "places");
+  const marketSummary = marketItem ? (marketItem.text.split("SÚHRN:")[1] ?? "").trim().replace(/\n/g, " ") : "";
+  const profileLine = placesItem ? placesItem.text.split("\n").filter((l) => /^(Názov|Hodnotenie)/.test(l)).join("; ") : "";
+  const computedFacts = [marketSummary && `Konkurencia v meste: ${marketSummary}`, profileLine && `Google profil: ${profileLine}`].filter(Boolean).join("\n");
   const offerBlock = mockupUrl
     ? `NÁVRH PONUKY:\nNázov: Hotový návrh novej domovskej stránky\nČo dostanú: UŽ HOTOVÝ klikateľný návrh novej domovskej stránky ich firmy, postavený z ICH vlastných textov a fotiek. Odkaz na návrh pridá systém pod mail, v texte ho neuvádzaj.\nPrečo práve toto: ${offer.why_this}\nTermín: návrh je hotový už teraz\nBez rizika: návrh je zadarmo a bez záväzku\nČo urobím vopred: návrh je už urobený\n\nPOZOR: návrh je HOTOVÝ. Píš v minulom čase ("pripravil som", "urobil som"), nie "pripravím". Ukáž, že si na nich už pracoval: povedz 1 konkrétnu vec, ktorú návrh zvýrazňuje (z overených zistení, napr. ich recenzie alebo služby), a že odkaz je pod mailom. Záver: pokojná veta, že ak sa im páči, ozvú sa.`
     : `NÁVRH PONUKY:\nNázov: ${offer.name}\nČo dostanú: ${offer.deliverable}\nPrečo práve toto: ${offer.why_this}\nTermín: ${offer.timeline}\nBez rizika: ${offer.risk_reversal}\nČo urobím vopred: ${offer.my_upfront_work}`;
-  const emailFacts = `FIRMA: ${lead.companyName} (${lead.companyCity ?? "?"}), odvetvie: ${segmentName}\nWeb: ${lead.websiteUrl ?? "—"}\n\nOVERENÉ ZISTENIA (jediný zdroj faktov):\n${usedFacts}\n\n${offerBlock}\nReferencia z ich odboru: ${refLine ? `web pre „${refLine.client}“` : "žiadna"}${
+  const emailFacts = `FIRMA: ${lead.companyName} (${lead.companyCity ?? "?"}), odvetvie: ${segmentName}\nWeb: ${lead.websiteUrl ?? "—"}${input.understanding ? `\nPOCHOPENIE FIRMY: ${input.understanding}` : ""}\n\nOVERENÉ ZISTENIA (jediný zdroj faktov o firme; INTERPRETÁCIA je úvaha, nie fakt):\n${usedFacts}\n\n${computedFacts ? `ÚDAJE POČÍTANÉ KÓDOM (overené, smú sa použiť):\n${computedFacts}\n\n` : ""}${offerBlock}\n\nREFERENCIA Z ICH ODBORU: ${refLine ? `web pre „${refLine.client}“ (odbor: ${refLine.industry}). Môžeš ju spomenúť jednou vetou ("Robil som web pre ${refLine.client}"); odkaz na ňu pridá systém.` : "žiadna (nespomínaj žiadne referencie)"}\nAUTOR: Samuel Bibeň, SB Design, Nitra: weby na mieru, e-shopy, Meta a Google Ads. Iné úspechy, čísla ani ocenenia v zadaní nie sú, nevymýšľaj ich.${
     offer.finding_ids.some((id) => !mailFindings.some((f) => f.id === id))
       ? "\n\nPOZOR: niektoré zistenia, o ktoré sa ponuka opiera, sa nepodarilo overiť. Spomeň v maile iba overené zistenia vyššie a v ponuke iba to, čo z nich vyplýva."
       : ""
@@ -329,22 +344,36 @@ export async function writeOutreachEmail(input: {
     lintErrors: string[];
     guidance: string;
   }
+  let lastRawHead = "";
   /** Jeden návrh mailu podľa pokynu (uhol alebo záložné otvorenie); kód skontroluje pravidlá. */
   const draftMail = async (guidance: string, feedback: string, angle: string): Promise<Draft | null> => {
     const msg = await createMessage(client, {
-      model: process.env.LEADS_AGENT_MODEL?.trim() || "claude-sonnet-5",
-      max_tokens: 700,
-      temperature: 0.8,
+      model: COPY_MODEL,
+      max_tokens: 5000,
+      temperature: 0.9,
+      ...(effortFor(COPY_MODEL, (process.env.LEADS_COPY_EFFORT as "low" | "medium" | "high" | undefined) ?? (input.deep ? "medium" : "low")) as object),
       system: EMAIL_SYSTEM,
-      tools: [EMAIL_TOOL],
-      tool_choice: { type: "tool", name: "uloz_email" },
-      messages: [{ role: "user", content: `${emailFacts}\n\nKARTA ODBORU (${niche.name}; všeobecná znalosť, NIE fakty o firme):\n${niche.card}\n\n${guidance}\n\nDĹŽKA: spolu 55 až 90 slov (viac ako 100 slov sa zamietne). Nie je to výpočet výhod, je to krátky osobný mail.\n\nNapíš e-mail.${feedback}` }],
+      messages: [{ role: "user", content: `${emailFacts}\n\nKARTA ODBORU (${niche.name}; všeobecná znalosť, NIE fakty o firme):\n${niche.card}\n\n${guidance}\n\nDĹŽKA: spolu 100 až 145 slov (bez oslovenia a podpisu; P. S. sa počíta; nad 165 slov sa mail zamietne).\n\nNapíš e-mail.${feedback}` }],
     });
-    const block = msg.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-    const d = (block?.input ?? {}) as { subject?: string; paragraphs?: unknown; used_findings?: string[] };
+    const rawText = textFrom(msg);
+    lastRawHead = `${msg.stop_reason ?? "?"}: ${rawText.slice(0, 140).replace(/\s+/g, " ")}`;
+    const m = rawText.match(/\{[\s\S]*\}/);
+    if (!m) return null;
+    let d: { subject?: string; paragraphs?: unknown; ps?: unknown; used_findings?: unknown };
+    try {
+      d = JSON.parse(m[0]);
+    } catch {
+      try {
+        d = JSON.parse(m[0].replace(/,\s*([}\]])/g, "$1"));
+      } catch {
+        return null;
+      }
+    }
     const subject = normalizeDashes(String(d.subject ?? "").trim()).slice(0, 120).toLowerCase();
     const paragraphs = Array.isArray(d.paragraphs) ? d.paragraphs.map((p) => normalizeDashes(String(p).trim())).filter(Boolean) : [];
-    if (!subject || !paragraphs.length) return null;
+    const psRaw = normalizeDashes(String(d.ps ?? "").trim());
+    if (psRaw) paragraphs.push(/^P\.?\s?S\.?[\s:]/i.test(psRaw) ? psRaw : `P. S. ${psRaw}`);
+    if (!subject || paragraphs.length < 2) return null;
     const used = mailFindings.filter((f) => asArray<string>(d.used_findings).includes(f.id));
     // Číslo smie byť v maile, ak ho zistenie uvádza A zároveň je v plnom texte niektorej z
     // dôkazných položiek, ktoré cituje (napr. "79" recenzií je v Google profile).
@@ -354,6 +383,8 @@ export async function writeOutreachEmail(input: {
     });
     // čísla z podmienok ponuky (napr. "15-20 minút", "5-7 dní") sú z katalógu, nie vymyslené
     allowedNumbers.push(...numbersIn(offer.timeline), ...numbersIn(offer.deliverable), ...numbersIn(offer.risk_reversal));
+    // čísla vypočítané kódom (porovnanie s konkurenciou, Google profil) sú overené
+    allowedNumbers.push(...numbersIn(computedFacts));
     const allowedYears = allowedNumbers.filter((n) => /^(19|20)\d{2}$/.test(n)).map(Number);
     const res = lintEmail({ kind: "initial", subject, paragraphs, copyrightYear: lead.copyrightYear, allowedYears, allowedNumbers });
     lintCtx.set(`${angle}|${subject}`, { allowedYears, allowedNumbers });
@@ -364,14 +395,18 @@ export async function writeOutreachEmail(input: {
     const ctx = lintCtx.get(`${d.angle}|${d.subject}`) ?? { allowedYears: [], allowedNumbers: [] };
     return lintEmail({ kind: "initial", subject: d.subject, paragraphs, copyrightYear: lead.copyrightYear, ...ctx });
   };
+  const isPs = (t: string) => /^P\.?\s?S\.?[\s:]/i.test(t.trim());
   const assemble = (subject: string, paragraphs: string[]) => {
+    const main = paragraphs.filter((t) => !isPs(t));
+    const ps = paragraphs.filter(isPs).map((t) => t.replace(/^P\.?\s?S\.?[\s:]*/i, "P. S. "));
     const body = [
       greeting.line,
-      lowerOpener(paragraphs[0], lead.companyName),
-      ...paragraphs.slice(1).map((t) => t.charAt(0).toUpperCase() + t.slice(1)),
+      lowerOpener(main[0], lead.companyName),
+      ...main.slice(1).map((t) => t.charAt(0).toUpperCase() + t.slice(1)),
       ...(mockupUrl ? [`Návrh Vašej novej domovskej stránky: ${mockupUrl}`] : []),
       ...(refLine && !mockupUrl ? [`Ukážka mojej práce z Vášho odboru: ${refLine.url}`] : []),
       `${signoff}\nSamuel Bibeň`,
+      ...ps,
     ].join("\n\n");
     return { subject, body };
   };
@@ -379,12 +414,17 @@ export async function writeOutreachEmail(input: {
   // 1) plán: kto číta a tri rôzne uhly
   const plan = input.craft === false ? null : await planMail(client, { companyName: lead.companyName, city: lead.companyCity, segmentName, findings: mailFindings, offer, mockupReady: Boolean(mockupUrl), guidance: input.guidance });
   let candidates: Draft[] = [];
+  if (!plan && input.craft !== false) issues.push("plán uhlov mailu sa nepodaril, píšem jednoduchým postupom");
   if (plan) {
     const drafts = await Promise.all(
       plan.angles.map(async (a) => {
         const label = ANGLES.find((x) => x.id === a.angle);
-        const guidance = `UHOL TOHTO MAILU: ${label?.label}. ${label?.how}\nOpri sa o zistenie ${a.finding_id}. Obsah prvej vety: ${a.opening}\nNajpravdepodobnejšia námietka adresáta: „${a.objection}“. Zmier ju JEDNOU vetou VLASTNÝMI SLOVAMI, prirodzene a ľudsky (nekopíruj túto formuláciu doslova, bez vymyslených faktov): ${a.defusal}\nInšpirácia pre predmet: ${a.subject_idea}\nAdresát: ${plan.recipient}`;
+        const guidance = `UHOL TOHTO MAILU: ${label?.label}. ${label?.how}\nOpri sa o zistenie ${a.finding_id}. Obsah prvej vety: ${a.opening}\nNajpravdepodobnejšia námietka adresáta: „${a.objection}“. Zmier ju JEDNOU vetou VLASTNÝMI SLOVAMI, prirodzene a ľudsky (nekopíruj túto formuláciu doslova, bez vymyslených faktov): ${a.defusal}\nInšpirácia pre predmet: ${a.subject_idea}\nSTÁVKA (čo to stojí ich firmu, ich očami): ${a.stake}\nHODNOTA ZADARMO (konkrétny nápad zmeny, ktorý vložíš do mailu): ${a.gift}\nAdresát: ${plan.recipient}`;
         let d = await draftMail(guidance, "", a.angle);
+        if (!d) {
+          issues.push(`variant „${a.angle}“: model nevrátil použiteľný JSON (${lastRawHead}), zopakujem`);
+          d = await draftMail(guidance, "\n\nPredchádzajúca odpoveď nebola platný JSON. Vráť VÝHRADNE jeden JSON objekt podľa formátu.", a.angle);
+        }
         if (d && d.lintErrors.length) {
           issues.push(`variant „${a.angle}“ zamietnutý pravidlami: ${d.lintErrors.join("; ")}`);
           d = await draftMail(guidance, `\n\nPREDCHÁDZAJÚCI POKUS BOL ZAMIETNUTÝ: ${d.lintErrors.join("; ")}. Oprav a dodrž všetky pravidlá.`, a.angle);
@@ -453,7 +493,10 @@ export async function writeOutreachEmail(input: {
   let emailFeedback = "";
   for (let attempt = 1; attempt <= 3 && !email; attempt++) {
     const d = await draftMail(openingHint + " (ak na to nemáš overené zistenie, zvoľ najsilnejšie iné).", emailFeedback, "zaloha");
-    if (!d) continue;
+    if (!d) {
+      issues.push(`záloha, pokus ${attempt}: model nevrátil použiteľný JSON (${lastRawHead})`);
+      continue;
+    }
     if (d.lintErrors.length) {
       emailFeedback = `\n\nPREDCHÁDZAJÚCI POKUS BOL ZAMIETNUTÝ: ${d.lintErrors.join("; ")}. Oprav a dodrž všetky pravidlá.`;
       issues.push(`e-mail pokus ${attempt}: ${d.lintErrors.join("; ")}`);
@@ -517,7 +560,8 @@ export async function runResearchAgent(input: {
   /** false = mail iba jedným pokusom (bez troch variantov a simulovaného adresáta); predvolene sa varianty robia vždy */
   craft?: boolean;
 }): Promise<AgentResult> {
-  const { lead, segmentName } = input;
+  const { segmentName } = input;
+  let lead = input.lead;
   const step = input.onStep ?? (() => {});
   resetAiUsage();
   const issues: string[] = [];
@@ -527,6 +571,15 @@ export async function runResearchAgent(input: {
   step("Zbieram dôkazy: web firmy, Google profil, konkurenti v meste…");
   const pack = await collectEvidence({ lead, segmentName, keywords: input.keywords });
   step(`Zozbieraných ${pack.items.length} dôkazových položiek${pack.notes.length ? ` (nepodarilo sa: ${pack.notes.join(" ")})` : ""}`);
+
+  // meno konateľa pre oslovenie: overí sa v obchodnom registri (IČO z leadu alebo z právnych stránok webu)
+  if (!isVerifiedOwnerSource(lead.ownerSource)) {
+    step("Overujem konateľa v obchodnom registri…");
+    const siteText = pack.items.filter((i) => i.kind === "web").map((i) => i.text).join("\n");
+    const o = await ensureOwner(lead, { siteText });
+    lead = o.lead;
+    step(o.found && lead.ownerName ? `Konateľ overený: ${lead.ownerName}` : `Konateľ sa nepodarilo overiť (${o.note})`);
+  }
 
   const refs = referencesFor(segmentName);
   const catalog = `MOJE SLUŽBY:\n${SERVICES.map((s) => `- ${s.name}: ${s.what}`).join("\n")}\nPROCES: ${PROCESS}\nŠTARTOVACIE PONUKY (vyber a prispôsob; každá vyžaduje Samuelov súhlas):\n${STARTER_OFFERS.map((o, i) => `${i + 1}. ${o}`).join("\n")}\nREFERENCIE Z ICH ODBORU (slug | klient | odbor): ${refs.length ? refs.map((r) => `${r.slug} | ${r.client} | ${r.industry}`).join("; ") : "žiadna"}${
@@ -620,7 +673,9 @@ export async function runResearchAgent(input: {
     } else offer = null;
     if (findings.length >= 2 && offer) break;
     feedback = `\n\nPREDCHÁDZAJÚCI POKUS NEMAL DOSŤ OVERENÝCH ZISTENÍ (overených ${findings.length}, zahodených ${dropped.length}: ${dropped.map((f) => f.evidence.filter((e) => !e.ok).map((e) => `${e.eid}: "${e.quote.slice(0, 60)}"`).join(", ")).join(" | ")}). Citáty musia byť DOSLOVNÉ úryvky zo zadaných položiek. Ponuka musí stáť na overených zisteniach.`;
-    issues.push(`pokus ${attempt}: ${findings.length} overených zistení, ponuka ${offer ? "ok" : "chýba"}`);
+    issues.push(
+      `pokus ${attempt}: ${findings.length} overených zistení, ponuka ${offer ? "ok" : "chýba"}${dropped.length ? ` | nedoložené: ${dropped.map((f) => f.evidence.filter((e) => !e.ok).map((e) => `${e.eid || "?"} „${e.quote.slice(0, 70)}“`).join(", ") || "bez citátu").join(" ; ").slice(0, 400)}` : ""}`,
+    );
   }
   if (skipReason || findings.length < 2 || !offer)
     return {
@@ -662,7 +717,7 @@ export async function runResearchAgent(input: {
         .filter(Boolean)
         .join("\n")
     : undefined;
-  const written = await writeOutreachEmail({ client, lead, segmentName, findings, offer, evidence: pack.items, mockupUrl, guidance, craft: input.craft !== false });
+  const written = await writeOutreachEmail({ client, lead, segmentName, findings, offer, evidence: pack.items, mockupUrl, guidance, craft: input.craft !== false, understanding, deep: input.deep });
   issues.push(...written.issues);
   const email = written.email;
 

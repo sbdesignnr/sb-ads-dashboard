@@ -8,6 +8,7 @@ import { isVerifiedOwnerSource } from "@/lib/leads/owner-source";
 import type { ScoutNote } from "@/lib/leads/research/council";
 import { applyVerdicts, assessLeads, type AssessLead, type Verdict } from "./assess";
 import { latestVerdicts } from "./notes";
+import { agentMarket, marketWhere, type Market } from "./market";
 
 /** Prioritné odbory (rozhodnutie usera 24. 9. 2026): realitné kancelárie, stavebné firmy, fyzioterapeuti. */
 export const PRIORITY_SEGMENT_RE = /realit|stave?b|fyzio/i;
@@ -91,14 +92,14 @@ export function opportunityScore(l: OpportunityLead): { score: number; reasons: 
 /**
  * Zásoba pre Noru: nový lead s webom a e-mailom, ktorý sa dá osloviť. Slabý web už NIE je podmienka
  * (Nora vie navrhnúť ponuku aj pre firmu s dobrým webom: rozbor, konzultácia, reklama). Poradie
- * určuje skóre príležitosti, takže slabé weby idú prvé.
+ * určuje skóre príležitosti, takže slabé weby idú prvé. Trh: predvolene len slovenské firmy (pozri market.ts).
  */
-export const poolWhere = (): Prisma.LeadWhereInput => ({
+export const poolWhere = (market: Market = "SK"): Prisma.LeadWhereInput => ({
   status: "new",
   websiteUrl: { not: null },
   companyEmail: { not: null },
   // Pozor: NOT (company_active = false) by vyradilo aj NULL, preto výslovne OR.
-  AND: [{ NOT: { companyEmail: "" } }, { OR: [{ companyActive: null }, { companyActive: true }] }],
+  AND: [{ NOT: { companyEmail: "" } }, { OR: [{ companyActive: null }, { companyActive: true }] }, marketWhere(market)],
   emails: { none: { status: { in: ["approved", "sent"] } } },
 });
 
@@ -125,8 +126,9 @@ export async function getShortlist(
 ): Promise<{ picks: Opportunity[]; candidates: number }> {
   // Lead s hotovým alebo bežiacim výskumom sa nevyberá znova; neúspešný sa smie zopakovať,
   // ale najviac 2× (aby sa nepodarený lead nekonečne nepálil).
+  const { market } = await agentMarket();
   const where: Prisma.LeadWhereInput = {
-    ...poolWhere(),
+    ...poolWhere(market),
     ...(opts.anySegment ? {} : { segment: { is: { OR: PRIORITY_KEYWORDS.map((k) => ({ name: { contains: k, mode: "insensitive" as const } })) } } }),
     ...(opts.includeResearched ? {} : { research: { none: { status: { in: ["done", "running"] } } } }),
   };
@@ -146,9 +148,10 @@ export async function getShortlist(
 
 /** Zásoba čerstvých vhodných leadov v prioritných odboroch (pre rozhodnutie, či hľadať nové). */
 export async function backlogCount(): Promise<number> {
+  const { market } = await agentMarket();
   return prisma.lead.count({
     where: {
-      ...poolWhere(),
+      ...poolWhere(market),
       segment: {
         is: {
           OR: PRIORITY_KEYWORDS.map((k) => ({ name: { contains: k, mode: "insensitive" as const } })),

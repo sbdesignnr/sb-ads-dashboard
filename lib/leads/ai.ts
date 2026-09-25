@@ -344,7 +344,22 @@ export async function proofread(
   subject: string,
   paragraphs: string[],
   extraRules = "",
-  maxTokens = 800,
+  maxTokens = 2000,
+): Promise<ProofResult | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await proofreadOnce(client, facts, subject, paragraphs, extraRules, attempt ? maxTokens * 2 : maxTokens);
+    if (res) return res;
+  }
+  return null;
+}
+
+async function proofreadOnce(
+  client: Anthropic,
+  facts: string,
+  subject: string,
+  paragraphs: string[],
+  extraRules: string,
+  maxTokens: number,
 ): Promise<ProofResult | null> {
   const msg = await createMessage(client, {
     model: PROOF_MODEL,
@@ -466,7 +481,8 @@ export async function createMessage(
     // Sonnet 5 a novšie majú PREDVOLENE zapnuté "premýšľanie": skryté úvahy sa platia ako
     // výstup (890 z 1 139 tokenov na jednu korektúru) a pri nízkom max_tokens zrežú
     // odpoveď. Na písanie/korektúru krátkeho mailu ich nepotrebujeme → vypnúť.
-    if (!quirks.noThinkingParam) (p as { thinking?: unknown }).thinking = { type: "disabled" };
+    // Opus 5.x "thinking: disabled" neprijíma (myslí adaptívne); jeho úsilie sa riadi cez output_config.effort
+    if (!quirks.noThinkingParam && !/opus-5/i.test(p.model)) (p as { thinking?: unknown }).thinking = { type: "disabled" };
     if (quirks.noTemperature) delete p.temperature;
     if (quirks.autoToolChoice && p.tool_choice?.type === "tool") p.tool_choice = { type: "auto" };
     try {

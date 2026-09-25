@@ -7,6 +7,15 @@ import { ANGLES, nicheCard, SALES_PRINCIPLES } from "./playbook";
 import type { Finding, OfferPlan } from "./strategist";
 
 const MODEL = () => process.env.LEADS_AGENT_MODEL?.trim() || "claude-sonnet-5";
+/** Model, ktorý píše a posudzuje maily (Opus: cena mailu je zanedbateľná oproti jeho kvalite). */
+export const COPY_MODEL = process.env.NORA_COPY_MODEL?.trim() || "claude-opus-5-5";
+
+/**
+ * Úsilie modelu (Opus 5.x myslí adaptívne a myslenie sa platí ako výstup): "medium" pre písanie
+ * (premýšľa nad háčikom, ≈ 600 tokenov), "low" pre hodnotenie. Iné modely parameter nedostanú.
+ */
+export const effortFor = (model: string, effort: "low" | "medium" | "high"): Record<string, unknown> =>
+  /opus-5/i.test(model) ? { output_config: { effort } } : {};
 
 export interface MailAngleBrief {
   angle: string;
@@ -15,6 +24,10 @@ export interface MailAngleBrief {
   objection: string;
   defusal: string;
   subject_idea: string;
+  /** čo to stojí ich firmu, ich očami */
+  stake: string;
+  /** konkrétny nápad zmeny, ktorý dostanú zadarmo priamo v maile */
+  gift: string;
 }
 
 export interface MailPlan {
@@ -26,6 +39,8 @@ export interface VariantScore {
   open: number;
   reply: number;
   trust: number;
+  /** hodnota: dostane čitateľ niečo užitočné ešte pred odpoveďou (0-10) */
+  value: number;
   aiSmell: number;
   stopsAt: string;
   edit: string;
@@ -68,8 +83,10 @@ const PLAN_TOOL: Anthropic.Tool = {
             objection: { type: "string", description: "najpravdepodobnejšia námietka adresáta pri tomto uhle" },
             defusal: { type: "string", description: "jedna vecná veta, ktorá námietku zmierni (bez vymyslených faktov)" },
             subject_idea: { type: "string", description: "inšpirácia pre predmet, 2-4 slová" },
+            stake: { type: "string", description: "čo to stojí ICH firmu (zákazky, dôvera, konkurencia), ich očami, 1 veta, bez čísel" },
+            gift: { type: "string", description: "jeden konkrétny nápad, ktorý môže majiteľ použiť hneď a bez programátora (hotová formulácia nadpisu/vety z ich faktov alebo presný postup); čitateľ ho dostane zadarmo v maile" },
           },
-          required: ["angle", "finding_id", "opening", "objection", "defusal", "subject_idea"],
+          required: ["angle", "finding_id", "opening", "objection", "defusal", "subject_idea", "stake", "gift"],
         },
       },
     },
@@ -98,7 +115,7 @@ export async function planMail(
   try {
     const msg = await createMessage(client, {
       model: MODEL(),
-      max_tokens: 1400,
+      max_tokens: 2800,
       temperature: 0.6,
       system: PLAN_SYSTEM,
       tools: [PLAN_TOOL],
@@ -134,17 +151,18 @@ export interface DraftForJudge {
   body: string;
 }
 
-const JUDGE_SYSTEM = `Si simulácia adresáta. Dostaneš popis človeka, ktorý číta poštu, a niekoľko variantov mailu od cudzieho človeka (Samuel, web dizajnér z Nitry). Vieš IBA to, čo je v maile. Číta sa ako v doručenej pošte na mobile: najprv predmet a prvý riadok.
+const JUDGE_SYSTEM = `Si simulácia adresáta. Dostaneš popis človeka, ktorý číta poštu (majiteľ malej firmy), a niekoľko variantov mailu od cudzieho človeka (Samuel, web dizajnér z Nitry). Vieš IBA to, čo je v maile. Číta sa ako v doručenej pošte na mobile: najprv predmet a prvý riadok. Si vyťažený, skeptický a dostávaš desiatky mailov od agentúr.
 
 Pre každý variant (podľa poradového čísla) odhadni:
 - open: 0-100, či by si mail otvoril (z predmetu a prvého riadku)
 - reply: 0-100, či by si odpísal alebo klikol na odkaz
-- trust: 0-10, ako veľmi veríš, že ide o skutočného človeka, ktorý sa na teba pozrel
+- trust: 0-10, ako veľmi veríš, že ide o skutočného človeka, ktorý sa naozaj pozrel na tvoju firmu
+- value: 0-10, či si z mailu odnášaš niečo užitočné ešte pred odpoveďou (konkrétny poznatok o vlastnom podnikaní, porovnanie s konkurenciou, nápad). Mail, ktorý len tvrdí, že "web je zlý", a ponúka schôdzku, má hodnotu 1-2.
 - ai_smell: 0-10, ako veľmi to pôsobí ako hromadný alebo strojovo písaný mail
 - stops_at: doslovná fráza, pri ktorej by si prestal čítať (alebo "číta do konca")
 - edit: jedna konkrétna zmena TEXTU, ktorá by variant zlepšila (skrátiť, vynechať, prepísať vetu; max 20 slov). Nikdy nenavrhuj prílohy, screenshoty, odkazy ani nové fakty
-Buď KRITICKÝ a realistický: väčšina cold mailov skončí v koši, nenadhodnocuj. Nehodnoť podľa dĺžky ani „krásy“ slohu, ale podľa reálneho dojmu, dôvery a toho, či ti mail ponúka niečo, čo chceš vidieť.
-Odpovedz VÝHRADNE JSON: {"scores":[{"i":1,"open":0,"reply":0,"trust":0,"ai_smell":0,"stops_at":"…","edit":"…"}],"winner":1,"verdict":"jedna veta, prečo vyhral najlepší variant (opíš ho obsahom, BEZ čísla variantu)"}`;
+Buď KRITICKÝ a realistický: väčšina cold mailov skončí v koši. Mail "o ničom" (všeobecný, bez stávky pre teba, bez dôvodu odpísať) hodnoť veľmi nízko. Nehodnoť podľa dĺžky ani "krásy" slohu, ale podľa reálneho dojmu, dôvery, hodnoty a toho, či ti mail dáva dôvod odpísať.
+Odpovedz VÝHRADNE JSON: {"scores":[{"i":1,"open":0,"reply":0,"trust":0,"value":0,"ai_smell":0,"stops_at":"…","edit":"…"}],"winner":1,"verdict":"jedna veta, prečo vyhral najlepší variant (opíš ho obsahom, BEZ čísla variantu)"}`;
 
 /** Simulovaný adresát ohodnotí varianty; poradie sa premieša, aby nerozhodovala pozícia. */
 export async function judgeMails(
@@ -166,9 +184,10 @@ export async function judgeMails(
   const shown = order.map((idx, n) => `--- VARIANT ${n + 1} ---\nPredmet: ${drafts[idx].subject}\n${drafts[idx].body}`).join("\n\n");
   try {
     const msg = await createMessage(client, {
-      model: MODEL(),
-      max_tokens: 1400,
+      model: COPY_MODEL,
+      max_tokens: 3000,
       temperature: 0.2,
+      ...(effortFor(COPY_MODEL, "low") as object),
       system: JUDGE_SYSTEM,
       messages: [
         {
@@ -180,7 +199,7 @@ export async function judgeMails(
     const m = textFrom(msg).match(/\{[\s\S]*\}/);
     if (!m) return null;
     const j = JSON.parse(m[0]) as {
-      scores?: { i?: number; open?: number; reply?: number; trust?: number; ai_smell?: number; stops_at?: string; edit?: string }[];
+      scores?: { i?: number; open?: number; reply?: number; trust?: number; value?: number; ai_smell?: number; stops_at?: string; edit?: string }[];
       winner?: number;
       verdict?: string;
     };
@@ -191,15 +210,17 @@ export async function judgeMails(
       const open = clamp(Number(r.open), 0, 100);
       const reply = clamp(Number(r.reply), 0, 100);
       const trust = clamp(Number(r.trust), 0, 10);
+      const value = clamp(Number(r.value), 0, 10);
       const aiSmell = clamp(Number(r.ai_smell), 0, 10);
       scores[order[n]] = {
         open,
         reply,
         trust,
+        value,
         aiSmell,
         stopsAt: String(r.stops_at ?? "").slice(0, 160),
         edit: String(r.edit ?? "").slice(0, 200),
-        total: 0.25 * open + 0.4 * reply + 2 * trust - 2 * aiSmell,
+        total: 0.2 * open + 0.35 * reply + 1.5 * trust + 2 * value - 2 * aiSmell,
       };
     }
     let best = -1;

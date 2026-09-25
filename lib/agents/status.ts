@@ -283,6 +283,7 @@ async function miroSnapshot(): Promise<AgentSnapshot> {
 
   const stats: AgentStat[] = [
     { label: "Zásoba pre Noru", value: String(supply), hint: `vystačí ~${daysLeft} dní` },
+    { label: "Trh", value: funnel.market === "SK" ? "Slovensko" : "SK + ČR", hint: funnel.marketNote },
     { label: "Posúdených / 7 dní", value: String(funnel.assessed), hint: `${funnel.suitable} vhodných` },
     { label: "Skrytých s dôvodom", value: String(Math.max(funnel.rejected, rejectedWeek)), hint: "za 7 dní" },
     { label: "Skeny / 7 dní", value: String(funnel.scans), hint: `firiem: ${funnel.found}` },

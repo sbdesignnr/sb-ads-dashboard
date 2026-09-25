@@ -71,6 +71,8 @@ const GENERIC_PHRASES: [RegExp, string][] = [
   [/sedí\s+Vám\s+(?:to|tento|takýto)/iu, "generická otázka \"Sedí Vám tento pohľad?\""],
   [/čo\s+na\s+to\s+hovoríte/iu, "generická otázka \"Čo na to hovoríte?\""],
   [/presne\s+ten\s+druh/iu, "poučka \"to je presne ten druh…\" (po fakte hneď konkrétny dôsledok pre NICH)"],
+  [/nejde\s+o\s+[^.]{0,60},\s*(?:ale|než)\s+o\b|nielen\s+[^.]{0,60},\s*ale\s+(?:aj|i)\b/iu, "vzor \"nejde o X, ale o Y\" / \"nielen X, ale aj Y\" (strojový tón)"],
+  [/(?<!\p{L})(?:štátis\p{L}*|státis\p{L}*|desiatk\p{L}*\s+tisíc\p{L}*)/iu, "odhad sumy (státisíce, desiatky tisíc…) nie je odvoditeľný z dát"],
   [/(?:dôvera|povesť|meno)\s+(?:sa\s+)?buduje\s+roky|buduje\s+roky/iu, "všeobecná múdrosť \"dôvera sa buduje roky\""],
   [/(?:alebo\s+)?(?:to\s+)?vidíte\s+to\s+(?:inak|podobne)|vnímate\s+to\s+inak|máte\s+na\s+to\s+iný\s+názor/iu, "generická otázka \"…alebo to vidíte inak?\""],
   [/časť\s+(?:z\s+)?(?:tých|týchto|takýchto|nich|záujemcov|klientov|pacientov|ľudí|hostí|zákazníkov|návštevníkov)/iu, "klišé \"časť záujemcov odíde\""],
@@ -112,8 +114,8 @@ export function lintEmail(input: LintInput): LintResult {
 
   // ── Štruktúra a dĺžka ─────────────────────────────────────────────────────
   const count = paragraphs.length;
-  if (kind === "initial" && (count < 2 || count > 3))
-    errors.push(`počet odsekov je ${count}, má byť 2-3`);
+  if (kind === "initial" && (count < 2 || count > 5))
+    errors.push(`počet odsekov je ${count}, má byť 2-5 (vrátane P. S.)`);
   if ((kind === "followup1" || kind === "followup2") && (count < 2 || count > 3))
     errors.push(`follow-up má ${count} odsekov (má mať 2-3)`);
   if (kind === "followup3" && (count < 1 || count > 3))
@@ -125,7 +127,7 @@ export function lintEmail(input: LintInput): LintResult {
 
   const words = wordCount(body);
   const range: Record<EmailKind, [number, number]> = {
-    initial: [30, 110],
+    initial: [60, 175],
     followup1: [28, 85],
     followup2: [28, 85],
     followup3: [20, 60],
@@ -189,6 +191,13 @@ export function lintEmail(input: LintInput): LintResult {
     const canon = (x: string) => x.replace(/\s+/g, "").replace(/,/g, ".");
     if (input.allowedNumbers?.some((a) => canon(a) === canon(clean))) continue;
     errors.push(`číslo "${clean}" nie je odvoditeľné zo vstupných dát (povolený je len rok, ktorý je vo vstupných dátach)`);
+  }
+  // Milióny/miliardy len s číslom doloženým vo vstupných dátach ("poistenie 5 miliónov Kč" z webu); holé "milióny" je odhad.
+  const canonNum = (x: string) => x.replace(/\s+/g, "").replace(/,/g, ".").replace(/[.]+$/, "");
+  for (const m of noDomains.matchAll(/(?<!\p{L})(?:(\d[\d\s.,]*?)\s*)?(?:mil\.|milión\p{L}*|miliard\p{L}*)/giu)) {
+    const n = m[1] ? canonNum(m[1]) : "";
+    if (!n || !input.allowedNumbers?.some((a) => canonNum(a) === n))
+      errors.push("odhad sumy (milióny, miliardy…) nie je odvoditeľný z dát (povolené len s číslom z overeného zistenia)");
   }
   // Počty slovom ("sedem rokov", "dvadsať klientov", "polovica", "desaťročie") — model ich
   // vie zle vypočítať (2026 - 2018 nie je 7) a sú to čísla, ktoré dáta nepodporujú.
