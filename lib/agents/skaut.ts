@@ -6,10 +6,13 @@ import { prisma } from "@/lib/prisma";
 import { QUALIFY_AT } from "@/lib/leads/qualification";
 import { isVerifiedOwnerSource } from "@/lib/leads/owner-source";
 import type { ScoutNote } from "@/lib/leads/research/council";
-import { FIT_MIN, triageLeads, type Triage } from "./triage";
+import { applyVerdicts, assessLeads, type AssessLead, type Verdict } from "./assess";
+import { latestVerdicts } from "./notes";
 
 /** Prioritné odbory (rozhodnutie usera 24. 9. 2026): realitné kancelárie, stavebné firmy, fyzioterapeuti. */
 export const PRIORITY_SEGMENT_RE = /realit|stave?b|fyzio/i;
+/** rovnaké odbory ako regex vyššie, ako podreťazce pre databázový filter */
+export const PRIORITY_KEYWORDS = ["realit", "stavebn", "stavb", "fyzio"];
 
 export interface OpportunityLead {
   id: string;
@@ -85,10 +88,14 @@ export function opportunityScore(l: OpportunityLead): { score: number; reasons: 
   return { score: Math.round(Math.min(100, score)), reasons };
 }
 
-const baseWhere = (): Prisma.LeadWhereInput => ({
+/**
+ * Zásoba pre Noru: nový lead s webom a e-mailom, ktorý sa dá osloviť. Slabý web už NIE je podmienka
+ * (Nora vie navrhnúť ponuku aj pre firmu s dobrým webom: rozbor, konzultácia, reklama). Poradie
+ * určuje skóre príležitosti, takže slabé weby idú prvé.
+ */
+export const poolWhere = (): Prisma.LeadWhereInput => ({
   status: "new",
   websiteUrl: { not: null },
-  websiteScore: { gte: QUALIFY_AT },
   companyEmail: { not: null },
   // Pozor: NOT (company_active = false) by vyradilo aj NULL, preto výslovne OR.
   AND: [{ NOT: { companyEmail: "" } }, { OR: [{ companyActive: null }, { companyActive: true }] }],
@@ -119,12 +126,13 @@ export async function getShortlist(
   // Lead s hotovým alebo bežiacim výskumom sa nevyberá znova; neúspešný sa smie zopakovať,
   // ale najviac 2× (aby sa nepodarený lead nekonečne nepálil).
   const where: Prisma.LeadWhereInput = {
-    ...baseWhere(),
+    ...poolWhere(),
+    ...(opts.anySegment ? {} : { segment: { is: { OR: PRIORITY_KEYWORDS.map((k) => ({ name: { contains: k, mode: "insensitive" as const } })) } } }),
     ...(opts.includeResearched ? {} : { research: { none: { status: { in: ["done", "running"] } } } }),
   };
   const rows = await prisma.lead.findMany({
     where,
-    orderBy: { websiteScore: "desc" },
+    orderBy: { websiteScore: { sort: "desc", nulls: "last" } },
     take: 600,
     select: { ...select, _count: { select: { research: { where: { status: "failed" } } } } },
   });
@@ -140,10 +148,10 @@ export async function getShortlist(
 export async function backlogCount(): Promise<number> {
   return prisma.lead.count({
     where: {
-      ...baseWhere(),
+      ...poolWhere(),
       segment: {
         is: {
-          OR: ["realit", "stavebn", "fyzio"].map((k) => ({ name: { contains: k, mode: "insensitive" as const } })),
+          OR: PRIORITY_KEYWORDS.map((k) => ({ name: { contains: k, mode: "insensitive" as const } })),
         },
       },
     },
@@ -155,43 +163,49 @@ export interface ScoutPick {
   note: ScoutNote;
 }
 
-const BAD_SIZE = new Set(["large", "chain", "institution"]);
-
 /**
- * Výber pre nočný režim: z najlepších kandidátov vyradí (Haiku predfilter) koncerny, inštitúcie
- * a nesprávne zaradené firmy a vráti prvých `count` vhodných aj s poznámkou pre Noru.
- * Vyradené leady dostanú status "rejected" s dôvodom (vidno v zozname leadov).
+ * Výber pre nočný režim: z najlepších kandidátov vyberie prvých `count` vhodných. Kandidáti, ktorých
+ * Miro ešte neposudzoval, sa posúdia teraz (odôvodnene, z dát); nevhodné sa skryjú s dôvodom.
+ * Už posúdené vhodné leady sa neposudzujú znova.
  */
 export async function pickWithTriage(count = 1, look = 6): Promise<{ picks: ScoutPick[]; rejected: { id: string; company: string; reason: string }[] }> {
   const { picks } = await getShortlist(look);
   if (!picks.length) return { picks: [], rejected: [] };
-  const extra = await prisma.lead.findMany({
-    where: { id: { in: picks.map((p) => p.lead.id) } },
-    select: { id: true, aiSummary: true, aiPainPoint: true, aiOpportunity: true, websiteTechnology: true, websiteIssues: true, visualIssues: true, industry: true, ownerName: true },
-  });
-  const byId = new Map(extra.map((e) => [e.id, e]));
-  const verdicts = await triageLeads(
-    picks.map((p) => ({
-      ...p.lead,
-      aiSummary: null, aiPainPoint: null, aiOpportunity: null, websiteTechnology: null, websiteIssues: [], visualIssues: [], industry: null, ownerName: null,
-      ...byId.get(p.lead.id),
-    })),
-  );
+  const ids = picks.map((p) => p.lead.id);
+  const [full, prior] = await Promise.all([
+    prisma.lead.findMany({ where: { id: { in: ids } }, include: { segment: { select: { name: true } } } }),
+    latestVerdicts(ids),
+  ]);
+  const byId = new Map(full.map((l) => [l.id, l]));
+  const verdicts = new Map<string, Verdict>();
+  const toAssess: AssessLead[] = [];
+  for (const p of picks) {
+    const v = prior.get(p.lead.id)?.data as Verdict | undefined;
+    if (v && v.suitable) verdicts.set(p.lead.id, v);
+    else if (byId.get(p.lead.id)) toAssess.push(byId.get(p.lead.id)!);
+  }
+  const fresh = await assessLeads(toAssess, "výber");
+  await applyVerdicts(toAssess, fresh);
+  for (const [id, v] of fresh) verdicts.set(id, v);
+
   const chosen: ScoutPick[] = [];
   const rejected: { id: string; company: string; reason: string }[] = [];
   for (const p of picks) {
-    const t: Triage | undefined = verdicts.get(p.lead.id);
-    const bad = t && (t.fit < FIT_MIN || !t.nicheOk || BAD_SIZE.has(t.size));
-    if (bad && t) {
-      const reason = `Miro: nevhodný cieľ (${t.fit}/10${t.redFlags.length ? ", " + t.redFlags.join(", ") : ""}). ${t.reason}`.slice(0, 300);
-      await prisma.lead.update({ where: { id: p.lead.id }, data: { status: "rejected", disqualifyReason: reason } }).catch(() => {});
-      rejected.push({ id: p.lead.id, company: p.lead.companyName, reason });
+    const v = verdicts.get(p.lead.id);
+    if (v && !v.suitable) {
+      rejected.push({ id: p.lead.id, company: p.lead.companyName, reason: `Miro: ${v.rejectReason ?? v.why}`.slice(0, 300) });
       continue;
     }
     if (chosen.length < count)
       chosen.push({
         opportunity: p,
-        note: { fit: t?.fit ?? null, size: t?.size ?? null, reasons: p.reasons, hint: t?.hint ?? "", verdict: t?.reason ?? "" },
+        note: {
+          fit: v?.fit ?? null,
+          size: v?.size ?? null,
+          reasons: v?.evidence?.length ? v.evidence : p.reasons,
+          hint: v?.headline ?? "",
+          verdict: v?.why ?? "",
+        },
       });
   }
   return { picks: chosen, rejected };

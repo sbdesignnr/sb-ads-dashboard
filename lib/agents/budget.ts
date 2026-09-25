@@ -22,8 +22,13 @@ export function withSpend<T>(ctx: SpendCtx, fn: () => Promise<T>): Promise<T> {
 export const MONTHLY_CAP_EUR = Number(process.env.AGENT_MONTHLY_BUDGET_EUR) || 50;
 /** Autonómne (nočné) behy sa zastavia pri tomto podiele stropu; zvyšok je rezerva. */
 export const SOFT_STOP = 0.9;
-/** Orientačné rozdelenie stropu medzi agentov (súčet = 50 €). */
-export const ALLOCATION: Record<SpendAgent, number> = { nora: 26, skaut: 7, atelier: 13, leads: 4 };
+/**
+ * Ostrý štart agentov (25. 9. 2026): výdavky, denné a týždenné limity sa počítajú od tohto
+ * okamihu. Skoršie záznamy sú testy pri vývoji, v tabuľke ostávajú, ale do stropu sa nerátajú.
+ */
+export const AGENTS_START = new Date(process.env.AGENTS_START?.trim() || "2026-09-25T12:00:00Z");
+/** Orientačné rozdelenie stropu medzi agentov (súčet = 50 €). Nora je hlavný výdavok (30 ponúk týždenne), Miro hľadá a dopĺňa zásobu. */
+export const ALLOCATION: Record<SpendAgent, number> = { nora: 32, skaut: 12, atelier: 3, leads: 3 };
 
 // Cenník Anthropic v USD za 1 M tokenov (vstup, výstup). Neznáme modely sa účtujú ako
 // Sonnet 4.x (3/15), teda skôr nad skutočnou cenou.
@@ -45,6 +50,12 @@ export interface UsageLike {
   output_tokens?: number | null;
   cache_read_input_tokens?: number | null;
   cache_creation_input_tokens?: number | null;
+}
+
+/** Cena, ktorú pokladnica používa pre model (USD za 1 M tokenov). */
+export function listedPrice(model: string): { input: number; output: number } {
+  const p = PRICES.find((x) => x.re.test(model)) ?? PRICES[PRICES.length - 1];
+  return { input: p.input, output: p.output };
 }
 
 export function anthropicEur(model: string, u: UsageLike): number {
@@ -132,7 +143,9 @@ export interface BudgetSnapshot {
 
 const monthStart = () => {
   const d = new Date();
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+  const m = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+  // v prvom mesiaci sa počíta až od ostrého štartu (skoršie výdavky boli testy)
+  return m < AGENTS_START ? AGENTS_START : m;
 };
 
 export async function getBudget(): Promise<BudgetSnapshot> {
@@ -150,8 +163,9 @@ export async function getBudget(): Promise<BudgetSnapshot> {
   };
   try {
     const from = monthStart();
-    const dayStart = new Date();
+    let dayStart = new Date();
     dayStart.setUTCHours(0, 0, 0, 0);
+    if (dayStart < AGENTS_START) dayStart = AGENTS_START;
     const [byAgentKind, today] = await Promise.all([
       prisma.agentSpend.groupBy({
         by: ["agent", "kind"],
@@ -171,10 +185,12 @@ export async function getBudget(): Promise<BudgetSnapshot> {
     }
     out.todayEur = today._sum.eur ?? 0;
     out.pctUsed = out.spentEur / out.capEur;
+    // odhad do konca mesiaca podľa tempa od začiatku počítaného obdobia
     const now = new Date();
-    const day = now.getUTCDate();
-    const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
-    out.projectedEur = day >= 3 ? (out.spentEur / day) * daysInMonth : out.spentEur;
+    const monthEnd = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+    const daysElapsed = (now.getTime() - from.getTime()) / 86_400_000;
+    const windowDays = (monthEnd - from.getTime()) / 86_400_000;
+    out.projectedEur = daysElapsed >= 2 ? (out.spentEur / daysElapsed) * windowDays : out.spentEur;
     return out;
   } catch {
     return empty;

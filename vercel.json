@@ -39,6 +39,14 @@
     {
       "path": "/api/cron/agents-digest",
       "schedule": "40 5 * * *"
+    },
+    {
+      "path": "/api/cron/agents-scout",
+      "schedule": "*/30 16-22 * * *"
+    },
+    {
+      "path": "/api/cron/agents-lab",
+      "schedule": "30 4 * * 1"
     }
   ],
   "functions": {
@@ -58,6 +66,9 @@
       "memory": 2048
     },
     "app/api/cron/agents-night/route.ts": {
+      "memory": 2048
+    },
+    "app/api/cron/agents-scout/route.ts": {
       "memory": 2048
     }
   }

@@ -1,9 +1,11 @@
 // Živý stav agentov — počíta sa z REÁLNYCH dát v databáze, nič sa nehrá.
 // Pridanie ďalšieho agenta: napíš provider (vráti AgentSnapshot) a zaregistruj ho nižšie.
 import { prisma } from "@/lib/prisma";
-import { QUALIFY_AT } from "@/lib/leads/qualification";
-import { getBudget, SOFT_STOP } from "./budget";
+import { AGENTS_START, getBudget, SOFT_STOP } from "./budget";
 import { backlogCount, getShortlist } from "./skaut";
+import { DAILY_RESEARCH_CAP } from "./night";
+import { draftsWaitingWhere, researchReadyWhere } from "./queue";
+import { scoutFunnel } from "./scout";
 import {
   AGENTS,
   type AgentEvent,
@@ -12,6 +14,9 @@ import {
   type AgentStat,
   type AgentStatus,
 } from "./registry";
+
+/** Cieľ: aspoň toľko personalizovaných ponúk týždenne (rozhodnutie usera 24. 9. 2026). */
+export const WEEK_TARGET = 30;
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -26,9 +31,7 @@ async function researchSignals() {
         orderBy: { createdAt: "desc" },
         select: { step: true, lead: { select: { companyName: true } } },
       }),
-      prisma.leadResearch.count({
-        where: { status: "done", appliedAt: null, emailBody: { not: null } },
-      }),
+      prisma.leadResearch.count({ where: researchReadyWhere }),
       prisma.leadResearch.findMany({
         where: { createdAt: { gt: new Date(Date.now() - 3 * 24 * HOUR) } },
         orderBy: { createdAt: "desc" },
@@ -69,7 +72,8 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
     draftedNow,
     draftsWaiting,
     approved,
-    qualified,
+    supply,
+    weekOffers,
     sent24h,
     sentWeek,
     repliesWeek,
@@ -78,20 +82,12 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
     research,
   ] = await Promise.all([
     prisma.leadEmail.count({ where: { createdAt: { gt: since(2 * MIN) } } }),
-    prisma.leadEmail.count({
-      where: {
-        status: "draft",
-        OR: [
-          {
-            emailType: "initial",
-            lead: { status: "new", websiteScore: { gte: QUALIFY_AT } },
-          },
-          { emailType: { not: "initial" } },
-        ],
-      },
-    }),
+    prisma.leadEmail.count({ where: draftsWaitingWhere(now) }),
     prisma.leadEmail.count({ where: { status: "approved" } }),
-    prisma.lead.count({ where: { status: "new", websiteScore: { gte: QUALIFY_AT } } }),
+    getShortlist(1).then((r) => r.candidates).catch(() => 0),
+    prisma.leadResearch
+      .count({ where: { status: "done", createdAt: { gte: new Date(Math.max(now - 7 * 24 * HOUR, AGENTS_START.getTime())) } } })
+      .catch(() => 0),
     prisma.leadEmail.count({ where: { status: "sent", sentAt: { gt: since(24 * HOUR) } } }),
     prisma.leadEmail.count({ where: { status: "sent", sentAt: { gt: since(7 * 24 * HOUR) } } }),
     prisma.leadEmail.count({ where: { repliedAt: { gt: since(7 * 24 * HOUR) } } }),
@@ -139,18 +135,18 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
     status = "waiting";
     headline =
       researchReady > 0
-        ? `${researchReady} ${researchReady === 1 ? "ponuka je hotová" : "ponúk je hotových"} na tvoje posúdenie` +
-          (draftsWaiting > 0 ? `, ${draftsWaiting} konceptov čaká na schválenie.` : ".")
-        : `${draftsWaiting} konceptov čaká na tvoje schválenie.`;
-  } else if (qualified > 0) {
-    headline = `Vo fronte je ${qualified} vhodných leadov, čaká na pokyn.`;
+        ? `${researchReady} ${researchReady === 1 ? "ponuka je hotová" : researchReady < 5 ? "ponuky sú hotové" : "ponúk je hotových"} na tvoje posúdenie` +
+          (draftsWaiting > 0 ? `, ${draftsWaiting} ${draftsWaiting === 1 ? "koncept čaká" : draftsWaiting < 5 ? "koncepty čakajú" : "konceptov čaká"} na schválenie.` : ".")
+        : `${draftsWaiting} ${draftsWaiting === 1 ? "koncept čaká" : draftsWaiting < 5 ? "koncepty čakajú" : "konceptov čaká"} na tvoje schválenie.`;
+  } else if (supply > 0) {
+    headline = `Všetko vybavené. Cez noc spracuje ďalšie firmy (zásoba: ${supply}).`;
   }
 
   const stats: AgentStat[] = [
-    { label: "Ponuky na posúdenie", value: String(researchReady), hint: "výskum s mailom" },
-    { label: "Koncepty na schválenie", value: String(draftsWaiting), hint: "koncepty mailov" },
-    { label: "Vhodné leady", value: String(qualified), hint: "neoslovené" },
-    { label: "Odoslané / 24 h", value: String(sent24h) },
+    { label: "Ponuky na posúdenie", value: String(researchReady), hint: "hotový mail od Nory" },
+    { label: "Koncepty na schválenie", value: String(draftsWaiting), hint: "čakajú na tvoj súhlas" },
+    { label: "Ponuky / 7 dní", value: `${weekOffers}/${WEEK_TARGET}`, hint: "cieľ týždňa" },
+    { label: "Zásoba pre Noru", value: String(supply), hint: `vystačí ~${Math.ceil(supply / DAILY_RESEARCH_CAP)} dní` },
     { label: "Odoslané / 7 dní", value: String(sentWeek) },
     { label: "Odpovede / 7 dní", value: String(repliesWeek) },
   ];
@@ -185,7 +181,8 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
       drafting,
       draftsWaiting,
       approved,
-      qualified,
+      supply,
+      weekOffers,
       sent24h,
       sentWeek,
       repliesWeek,
@@ -204,7 +201,7 @@ async function noraSnapshot(): Promise<AgentSnapshot> {
 async function miroSnapshot(): Promise<AgentSnapshot> {
   const now = Date.now();
   const since = (ms: number) => new Date(now - ms);
-  const [scanRunning, lastFailedScan, analysedNow, analysedWeek, recentScans, shortlist, backlog, budget, noraWeek] =
+  const [scanRunning, lastFailedScan, analysedNow, analysedWeek, recentScans, shortlist, backlog, budget, noraWeek, rejectedWeek, newWeek, funnel] =
     await Promise.all([
       prisma.leadScanJob.findFirst({
         where: { status: "running", createdAt: { gt: since(20 * MIN) } },
@@ -234,15 +231,23 @@ async function miroSnapshot(): Promise<AgentSnapshot> {
       getShortlist(5).catch(() => ({ picks: [], candidates: 0 })),
       backlogCount().catch(() => 0),
       getBudget(),
-      prisma.leadResearch.count({ where: { createdAt: { gt: since(7 * 24 * HOUR) } } }).catch(() => 0),
+      prisma.leadResearch.count({ where: { createdAt: { gt: new Date(Math.max(now - 7 * 24 * HOUR, AGENTS_START.getTime())) } } }).catch(() => 0),
+      prisma.lead
+        .count({ where: { status: "rejected", disqualifyReason: { startsWith: "Miro:" }, updatedAt: { gt: since(7 * 24 * HOUR) } } })
+        .catch(() => 0),
+      prisma.lead.count({ where: { createdAt: { gt: since(7 * 24 * HOUR) } } }).catch(() => 0),
+      scoutFunnel(7),
     ]);
+  const supply = shortlist.candidates;
+  const daysLeft = Math.ceil(supply / DAILY_RESEARCH_CAP);
 
   const scanning = scanRunning ? 1 : 0;
   const analysing = analysedNow > 0 ? 1 : 0;
   const budgetTight = budget.available && budget.pctUsed >= SOFT_STOP;
 
   let status: AgentStatus = "idle";
-  let headline = `Zásoba: ${backlog} vhodných leadov v prioritných odboroch, ${shortlist.candidates} čaká na Noru.`;
+  const focus = funnel.segments.find((x) => x.focus);
+  let headline = `Skenuje sám${focus ? `, teraz ${focus.name}` : ""}. Zásoba pre Noru: ${supply} leadov (~${daysLeft} dní).`;
   if (lastFailedScan && !scanning) {
     status = "error";
     headline = `Posledný sken zlyhal${lastFailedScan.errorMessage ? `: ${lastFailedScan.errorMessage.slice(0, 90)}` : "."}`;
@@ -277,10 +282,10 @@ async function miroSnapshot(): Promise<AgentSnapshot> {
   ];
 
   const stats: AgentStat[] = [
-    { label: "Zásoba vhodných", value: String(backlog), hint: "prioritné odbory" },
-    { label: "Čaká na Noru", value: String(shortlist.candidates) },
-    { label: "Nora / 7 dní", value: String(noraWeek), hint: "spracované ponuky" },
-    { label: "Hodnotených webov / 7 dní", value: String(analysedWeek) },
+    { label: "Zásoba pre Noru", value: String(supply), hint: `vystačí ~${daysLeft} dní` },
+    { label: "Posúdených / 7 dní", value: String(funnel.assessed), hint: `${funnel.suitable} vhodných` },
+    { label: "Skrytých s dôvodom", value: String(Math.max(funnel.rejected, rejectedWeek)), hint: "za 7 dní" },
+    { label: "Skeny / 7 dní", value: String(funnel.scans), hint: `firiem: ${funnel.found}` },
     { label: "Rozpočet spolu", value: `${budget.spentEur.toFixed(1).replace(".", ",")} €`, hint: `z ${budget.capEur} €` },
     { label: "Skaut tento mesiac", value: `${budget.byAgent.skaut.toFixed(2).replace(".", ",")} €` },
   ];
@@ -292,8 +297,11 @@ async function miroSnapshot(): Promise<AgentSnapshot> {
       scanning,
       analysing,
       backlog,
+      supply,
+      daysLeft,
+      rejectedWeek,
+      scansToday: funnel.scansToday,
       picks: shortlist.candidates,
-      tableCount: shortlist.candidates,
       budgetPct: Math.round(budget.pctUsed * 100),
     },
     stats,

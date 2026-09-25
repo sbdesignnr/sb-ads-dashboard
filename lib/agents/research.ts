@@ -7,6 +7,7 @@ import type { MailCraft } from "@/lib/leads/research/mailcraft";
 import type { Council, ScoutNote } from "@/lib/leads/research/council";
 import { isEditedByHand } from "@/lib/leads/draft-state";
 import { getBudget, withSpend } from "@/lib/agents/budget";
+import { writeNote } from "@/lib/agents/notes";
 import { executeMockup, publicMockupUrl, startMockup } from "@/lib/agents/mockup";
 
 /** Beh, ktorý sa neozval dlhšie, sa považuje za spadnutý (funkcia mohla skončiť časovým limitom). */
@@ -188,6 +189,8 @@ async function executeResearchInner(researchId: string, leadId: string, opts: Re
       await prisma.lead
         .update({ where: { id: leadId }, data: { status: "rejected", disqualifyReason: `Nora: ${result.skipReason}`.slice(0, 500) } })
         .catch(() => {});
+      // Miro sa z toho poučí: Nora firmu vyradila, hoci ju on pustil ďalej
+      await writeNote({ agent: "nora", kind: "feedback", leadId, title: `Nora vyradila ${lead.companyName}`, body: result.skipReason.slice(0, 250) });
     }
     await prisma.leadResearch.update({
       where: { id: researchId },
@@ -229,8 +232,9 @@ export async function applyResearchEmail(researchId: string, force: boolean): Pr
   if (!r.emailSubject || !r.emailBody)
     return { ok: false, status: 422, error: "Výskum nemá hotový mail." };
 
+  // Zamietnuté (odložené) staré maily sa ignorujú: lead dostane nový koncept od Nory.
   const existing = await prisma.leadEmail.findFirst({
-    where: { leadId: r.leadId, emailType: "initial" },
+    where: { leadId: r.leadId, emailType: "initial", status: { in: ["draft", "approved", "sent"] } },
     orderBy: { createdAt: "asc" },
   });
   if (existing && existing.status !== "draft")

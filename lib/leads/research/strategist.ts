@@ -23,6 +23,7 @@ import { greetableOwnerName } from "../owner-source";
 import { collectEvidence, type EvidenceItem, type EvidencePack } from "./collect";
 import { PROCESS, REFERENCES, referencesFor, SERVICES, STARTER_OFFERS } from "./catalog";
 import { holdCouncil, type Council, type ScoutNote } from "./council";
+import { lessonsBlock } from "@/lib/agents/notes";
 import { judgeMails, planMail, type MailCraft, type MailVariantNote, type VariantScore } from "./mailcraft";
 import { ANGLES, nicheCard } from "./playbook";
 
@@ -532,7 +533,7 @@ export async function runResearchAgent(input: {
     input.scoutNote
       ? `\nPOZNÁMKA SKAUTA MIRA (jeho odhad z dát, NIE overený fakt o firme): fit ${input.scoutNote.fit ?? "?"}/10, ${input.scoutNote.verdict} Návrh ako osloviť: ${input.scoutNote.hint || "—"}`
       : ""
-  }\n\nKARTA ODBORU (${nicheCard(segmentName).name}; všeobecná znalosť o tom, ako sa v odbore rozhoduje, NIE fakty o firme):\n${nicheCard(segmentName).card}`;
+  }\n\nKARTA ODBORU (${nicheCard(segmentName).name}; všeobecná znalosť o tom, ako sa v odbore rozhoduje, NIE fakty o firme):\n${nicheCard(segmentName).card}${await lessonsBlock("nora").catch(() => "")}`;
 
   // B) analýza + ponuka (jedno volanie s celým balíkom)
   let findings: Finding[] = [];

@@ -94,6 +94,8 @@ const nextConfig: NextConfig = {
     "/api/agents/mockup": ["./node_modules/@sparticuz/chromium/bin/**"],
     "/api/agents/research": ["./node_modules/@sparticuz/chromium/bin/**"],
     "/api/cron/agents-night": ["./node_modules/@sparticuz/chromium/bin/**"],
+    // autopilot Skauta skenuje segmenty (screenshoty webov)
+    "/api/cron/agents-scout": ["./node_modules/@sparticuz/chromium/bin/**"],
   },
   eslint: {
     // Lint is run separately; do not block production builds.

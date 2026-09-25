@@ -2,6 +2,7 @@ import { NextResponse, after, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getShortlist } from "@/lib/agents/skaut";
+import { latestVerdicts } from "@/lib/agents/notes";
 import { executeResearch, startResearch, STALE_MS } from "@/lib/agents/research";
 
 export const runtime = "nodejs";
@@ -68,7 +69,16 @@ export async function GET(req: NextRequest) {
         : Promise.resolve(null),
     ]);
     // Kandidáti = výber Skauta (skóre príležitosti a dôvody), zoradené od najlepšieho.
-    const candidates = (top?.picks ?? []).map((p) => ({ ...p.lead, opportunity: p.score, reasons: p.reasons }));
+    const verdicts = await latestVerdicts((top?.picks ?? []).map((p) => p.lead.id));
+    const candidates = (top?.picks ?? []).map((p) => {
+      const v = verdicts.get(p.lead.id)?.data as { why?: string; headline?: string; evidence?: string[]; fit?: number; suitable?: boolean } | undefined;
+      return {
+        ...p.lead,
+        opportunity: p.score,
+        reasons: p.reasons,
+        verdict: v?.suitable ? { why: v.why ?? "", headline: v.headline ?? "", evidence: v.evidence ?? [], fit: v.fit ?? 0 } : null,
+      };
+    });
     return NextResponse.json({ runs, candidates, candidateTotal: top?.candidates ?? 0, found, pinned });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });

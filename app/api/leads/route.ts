@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { serializeLead } from "@/lib/leads/store";
 import { QUALIFY_AT, BORDERLINE_AT } from "@/lib/leads/qualification";
+import { latestVerdicts } from "@/lib/agents/notes";
 
 export const dynamic = "force-dynamic";
 
@@ -137,10 +138,13 @@ export async function GET(req: NextRequest) {
     ]),
   );
 
+  const verdicts = await latestVerdicts(ids).catch(() => new Map());
   const out = leads.map((l) => {
     const em = emailMap.get(l.id);
+    const v = verdicts.get(l.id)?.data as { suitable?: boolean; fit?: number; headline?: string; why?: string; evidence?: string[] } | undefined;
     return {
       ...serializeLead(l),
+      miro: v ? { suitable: Boolean(v.suitable), fit: v.fit ?? 0, headline: v.headline ?? "", why: v.why ?? "", evidence: v.evidence ?? [] } : null,
       contactedAt: em?.contactedAt ? em.contactedAt.toISOString() : null,
       emailsSent: em?.emailsSent ?? 0,
     };

@@ -1,5 +1,6 @@
 "use client";
 
+import { MiroVerdict } from "@/components/leads/MiroVerdict";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -583,6 +584,7 @@ export function LeadDetail({ id }: { id: string }) {
                   <div className="text-xs text-muted">Vizuálne</div>
                 </div>
               </div>
+              <MiroVerdict leadId={lead.id} />
               {lead.disqualifyReason && (
                 <div className="flex w-full items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
                   <Ban className="mt-0.5 h-3.5 w-3.5 shrink-0" />

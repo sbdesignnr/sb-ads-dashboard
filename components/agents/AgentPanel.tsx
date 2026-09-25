@@ -8,7 +8,7 @@ import { motion } from "framer-motion";
 import { ArrowUpRight, FileSearch, Hammer, MessageCircle, Sparkles, X } from "lucide-react";
 import {
   STATUS_COLOR,
-  STATUS_LABEL,
+  statusLabel,
   departmentById,
   type AgentDef,
   type AgentSnapshot,
@@ -107,25 +107,14 @@ export function AgentPanel({
     (text: string, cta?: Msg["cta"]) => {
       lastLine.current = text;
       setMsgs((m) => [...m.slice(-14), { id: ++idRef.current, from: "agent", text, cta }]);
-      onSay(text);
+      // do scény ide len prvý riadok (zoznamy s odrážkami sa v bubline nečítajú)
+      onSay(text.split("\n")[0]);
     },
     [onSay],
   );
   const ask = useCallback((q: string) => {
     setMsgs((m) => [...m.slice(-14), { id: ++idRef.current, from: "me", text: q }]);
   }, []);
-
-  const pick = useCallback(
-    (pool: ((c: typeof counters) => string)[]) => {
-      let line = "";
-      for (let i = 0; i < 6; i++) {
-        line = pool[Math.floor(Math.random() * pool.length)](counters);
-        if (line !== lastLine.current) break;
-      }
-      return line;
-    },
-    [counters],
-  );
 
   // pozdrav pri otvorení (a pri zmene agenta)
   useEffect(() => {
@@ -142,40 +131,48 @@ export function AgentPanel({
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [msgs]);
 
+  const showOffers = async () => {
+    ask("Ukáž hotové ponuky");
+    try {
+      const r = await fetch("/api/agents/research", { cache: "no-store" });
+      const j = (await r.json()) as { runs?: { status: string; appliedAt: string | null; emailSubject: string | null; offerName: string | null; lead: { companyName: string; companyCity: string | null } }[] };
+      const ready = (j.runs ?? []).filter((x) => x.status === "done" && !x.appliedAt && x.emailSubject);
+      if (!ready.length) return setTimeout(() => say("Zatiaľ nemám žiadnu hotovú ponuku na posúdenie. Cez noc pripravím ďalšie a ráno ti to napíšem na Telegram."), 300);
+      const lines = ready.slice(0, 6).map((x) => `• ${x.lead.companyName}${x.lead.companyCity ? ` (${x.lead.companyCity})` : ""}: ${x.offerName ?? "ponuka"}`);
+      setTimeout(() => say(`Hotové ponuky na posúdenie (${ready.length}):\n${lines.join("\n")}`, { action: "workbench", label: "Otvoriť pracovňu" }), 300);
+    } catch {
+      setTimeout(() => say("Zoznam sa nepodarilo načítať. Skús otvoriť pracovňu."), 300);
+    }
+  };
+  const showPicks = async () => {
+    ask("Koho si vybral?");
+    try {
+      const r = await fetch("/api/agents/skaut", { cache: "no-store" });
+      const j = (await r.json()) as { candidates?: number; picks?: { lead: { companyName: string; companyCity: string | null }; score: number; reasons: string[] }[] };
+      const picks = j.picks ?? [];
+      if (!picks.length) return setTimeout(() => say("Zásoba je prázdna. Ráno idem hľadať nové firmy."), 300);
+      const lines = picks.slice(0, 5).map((p) => `• ${p.lead.companyName}${p.lead.companyCity ? ` (${p.lead.companyCity})` : ""}: skóre ${p.score}${p.reasons.length ? `, ${p.reasons.slice(0, 2).join(", ")}` : ""}`);
+      setTimeout(() => say(`Najlepší z ${j.candidates ?? picks.length} leadov v zásobe:\n${lines.join("\n")}\nNora ich spracuje cez noc, jednu firmu po druhej.`, { action: "workbench", label: "Otvoriť pracovňu Nory" }), 300);
+    } catch {
+      setTimeout(() => say("Výber sa nepodarilo načítať."), 300);
+    }
+  };
+  const chip = (label: string, run: () => void) => ({ label, run });
   const qs = [
-    {
-      label: "Čo práve robíš?",
-      run: () => {
-        ask("Čo práve robíš?");
-        setTimeout(() => say(agent.answers.status(status, counters)), 420);
-      },
-    },
-    {
-      label: "Čo potrebuješ odo mňa?",
-      run: () => {
-        ask("Čo potrebuješ odo mňa?");
-        const n = agent.answers.needs(status, counters);
-        setTimeout(
-          () =>
-            say(
-              n.text,
-              n.cta && (n.href || n.action) ? { href: n.href, action: n.action, label: n.cta } : undefined,
-            ),
-          420,
-        );
-      },
-    },
-    {
-      label: "Ako pracuješ?",
-      run: () => {
-        ask("Ako pracuješ?");
-        setTimeout(() => say(agent.answers.method), 420);
-      },
-    },
-    {
-      label: "Povedz niečo",
-      run: () => say(pick(agent.lines[status])),
-    },
+    chip("Čo mám dnes urobiť?", () => {
+      ask("Čo mám dnes urobiť?");
+      const t = agent.answers.today(status, counters);
+      setTimeout(() => say(t.text, t.cta && (t.href || t.action) ? { href: t.href, action: t.action, label: t.cta } : undefined), 380);
+    }),
+    agent.id === "nora" ? chip("Ukáž hotové ponuky", showOffers) : chip("Koho si vybral?", showPicks),
+    chip("Čo práve robíš?", () => {
+      ask("Čo práve robíš?");
+      setTimeout(() => say(agent.answers.status(status, counters)), 380);
+    }),
+    chip("Ako pracuješ?", () => {
+      ask("Ako pracuješ?");
+      setTimeout(() => say(agent.answers.method), 380);
+    }),
   ];
 
   const color = STATUS_COLOR[status];
@@ -199,7 +196,7 @@ export function AgentPanel({
               style={{ background: `${color}22`, color }}
             >
               <span className={cn("h-1.5 w-1.5 rounded-full", status !== "idle" && "animate-pulse")} style={{ background: color }} />
-              {STATUS_LABEL[status]}
+              {statusLabel(agent, status)}
             </span>
           </div>
           <p className="text-xs text-muted">{agent.role}</p>
@@ -234,12 +231,12 @@ export function AgentPanel({
         )}
 
         {/* dialóg */}
-        <div ref={logRef} className="mb-2 max-h-56 space-y-2 overflow-y-auto pr-1">
+        <div ref={logRef} className="mb-2 max-h-80 space-y-2 overflow-y-auto pr-1">
           {msgs.map((m, i) => (
             <div key={m.id} className={cn("flex", m.from === "me" ? "justify-end" : "justify-start")}>
               <div
                 className={cn(
-                  "max-w-[88%] rounded-2xl px-3 py-2 text-[13px] leading-snug",
+                  "max-w-[92%] whitespace-pre-line rounded-2xl px-3 py-2 text-[13px] leading-snug",
                   m.from === "me"
                     ? "rounded-br-md bg-primary/85 text-white"
                     : "rounded-bl-md border border-white/8 bg-white/[0.06] text-foreground",
@@ -268,6 +265,7 @@ export function AgentPanel({
             </div>
           ))}
         </div>
+        <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted">Opýtaj sa</p>
         <div className="mb-4 flex flex-wrap gap-1.5">
           {qs.map((q) => (
             <button

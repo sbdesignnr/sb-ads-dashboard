@@ -13,7 +13,7 @@ import {
   DEPARTMENTS,
   PLOTS,
   STATUS_COLOR,
-  STATUS_LABEL,
+  statusLabel,
   agentById,
   departmentById,
   plotById,
@@ -46,7 +46,7 @@ import { depthSort, footprint, iso, type Bounds } from "./iso";
 import { AgentPanel, PlotPanel } from "./AgentPanel";
 import { Workbench } from "./Workbench";
 import { BudgetChip } from "./BudgetChip";
-import { MorningChip } from "./MorningChip";
+import { GuideChip } from "./GuideChip";
 import { useAgentStatus } from "./useAgentStatus";
 
 // ── čas dňa ────────────────────────────────────────────────────────────────
@@ -775,8 +775,8 @@ export function AgentWorld() {
       list.push({ key: `desk-${agent.id}`, b: { x0: l.desk.gx, x1: l.desk.gx + 0.9, y0: l.desk.gy, y1: l.desk.gy + 0.5 }, node: <Workstation gx={l.desk.gx} gy={l.desk.gy} working={st === "working"} /> });
       if (st === "working")
         list.push({ key: `holo-${agent.id}`, b: { x0: l.desk.gx, x1: l.desk.gx + 0.9, y0: l.desk.gy + 0.6, y1: l.desk.gy + 0.7 }, node: <HoloChips gx={l.desk.gx} gy={l.desk.gy} step={snap?.detail} chips={agent.chips} /> });
-      list.push({ key: `table-${agent.id}`, b: { x0: l.table.gx, x1: l.table.gx + 0.6, y0: l.table.gy, y1: l.table.gy + 0.6 }, node: <ApprovalTable gx={l.table.gx} gy={l.table.gy} count={snap?.counters.tableCount ?? snap?.counters.draftsWaiting ?? 0} waiting={st === "waiting"} /> });
-      list.push({ key: `mail-${agent.id}`, b: pointBox(l.mailbox.gx, l.mailbox.gy, 0.15), node: <Mailbox gx={l.mailbox.gx} gy={l.mailbox.gy} raised={st === "waiting" || (snap?.counters.draftsWaiting ?? 0) > 0} /> });
+      list.push({ key: `table-${agent.id}`, b: { x0: l.table.gx, x1: l.table.gx + 0.6, y0: l.table.gy, y1: l.table.gy + 0.6 }, node: <ApprovalTable gx={l.table.gx} gy={l.table.gy} count={(snap?.counters.researchReady ?? 0) + (snap?.counters.draftsWaiting ?? 0)} waiting={st === "waiting"} /> });
+      list.push({ key: `mail-${agent.id}`, b: pointBox(l.mailbox.gx, l.mailbox.gy, 0.15), node: <Mailbox gx={l.mailbox.gx} gy={l.mailbox.gy} raised={st === "waiting" || (snap?.counters.draftsWaiting ?? 0) + (snap?.counters.researchReady ?? 0) > 0} /> });
       list.push({ key: `lamp-${agent.id}`, b: pointBox(l.nodes.table[0] + 0.55, l.front + 0.32, 0.1), node: <Lamp gx={l.nodes.table[0] + 0.55} gy={l.front + 0.32} /> });
     });
 
@@ -973,9 +973,9 @@ export function AgentWorld() {
                 <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-white/15 bg-[#0d1524]/85 px-2.5 py-1 text-[11.5px] font-semibold text-foreground shadow-lg shadow-black/30 backdrop-blur-md">
                   <span className={cn("h-2 w-2 rounded-full", st !== "idle" && "animate-pulse")} style={{ background: col, boxShadow: `0 0 8px ${col}` }} />
                   {a.name}
-                  <span className="font-normal text-muted">{snapshots ? STATUS_LABEL[st] : "Načítavam…"}</span>
-                  {st === "waiting" && (snapshots?.[a.id]?.counters.draftsWaiting ?? 0) > 0 && (
-                    <span className="rounded-full bg-amber-400 px-1.5 text-[10px] font-bold text-black">{snapshots?.[a.id]?.counters.draftsWaiting}</span>
+                  <span className="font-normal text-muted">{snapshots ? statusLabel(a, st) : "Načítavam…"}</span>
+                  {st === "waiting" && (snapshots?.[a.id]?.counters.draftsWaiting ?? 0) + (snapshots?.[a.id]?.counters.researchReady ?? 0) > 0 && (
+                    <span className="rounded-full bg-amber-400 px-1.5 text-[10px] font-bold text-black">{(snapshots?.[a.id]?.counters.draftsWaiting ?? 0) + (snapshots?.[a.id]?.counters.researchReady ?? 0)}</span>
                   )}
                 </div>
               </div>
@@ -1003,12 +1003,12 @@ export function AgentWorld() {
               <span key={s} className="flex items-center gap-1.5 text-muted">
                 <span className="h-2 w-2 rounded-full" style={{ background: STATUS_COLOR[s] }} />
                 <span className="font-semibold text-foreground tabular-nums">{counts[s]}</span>
-                {s === "working" ? "pracuje" : s === "waiting" ? "čaká" : s === "idle" ? "nečinný" : "chyba"}
+                {s === "working" ? "pracuje" : s === "waiting" ? "čaká na teba" : s === "idle" ? "má voľno" : "chyba"}
               </span>
             ))}
         </div>
         {error && <div className="pointer-events-auto rounded-lg bg-red-500/20 px-2.5 py-1.5 text-[11px] text-red-300">Stav sa nepodarilo načítať ({error})</div>}
-        <MorningChip />
+        <GuideChip />
         {budget && <BudgetChip budget={budget} />}
         <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
           {AGENTS.map((a) => {

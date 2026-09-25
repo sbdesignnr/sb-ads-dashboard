@@ -493,10 +493,10 @@ export async function scanDaily(
   newLeads: number;
   skipped: boolean;
 }> {
-  const target = opts.targetNew ?? 60;
+  const target = opts.targetNew ?? 120;
   // Each run fully analyzes every discovered site, so keep the daily footprint
   // small enough to finish within the cron time budget.
-  const perRun = opts.segmentsPerRun ?? 2;
+  const perRun = opts.segmentsPerRun ?? 3;
 
   // Zásoba = čerstvé VHODNÉ leady s e-mailom v prioritných odboroch, ktoré ešte neboli
   // oslovené. (Predtým sa počítali všetky "nové" leady vrátane ~1 900 neanalyzovaných

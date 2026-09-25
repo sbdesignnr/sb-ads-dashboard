@@ -769,10 +769,22 @@ export default function LeadsPage() {
                     </p>
                   </div>
 
-                  {l.aiPainPoint && (
-                    <p className="line-clamp-2 rounded-lg bg-surface-2/60 px-2.5 py-2 text-xs leading-relaxed text-muted">
-                      {l.aiPainPoint}
-                    </p>
+                  {l.miro ? (
+                    <div className="rounded-lg border border-sky-400/25 bg-sky-400/[0.06] px-2.5 py-2 text-xs leading-relaxed text-foreground/90">
+                      <p className="line-clamp-2">
+                        <b className="text-sky-500">Miro ({l.miro.fit}/10): </b>
+                        {l.miro.headline || l.miro.why}
+                      </p>
+                      {l.miro.evidence.length > 0 && <p className="mt-1 line-clamp-2 text-[11px] text-muted">Dôkazy: {l.miro.evidence.slice(0, 3).join(" · ")}</p>}
+                    </div>
+                  ) : l.status === "rejected" && l.disqualifyReason ? (
+                    <p className="line-clamp-2 rounded-lg bg-surface-2/60 px-2.5 py-2 text-xs leading-relaxed text-muted">{l.disqualifyReason}</p>
+                  ) : (
+                    l.aiPainPoint && (
+                      <p className="line-clamp-2 rounded-lg bg-surface-2/60 px-2.5 py-2 text-xs leading-relaxed text-muted">
+                        {l.aiPainPoint}
+                      </p>
+                    )
                   )}
 
                   <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">

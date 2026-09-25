@@ -2,7 +2,7 @@
 // Nič sa neodosiela — výsledok čaká v pracovni na posúdenie. Chránia ho tri poistky:
 // mesačný rozpočet (fail-closed), denný limit počtu ponúk a vypínač AGENT_NIGHT_DISABLED=1.
 import { prisma } from "@/lib/prisma";
-import { canRunAutonomously } from "./budget";
+import { AGENTS_START, canRunAutonomously } from "./budget";
 import { executeResearch, startResearch } from "./research";
 import { pickWithTriage } from "./skaut";
 
@@ -31,7 +31,7 @@ export async function runNightQueue(deadlineAt: number, maxRuns = 2): Promise<Ni
       out.skipped ??= "Nezostáva dosť času na ďalší beh.";
       break;
     }
-    const since = new Date(Date.now() - 24 * 3_600_000);
+    const since = new Date(Math.max(Date.now() - 24 * 3_600_000, AGENTS_START.getTime()));
     const today = await prisma.leadResearch.count({ where: { createdAt: { gte: since } } });
     if (today >= DAILY_RESEARCH_CAP) {
       out.skipped ??= `Denný limit ${DAILY_RESEARCH_CAP} ponúk je vyčerpaný.`;

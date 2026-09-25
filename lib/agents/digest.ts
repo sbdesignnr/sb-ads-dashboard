@@ -2,7 +2,13 @@
 // (výskumy, návrhy, maily, pokladnica), nič sa nevymýšľa. Posiela sa na Telegram a zobrazuje v
 // /agenti; nič sa neodosiela zákazníkom.
 import { prisma } from "@/lib/prisma";
-import { getBudget } from "@/lib/agents/budget";
+import { AGENTS_START, getBudget } from "@/lib/agents/budget";
+import { DAILY_RESEARCH_CAP } from "@/lib/agents/night";
+import { draftsWaitingWhere, researchReadyWhere } from "@/lib/agents/queue";
+import { PRIORITY_KEYWORDS, poolWhere, getShortlist } from "@/lib/agents/skaut";
+import { WEEK_TARGET } from "@/lib/agents/status";
+import { listNotes, notesAvailable } from "@/lib/agents/notes";
+import { scoutFunnel, type Funnel } from "@/lib/agents/scout";
 import { publicMockupUrl } from "@/lib/agents/mockup";
 import { getNotificationSettings } from "@/lib/notifications/settings";
 import { escapeHtml, sendTelegram, telegramConfigured } from "@/lib/notifications/telegram";
@@ -31,6 +37,12 @@ export interface DigestTodo {
   detail?: string;
 }
 
+export interface HealthItem {
+  level: "error" | "warn" | "info";
+  text: string;
+  href?: string;
+}
+
 export interface Digest {
   at: string;
   sinceHours: number;
@@ -43,15 +55,29 @@ export interface Digest {
   opens: number;
   clicks: number;
   spentSinceEur: number;
-  budget: { spentEur: number; capEur: number; pctUsed: number; todayEur: number; available: boolean };
+  budget: { spentEur: number; capEur: number; pctUsed: number; todayEur: number; available: boolean; projectedEur: number };
   todo: DigestTodo[];
+  /** týždenný cieľ a doterajší postup */
+  week: { offers: number; target: number; sent: number; opened: number; replied: number };
+  /** zásoba leadov pre Noru */
+  supply: { ready: number; daysLeft: number; perNight: number };
+  /** čo v systéme nefunguje alebo môže zablokovať odosielanie */
+  health: HealthItem[];
+  nightOn: boolean;
+  /** autopilot Skauta: lievik hľadania, posúdenia a postup po segmentoch */
+  autopilot: Funnel;
+  /** týždenné hodnotenie: súhrn a naučené lekcie */
+  learned: { summary: string | null; lessons: string[]; at: string | null };
+  /** novinky z AI (zmena cenníka, nový model) z poslednej týždennej kontroly */
+  news: { title: string; body: string; at: string } | null;
 }
 
 const baseUrl = () => (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || "https://ads.sbdesign.sk").replace(/\/$/, "");
 
 export async function buildDigest(sinceHours = 16): Promise<Digest> {
   const since = new Date(Date.now() - sinceHours * 3_600_000);
-  const [research, mockups, viewed, rejected, mails, pendingOffers, drafts, budget, spend] = await Promise.all([
+  const weekFrom = new Date(Math.max(Date.now() - 7 * 24 * 3_600_000, AGENTS_START.getTime()));
+  const [research, mockups, viewed, rejected, mails, pendingOffers, drafts, budget, spend, weekOffers, weekMails, shortlist, health, autopilot, lessonNotes, newsNotes] = await Promise.all([
     prisma.leadResearch.findMany({
       where: { createdAt: { gte: since } },
       orderBy: { createdAt: "desc" },
@@ -78,10 +104,20 @@ export async function buildDigest(sinceHours = 16): Promise<Digest> {
       select: { subject: true, repliedAt: true, openedAt: true, clickedAt: true, lead: { select: { companyName: true } } },
       take: 60,
     }),
-    prisma.leadResearch.count({ where: { status: "done", appliedAt: null, emailBody: { not: null } } }),
-    prisma.leadEmail.count({ where: { status: "draft" } }),
+    prisma.leadResearch.count({ where: researchReadyWhere }),
+    prisma.leadEmail.count({ where: draftsWaitingWhere() }),
     getBudget(),
-    prisma.agentSpend.aggregate({ where: { createdAt: { gte: since } }, _sum: { eur: true } }).catch(() => ({ _sum: { eur: 0 } })),
+    prisma.agentSpend.aggregate({ where: { createdAt: { gte: new Date(Math.max(since.getTime(), AGENTS_START.getTime())) } }, _sum: { eur: true } }).catch(() => ({ _sum: { eur: 0 } })),
+    prisma.leadResearch.count({ where: { status: "done", createdAt: { gte: weekFrom } } }).catch(() => 0),
+    prisma.leadEmail.findMany({
+      where: { OR: [{ sentAt: { gte: weekFrom } }, { openedAt: { gte: weekFrom } }, { repliedAt: { gte: weekFrom } }] },
+      select: { sentAt: true, openedAt: true, repliedAt: true },
+    }),
+    getShortlist(1).catch(() => ({ picks: [], candidates: 0 })),
+    healthChecks(),
+    scoutFunnel(7),
+    listNotes({ kind: "lesson", since: new Date(Date.now() - 14 * 86_400_000) }, 12),
+    listNotes({ kind: "news", since: new Date(Date.now() - 14 * 86_400_000) }, 3),
   ]);
 
   const mockupByResearch = new Map(mockups.filter((m) => m.researchId).map((m) => [m.researchId as string, m]));
@@ -127,9 +163,80 @@ export async function buildDigest(sinceHours = 16): Promise<Digest> {
     opens: mails.filter((m) => m.openedAt && m.openedAt >= since).length,
     clicks: mails.filter((m) => m.clickedAt && m.clickedAt >= since).length,
     spentSinceEur: Math.round((spend._sum.eur ?? 0) * 100) / 100,
-    budget: { spentEur: budget.spentEur, capEur: budget.capEur, pctUsed: budget.pctUsed, todayEur: budget.todayEur, available: budget.available },
+    budget: { spentEur: budget.spentEur, capEur: budget.capEur, pctUsed: budget.pctUsed, todayEur: budget.todayEur, available: budget.available, projectedEur: budget.projectedEur },
     todo,
+    week: {
+      offers: weekOffers,
+      target: WEEK_TARGET,
+      sent: weekMails.filter((m) => m.sentAt && m.sentAt >= weekFrom).length,
+      opened: weekMails.filter((m) => m.openedAt && m.openedAt >= weekFrom).length,
+      replied: weekMails.filter((m) => m.repliedAt && m.repliedAt >= weekFrom).length,
+    },
+    supply: { ready: shortlist.candidates, daysLeft: Math.ceil(shortlist.candidates / DAILY_RESEARCH_CAP), perNight: DAILY_RESEARCH_CAP },
+    health: [
+      ...health,
+      ...(shortlist.candidates < 15
+        ? [{ level: "warn" as const, text: `Zásoba pre Noru je nízka: ${shortlist.candidates} leadov, vystačí približne ${Math.ceil(shortlist.candidates / DAILY_RESEARCH_CAP)} dní. Doplní ju ranný sken; pomôže aj analýza firiem v Leadoch.`, href: `${baseUrl()}/leads` }]
+        : []),
+      ...(budget.available && budget.pctUsed >= 0.9
+        ? [{ level: "warn" as const, text: `Rozpočet je vyčerpaný na ${Math.round(budget.pctUsed * 100)} %, nočné behy sa zastavia.` }]
+        : []),
+    ],
+    nightOn: process.env.AGENT_NIGHT_DISABLED !== "1",
+    autopilot,
+    learned: {
+      summary: lessonNotes.find((n) => (n.data as { summary?: boolean } | null)?.summary)?.body ?? null,
+      lessons: lessonNotes.filter((n) => !(n.data as { summary?: boolean } | null)?.summary).slice(0, 4).map((n) => n.body ?? "").filter(Boolean),
+      at: lessonNotes[0]?.createdAt.toISOString() ?? null,
+    },
+    news: newsNotes.find((n) => n.body) ? { title: newsNotes.find((n) => n.body)!.title ?? "", body: newsNotes.find((n) => n.body)!.body ?? "", at: newsNotes.find((n) => n.body)!.createdAt.toISOString() } : null,
   };
+}
+
+/** Kontroly, ktoré odhalia, prečo by mail neodišiel alebo agent nepracoval. */
+async function healthChecks(): Promise<HealthItem[]> {
+  const out: HealthItem[] = [];
+  if (!process.env.ANTHROPIC_API_KEY) out.push({ level: "error", text: "Chýba ANTHROPIC_API_KEY: agenti nemôžu písať." });
+  try {
+    const campaigns = await prisma.leadCampaign.findMany({ where: { isActive: true }, select: { segmentId: true } });
+    if (!campaigns.length) {
+      out.push({ level: "error", text: "Žiadna kampaň nie je aktívna: schválené maily by neodišli.", href: `${baseUrl()}/leads/kampane` });
+    } else if (!campaigns.some((c) => !c.segmentId)) {
+      const active = new Set(campaigns.map((c) => c.segmentId));
+      const [pool, mails] = await Promise.all([
+        prisma.lead.groupBy({
+          by: ["segmentId"],
+          where: { ...poolWhere(), segment: { is: { OR: PRIORITY_KEYWORDS.map((k) => ({ name: { contains: k, mode: "insensitive" as const } })) } } },
+          _count: { _all: true },
+        }),
+        prisma.leadEmail.findMany({ where: { status: { in: ["draft", "approved"] } }, select: { lead: { select: { segmentId: true } } }, take: 800 }),
+      ]);
+      const need = new Map<string, number>();
+      for (const g of pool) if (g.segmentId && !active.has(g.segmentId)) need.set(g.segmentId, (need.get(g.segmentId) ?? 0) + g._count._all);
+      for (const m of mails) if (m.lead.segmentId && !active.has(m.lead.segmentId)) need.set(m.lead.segmentId, (need.get(m.lead.segmentId) ?? 0) + 1);
+      if (need.size) {
+        const names = await prisma.leadSegment.findMany({ where: { id: { in: [...need.keys()] } }, select: { id: true, name: true } });
+        const list = names.map((seg) => `${seg.name} (${need.get(seg.id)})`).join(", ");
+        out.push({
+          level: "warn",
+          text: `Tieto odbory nemajú aktívnu kampaň, schválený mail z nich by neodišiel: ${list}. Vytvor pre ne kampaň v Kampaniach.`,
+          href: `${baseUrl()}/leads/kampane`,
+        });
+      }
+    }
+  } catch {
+    /* kontrola je doplnok */
+  }
+  try {
+    const settings = await getNotificationSettings();
+    if (!telegramConfigured() || !settings.enabled || !settings.telegramChatId)
+      out.push({ level: "warn", text: "Telegram nie je nastavený: ranný prehľad ti neprijde na mobil.", href: `${baseUrl()}/settings` });
+  } catch {
+    /* ignoruj */
+  }
+  if (!(await notesAvailable())) out.push({ level: "error", text: "Chýba tabuľka agent_notes: autopilot Skauta nebeží a odôvodnenia sa neukladajú. Spusti SQL z postupu." });
+  if (process.env.AGENT_NIGHT_DISABLED === "1") out.push({ level: "info", text: "Nočný režim je vypnutý (AGENT_NIGHT_DISABLED=1): agenti cez noc nepracujú." });
+  return out;
 }
 
 const eur = (v: number) => `${v.toFixed(2).replace(".", ",")} €`;
@@ -152,9 +259,19 @@ export function digestTelegram(d: Digest): string {
   if (d.replies.length) lines.push(`• Odpovedali: ${d.replies.slice(0, 4).map((r) => escapeHtml(r.company)).join(", ")}`);
   if (d.opens || d.clicks) lines.push(`• Maily: ${d.opens} otvorení, ${d.clicks} klikov`);
   lines.push(`• Minuté: ${eur(d.spentSinceEur)}${d.budget.available ? `, mesiac ${eur(d.budget.spentEur)} z ${d.budget.capEur} €` : ""}`);
+  lines.push(`• Týždeň: ${d.week.offers} z ${d.week.target} ponúk, odoslaných ${d.week.sent}, otvorení ${d.week.opened}, odpovedí ${d.week.replied}`);
+  lines.push(`• Zásoba pre Noru: ${d.supply.ready} leadov (~${d.supply.daysLeft} dní)`);
+  if (d.autopilot.available)
+    lines.push(`• Miro za 7 dní: ${d.autopilot.scans} skenov, ${d.autopilot.found} firiem, ${d.autopilot.suitable} vhodných, ${d.autopilot.rejected} skrytých s dôvodom`);
+  if (d.news) lines.push(`• Novinky z AI: ${escapeHtml(d.news.body.slice(0, 200))}`);
   lines.push("", "<b>Čo musíš ty</b>");
   if (!d.todo.length) lines.push("• Nič, všetko je vybavené.");
   d.todo.forEach((t, i) => lines.push(`${i + 1}. <a href="${escapeHtml(t.href)}">${escapeHtml(t.label)}</a> (${t.count})${t.detail ? ` · ${escapeHtml(t.detail)}` : ""}`));
+  const warns = d.health.filter((h) => h.level !== "info");
+  if (warns.length) {
+    lines.push("", "<b>Pozor</b>");
+    for (const h of warns.slice(0, 4)) lines.push(`⚠ ${h.href ? `<a href="${escapeHtml(h.href)}">${escapeHtml(h.text)}</a>` : escapeHtml(h.text)}`);
+  }
   return lines.join("\n");
 }
 

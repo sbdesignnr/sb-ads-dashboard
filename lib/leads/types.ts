@@ -36,6 +36,8 @@ export interface LeadDTO {
   disqualifyReason: string | null;
   aiSummary: string | null;
   aiPainPoint: string | null;
+  /** odôvodnenie Skauta (Miro): prečo je lead vhodný / nevhodný (len pri leadoch, ktoré posúdil) */
+  miro?: { suitable: boolean; fit: number; headline: string; why: string; evidence: string[] } | null;
   aiOpportunity: string | null;
   aiOutreachAngle: string | null;
   bestContactTime: string | null;

@@ -82,6 +82,8 @@ export interface AgentLinkDef {
 export interface AgentDef {
   id: string;
   name: string;
+  /** rod agenta: riadi tvary slov ("nečinná" / "nečinný") */
+  gender: "f" | "m";
   role: string;
   department: string;
   /** krátky slogan pod menom */
@@ -115,6 +117,8 @@ export interface AgentDef {
   answers: {
     status: (s: AgentStatus, c: Counters) => string;
     needs: (s: AgentStatus, c: Counters) => { text: string; href?: string; cta?: string; action?: "workbench" };
+    /** konkrétny postup pre človeka: čo má dnes urobiť (číslované kroky) */
+    today: (s: AgentStatus, c: Counters) => { text: string; href?: string; cta?: string; action?: "workbench" };
     method: string;
   };
 }
@@ -199,18 +203,19 @@ export const AGENTS: AgentDef[] = [
   {
     id: "nora",
     name: "Nora",
+    gender: "f",
     role: "Stratég ponúk a oslovenia",
     department: "predaj",
-    tagline: "Zistí o firme všetko overiteľné a navrhne ponuku, ktorá sa neodmieta.",
-    bio: "Nora pripraví ponuku šitú na mieru pre jeden konkrétny lead. V pracovni jej zadáš firmu a do pár minút ti položí na stôl: overené zistenia o firme (každé s citátom zo zdroja), navrhnutú ponuku, HOTOVÝ návrh ich novej domovskej stránky (z ich vlastných textov a fotiek, s verejným odkazom) a koncept mailu, ktorý ten návrh ukazuje. Prečíta ich web, Google profil a recenzie a porovná ich s konkurenciou v meste. Nič neodíde bez tvojho schválenia. Popri tom stráži rad konceptov mailov, ktoré čakajú na tvoje schválenie.",
+    tagline: "Zistí o firme všetko overiteľné a napíše mail, ktorý sa neodmieta.",
+    bio: "Nora pripraví ponuku a mail šitý na mieru pre jeden konkrétny lead. Prečíta jeho web, Google profil a recenzie, porovná ho s konkurenciou v meste a z overených zistení (každé s citátom zo zdroja) napíše tri varianty mailu. Simulovaný majiteľ firmy vyberie ten, ktorý by ho najskôr presvedčil. Pri najlepších leadoch sa najprv poradí s Mirom. Cez noc spracuje najviac 5 firiem a ráno nájdeš výsledky v jej pracovni. Nič neodíde bez tvojho schválenia. Návrhy stránok nerobí: tie ukážeš sám na konzultácii.",
     skills: [
       "Analýza webov",
       "Google profil a recenzie",
       "Konkurencia v meste",
       "Overené citáty",
+      "Psychológia predaja",
+      "Tri varianty mailu",
       "Ponuky na mieru",
-      "Návrhy domovských stránok",
-      "Koncepty mailov",
     ],
     look: {
       skin: "#f1c4a0",
@@ -228,7 +233,7 @@ export const AGENTS: AgentDef[] = [
     chips: [
       { text: "Google recenzie", color: "#fbbf24" },
       { text: "Citát overený ✓", color: "#4ade80" },
-      { text: "Návrh stránky", color: "#60a5fa" },
+      { text: "Tri varianty mailu", color: "#60a5fa" },
     ],
     links: [
       { label: "Fronta na schválenie", href: "/leads/kampane" },
@@ -242,112 +247,116 @@ export const AGENTS: AgentDef[] = [
             : n(c, "scanning")
               ? "Skenujem nový segment. Každý web si pozriem aj očami zákazníka."
               : "Prechádzam weby a Google profily. Zatiaľ nič, čo by som nevedela doložiť.",
-        () => "Porovnávam firmu s konkurenciou v meste. Čísla nikdy neodhadujem.",
         () => "Každé tvrdenie overujem citátom zo zdroja. Čo nevieme doložiť, netvrdíme.",
-        () => "Skladám ponuku šitú na mieru. Šablóny nechávam bokom.",
+        () => "Píšem tri varianty mailu z rôznych uhlov. Potom ich prečíta simulovaný majiteľ a vyberie ten, ktorý by ho presvedčil.",
         () => "V recenziách ľudia píšu zaujímavé veci. Práve v nich sa skrýva dobrý úvod mailu.",
-        (c) =>
-          n(c, "drafting")
-            ? "Píšem koncepty mailov. Trikrát prečítam, nech neznejú ako robot."
-            : "Ešte chvíľu a mám ďalšie zistenia.",
+        () => "Radím sa s Mirom, ako tohto majiteľa osloviť.",
       ],
       waiting: [
         (c) =>
           n(c, "researchReady")
-            ? `Mám hotových ${n(c, "researchReady")} ${sk(n(c, "researchReady"), "ponuku", "ponuky", "ponúk")} s dôkazmi. Pozri ich v pracovni.`
-            : `Mám pripravených ${n(c, "draftsWaiting")} ${sk(n(c, "draftsWaiting"), "koncept", "koncepty", "konceptov")}. Bez tvojho súhlasu nič neodíde.`,
+            ? `Mám hotových ${n(c, "researchReady")} ${sk(n(c, "researchReady"), "ponuku", "ponuky", "ponúk")}. Otvor pracovňu, prečítaj mail a jedným klikom z neho urobíš koncept.`
+            : `${n(c, "draftsWaiting")} ${sk(n(c, "draftsWaiting"), "koncept čaká", "koncepty čakajú", "konceptov čaká")} na tvoje schválenie. Bez neho nič neodíde.`,
         (c) =>
-          `Mám pripravených ${n(c, "draftsWaiting")} ${sk(n(c, "draftsWaiting"), "koncept", "koncepty", "konceptov")}. Bez tvojho súhlasu nič neodíde.`,
-        () => "Čakám na teba. Pozri si koncepty a schváľ tie, ktoré sa ti páčia.",
-        (c) =>
-          `${n(c, "draftsWaiting")} ${sk(n(c, "draftsWaiting"), "mail čaká", "maily čakajú", "mailov čaká")} na palec hore alebo dole.`,
+          `${n(c, "researchReady") + n(c, "draftsWaiting")} vecí čaká na teba. Začni ponukami v pracovni.`,
         () => "Pošlem, len čo dáš zelenú. Ja to nenechám náhode.",
-        () => "Ak sa ti nejaký mail nepáči, povedz mi a prepíšem ho.",
+        () => "Ak sa ti mail nepáči, zahoď ho. Zajtra napíšem lepší.",
       ],
       idle: [
-        () => "Všetko hotové. Zadaj mi lead v pracovni a pripravím ti ponuku na mieru.",
-        () => "Kým nemám čo robiť, sledujem, či nikto neodpovedal.",
-        () => "Pokoj pred ďalšou várkou leadov. Dám si kávu.",
+        () => "Všetko je vybavené. Cez noc pripravím ďalšie ponuky.",
         (c) =>
-          n(c, "qualified")
-            ? `Vo fronte je ${n(c, "qualified")} vhodných leadov. Stačí povedať, ktoré mám vziať.`
-            : "Zatiaľ nemám žiadny vhodný lead. Skenujeme ďalší segment?",
-        () => "Premýšľam, aká ponuka by ťa mohla zaujať ako prvá.",
+          n(c, "supply")
+            ? `Miro mi nachystal ${n(c, "supply")} ${sk(n(c, "supply"), "lead", "leady", "leadov")}. Cez noc ich spracujem, najviac 5 za noc.`
+            : "Miro zatiaľ nemá čo poslať. Dopĺňa zásobu.",
+        () => "Kým nemám čo robiť, sledujem, či nikto neodpovedal.",
+        () => "Premýšľam, aký uhol by mohol zabrať pri ďalšej firme.",
       ],
       error: [
-        () => "Niečo sa pokazilo pri poslednom behu. Pozri sa na to so mnou.",
+        () => "Pri poslednom behu sa niečo pokazilo. Pozri sa na to so mnou.",
         () => "Toto mi nevyšlo. Radšej to nechám overiť, než by som hádala.",
       ],
       greet: [
-        () => "Ahoj Samuel! Rada ťa vidím.",
-        () => "Zdravím, šéf. Čo budeme dnes lámať?",
-        () => "Ahoj! Máš chvíľu? Rada ti ukážem, čo mám rozrobené.",
+        (c) =>
+          n(c, "researchReady")
+            ? `Ahoj Samuel! Mám pre teba ${n(c, "researchReady")} ${sk(n(c, "researchReady"), "hotovú ponuku", "hotové ponuky", "hotových ponúk")}. Začni v pracovni.`
+            : n(c, "draftsWaiting")
+              ? `Ahoj Samuel! ${n(c, "draftsWaiting")} ${sk(n(c, "draftsWaiting"), "koncept čaká", "koncepty čakajú", "konceptov čaká")} na tvoje schválenie.`
+              : "Ahoj Samuel! Dnes je pokoj, všetko je vybavené.",
+        () => "Zdravím, šéf. Nižšie vidíš, čo mám hotové a čo od teba potrebujem.",
       ],
       hover: [
-        () => "Ahoj! Klikni na mňa, poviem ti viac.",
-        () => "Hm? Áno, som tu.",
-        () => "Práve premýšľam. Ale pre teba mám čas.",
+        () => "Ahoj! Klikni na mňa a ukážem ti, čo mám hotové.",
+        () => "Práve premýšľam nad ďalším mailom.",
+        () => "Som tu. Kliknutím otvoríš môj profil.",
       ],
     },
     answers: {
       status: (s, c) => {
         if (s === "working")
           return n(c, "researchRunning")
-            ? "Práve pripravujem ponuku pre lead, ktorý si mi zadal: zbieram dôkazy, overujem citáty a skladám ponuku. Priebeh vidíš v pracovni."
+            ? "Práve pripravujem ponuku pre firmu, ktorú som dostala od Mira alebo od teba: zbieram dôkazy, overujem citáty a píšem tri varianty mailu. Priebeh vidíš v pracovni."
             : n(c, "scanning")
-              ? "Práve skenujem segment: hľadám firmy, pozerám ich weby a hodnotím, kto by z novej stránky ťažil najviac."
-              : n(c, "drafting")
-                ? "Píšem koncepty mailov z uložených zistení. Každý prejde kontrolou kvality, až potom ho uvidíš."
-                : "Analyzujem weby a firmy. Ešte nie som hotová, ale idem podľa plánu.";
+              ? "Práve skenujem segment: hľadám firmy a pozerám ich weby."
+              : "Analyzujem weby a firmy. Ešte nie som hotová, ale idem podľa plánu.";
         if (s === "waiting")
           return n(c, "researchReady")
             ? `Mám hotových ${n(c, "researchReady")} ${sk(n(c, "researchReady"), "ponuku", "ponuky", "ponúk")} na tvoje posúdenie a ${n(c, "draftsWaiting")} ${sk(n(c, "draftsWaiting"), "koncept", "koncepty", "konceptov")} mailov čaká na schválenie.`
-            : `Moju prácu mám hotovú. ${n(c, "draftsWaiting")} ${sk(n(c, "draftsWaiting"), "koncept", "koncepty", "konceptov")} čaká na teba a bez schválenia nič neodíde.`;
+            : `Moju prácu mám hotovú. ${n(c, "draftsWaiting")} ${sk(n(c, "draftsWaiting"), "koncept čaká", "koncepty čakajú", "konceptov čaká")} na teba a bez schválenia nič neodíde.`;
         if (s === "error")
-          return "Posledný beh mi skončil chybou. Ešte som ho neopakovala, aby sme zbytočne neplytvali kreditom.";
-        return `Práve nič nerobím. Za posledných 24 hodín odišlo ${n(c, "sent24h")} ${sk(n(c, "sent24h"), "mail", "maily", "mailov")} a odpovedí za týždeň je ${n(c, "repliesWeek")}.`;
+          return "Posledný beh mi skončil chybou. Neopakovala som ho automaticky, aby sme zbytočne neplytvali kreditom.";
+        return `Práve nič nerobím. Za posledných 7 dní odišlo ${n(c, "sentWeek")} ${sk(n(c, "sentWeek"), "mail", "maily", "mailov")} a odpovedí je ${n(c, "repliesWeek")}. Cez noc spracujem ďalšie firmy od Mira.`;
       },
       needs: (s, c) => {
         if (s === "waiting" && n(c, "researchReady"))
           return {
-            text: `Pozri si ${n(c, "researchReady")} ${sk(n(c, "researchReady"), "hotovú ponuku", "hotové ponuky", "hotových ponúk")} v pracovni. Ak sa ti mail páči, jedným klikom z neho urobíš koncept.`,
+            text: `Prečítaj si ${n(c, "researchReady")} ${sk(n(c, "researchReady"), "hotovú ponuku", "hotové ponuky", "hotových ponúk")} v pracovni. Ak sedia fakty a mail znie ako ty, jedným klikom z neho urobíš koncept.`,
             action: "workbench",
             cta: "Otvoriť pracovňu",
           };
         if (s === "waiting")
           return {
-            text: `Potrebujem od teba schválenie ${n(c, "draftsWaiting")} ${sk(n(c, "draftsWaiting"), "konceptu", "konceptov", "konceptov")}. Rýchlo ich prejdeš a ja ich môžem poslať.`,
+            text: `Potrebujem tvoje schválenie ${n(c, "draftsWaiting")} ${sk(n(c, "draftsWaiting"), "konceptu", "konceptov", "konceptov")}. Po schválení odídu pri najbližšom odosielaní (po 8:30).`,
             href: "/leads/kampane",
             cta: "Otvoriť frontu na schválenie",
           };
-        if (s === "working")
-          return { text: "Zatiaľ nič. Nechaj ma dorobiť, dám ti vedieť." };
+        if (s === "working") return { text: "Zatiaľ nič. Nechaj ma dorobiť, výsledok nájdeš v pracovni." };
         if (s === "error")
           return {
-            text: "Pozri prosím, čo sa stalo, a potvrď, či to mám skúsiť znova.",
-            href: "/leads",
-            cta: "Otvoriť leady",
+            text: "Pozri v pracovni, čo sa stalo, a rozhodni, či to mám skúsiť znova.",
+            action: "workbench",
+            cta: "Otvoriť pracovňu",
           };
-        return {
-          text: n(c, "qualified")
-            ? `Vo fronte je ${n(c, "qualified")} vhodných leadov. Vyber v pracovni firmu a pripravím pre ňu ponuku na mieru.`
-            : "Potrebujem nový segment leadov. Spusti sken a ja sa do toho pustím.",
-          action: "workbench",
-          cta: "Otvoriť pracovňu",
-        };
+        return { text: "Momentálne nič. Cez noc pripravím ďalšie ponuky a ráno ti to napíšem na Telegram." };
+      },
+      today: (s, c) => {
+        const r = n(c, "researchReady");
+        const d = n(c, "draftsWaiting");
+        if (!r && !d) return { text: "Dnes u mňa nemáš čo robiť. Cez noc pripravím ďalšie ponuky, ráno dostaneš prehľad na Telegram." };
+        const steps: string[] = [];
+        if (r)
+          steps.push(
+            `${steps.length + 1}. Otvor pracovňu a prečítaj ${r} ${sk(r, "ponuku", "ponuky", "ponúk")} (asi 2 minúty každú). Skontroluj, či sedia fakty a či mail znie ako ty. Potom klikni „Použiť ako koncept“, alebo ponuku zahoď.`,
+          );
+        if (d)
+          steps.push(`${steps.length + 1}. Vo fronte na schválenie schváľ koncepty (${d}). Odídu pri najbližšom odosielaní, po 8:30.`);
+        steps.push(`${steps.length + 1}. Ak niekto odpovie, dám ti vedieť v prehľade.`);
+        return r
+          ? { text: steps.join("\n"), action: "workbench", cta: "Otvoriť pracovňu" }
+          : { text: steps.join("\n"), href: "/leads/kampane", cta: "Otvoriť frontu na schválenie" };
       },
       method:
-        "Postupujem vždy rovnako. Najprv zozbieram dôkazy: web firmy, Google profil s recenziami a konkurentov v meste. Potom z nich vyvodím zistenia a ku každému pripojím doslovný citát. Kód overí, že citát v zdroji naozaj je, a druhá kontrola posúdi, či z dôkazov vyplýva celé tvrdenie. Nepodložené zahodím. Až z overených zistení navrhnem ponuku a napíšem mail. Číslo, ktoré nemám z dát, v ňom nenájdeš. Stojí to okolo 0,15 € za firmu.",
+        "Postupujem vždy rovnako. Najprv zozbieram dôkazy: web firmy, Google profil s recenziami a konkurentov v meste. Z nich vyvodím zistenia a ku každému pripojím doslovný citát. Kód overí, že citát v zdroji naozaj je, a druhá kontrola posúdi, či z dôkazov vyplýva celé tvrdenie. Nepodložené zahodím. Potom navrhnem ponuku, napíšem tri varianty mailu z rôznych uhlov a každý skontrolujem na pravdivosť. Simulovaný majiteľ firmy vyberie najlepší. Číslo, ktoré nemám z dát, v maile nenájdeš. Stojí to okolo 0,25 € za firmu.",
     },
   },
   {
     id: "miro",
     name: "Miro",
+    gender: "m",
     role: "Skaut príležitostí",
     department: "marketing",
-    tagline: "Stále hľadá a vyberá firmy, ktoré sa naozaj oplatí osloviť.",
-    bio: "Miro prechádza tvoju zásobu leadov a nové firmy z Google. Najprv všetko lacno vyfiltruje v kóde (web, e-mail, aktívna firma), potom každému leadu spočíta skóre príležitosti a vyberie len tie najlepšie v prioritných odboroch (realitné kancelárie, stavebné firmy, fyzioterapeuti). Vybrané postúpi Nore, ktorá im cez noc pripraví ponuku. Nič neposiela a nič nemení, len vyberá a vysvetľuje prečo.",
-    skills: ["Skóre príležitosti", "Filter leadov", "Overenie firiem", "Výber top leadov", "Nočná fronta pre Noru"],
+    tagline: "Hľadá a posudzuje firmy sám, každé rozhodnutie zdôvodní.",
+    bio: "Miro pracuje sám, bez tvojho zásahu. Večer prechádza prioritné odbory (realitné kancelárie, stavebné firmy, fyzioterapeuti) segment po segmente a kraj po kraji cez Google, analyzuje weby a hľadá chýbajúce e-maily. Ku každej firme napíše odôvodnené posúdenie: aká konkrétna príležitosť pre SB Design (web, e-shop, reklamy) je v dátach doložená. Firmy bez príležitosti (dobrý web, koncern, iný odbor) skryje s dôvodom, aby si ich v zozname nemal. Vhodné postúpi Nore. Učí sa z toho, čo Nora vyradí a čo zahodíš ty.",
+    skills: ["Sken segmentov a krajov", "Odôvodnené posúdenie", "Hľadanie e-mailov", "Skrývanie nevhodných s dôvodom", "Učenie zo spätnej väzby"],
     look: {
       skin: "#e6b08a",
       hair: "#3a281d",
@@ -363,9 +372,9 @@ export const AGENTS: AgentDef[] = [
     house: { roof: "#2f80c8", wall: "#e9f1f8" },
     access: "corridor",
     chips: [
-      { text: "Skórujem weby", color: "#22d3ee" },
-      { text: "Vyraďujem nevhodné", color: "#f87171" },
-      { text: "Top výber pre Noru", color: "#4ade80" },
+      { text: "Skenujem kraje", color: "#22d3ee" },
+      { text: "Hľadám e-maily", color: "#a78bfa" },
+      { text: "Posudzujem s dôvodom", color: "#4ade80" },
     ],
     links: [
       { label: "Leady", href: "/leads" },
@@ -373,9 +382,9 @@ export const AGENTS: AgentDef[] = [
     ],
     lines: {
       working: [
-        () => "Prechádzam nové firmy. Čo nemá web, e-mail alebo je reťazec, letí von.",
-        () => "Hodnotím weby. Každý dostane skóre príležitosti a dôvod, prečo.",
-        () => "Ešte pár webov a mám čerstvý výber pre Noru.",
+        () => "Skenujem ďalší kraj. Každý web najprv preverím kódom, až potom sa naň pozerá AI.",
+        () => "Hodnotím weby. Každý dostane odôvodnené posúdenie: prečo áno alebo prečo nie.",
+        () => "Hľadám chýbajúce e-maily vhodným firmám.",
       ],
       waiting: [
         () => "Rozpočet na tento mesiac je takmer vyčerpaný. Radšej počkám, než aby som míňal navyše.",
@@ -383,35 +392,40 @@ export const AGENTS: AgentDef[] = [
       ],
       idle: [
         (c) =>
-          n(c, "backlog")
-            ? `V zásobe je ${n(c, "backlog")} vhodných leadov v mojich odboroch. Nové hľadám, až keď ich ubudne.`
-            : "Zásoba je prázdna. Čas hľadať nové firmy.",
-        (c) =>
-          n(c, "picks")
-            ? `Nora má z môjho výberu ešte ${n(c, "picks")} leadov na spracovanie.`
-            : "Výber pre Noru je momentálne hotový.",
-        () => "Nehľadám naslepo. Kým nemáme čo osloviť, šetrím rozpočet.",
-        () => "Cez noc posielam Nore tých najlepších. Ráno nájdeš ponuky v jej pracovni.",
+          n(c, "supply")
+            ? `V zásobe je ${n(c, "supply")} ${sk(n(c, "supply"), "lead", "leady", "leadov")} pre Noru, vystačí približne ${n(c, "daysLeft")} ${sk(n(c, "daysLeft"), "deň", "dni", "dní")}.`
+            : "Zásoba je prázdna. Večer idem hľadať nové firmy.",
+        () => "Večer skenujem ďalší segment, cez noc posielam Nore tých najlepších.",
+        () => "Nehľadám naslepo. Kým je zásoba plná, šetrím rozpočet.",
+        (c) => (n(c, "rejectedWeek") ? `Tento týždeň som skryl ${n(c, "rejectedWeek")} nevhodných firiem, ku každej s dôvodom.` : "Zatiaľ som nikoho neskryl."),
       ],
       error: [() => "Posledné hľadanie sa pokazilo. Pozri, čo hlásia skeny."],
       greet: [
-        () => "Ahoj Samuel! Práve triedim, kto stojí za oslovenie.",
-        () => "Zdravím. Chceš vedieť, koho som vybral a prečo?",
+        (c) => `Ahoj Samuel! Pracujem sám. V zásobe je ${n(c, "supply")} ${sk(n(c, "supply"), "lead", "leady", "leadov")} pre Noru. Dole si môžeš pozrieť, koho som vybral a prečo.`,
+        () => "Zdravím. Skenujem večer, ráno nájdeš výsledok v pracovni Nory. Nemusíš robiť nič.",
       ],
-      hover: [() => "Hm? Práve pozerám horizont.", () => "Klikni, ukážem ti svoj výber."],
+      hover: [
+        () => "Práve pozerám horizont.",
+        () => "Kliknutím otvoríš môj profil a výber.",
+      ],
     },
     answers: {
       status: (s, c) =>
         s === "working"
-          ? "Práve hľadám a hodnotím firmy. Až budem hotový, výber postúpi Nore."
+          ? "Práve skenujem a posudzujem firmy. Až budem hotový, výber postúpi Nore."
           : s === "waiting"
             ? "Rozpočet na mesiac je takmer vyčerpaný, tak čakám. Nič nemíňam navyše."
-            : `V zásobe mám ${n(c, "backlog")} vhodných leadov v prioritných odboroch. Nora z nich ešte nespracovala ${n(c, "picks")}.`,
+            : `V zásobe mám ${n(c, "supply")} ${sk(n(c, "supply"), "lead", "leady", "leadov")} pre Noru. Pri 5 firmách za noc to vystačí približne ${n(c, "daysLeft")} ${sk(n(c, "daysLeft"), "deň", "dni", "dní")}. Dnes som urobil ${n(c, "scansToday")} ${sk(n(c, "scansToday"), "sken", "skeny", "skenov")}.`,
       needs: () => ({
-        text: "Zatiaľ nič. Pracujem sám a cez noc posielam Nore najlepších. Výsledky uvidíš v jej pracovni.",
+        text: "Nič. Hľadám, posudzujem aj dopĺňam zásobu sám. Ty len ráno prezrieš ponuky od Nory.",
+      }),
+      today: (s, c) => ({
+        text: `Tu nemusíš robiť nič. Skenujem sám (dnes ${n(c, "scansToday")} ${sk(n(c, "scansToday"), "sken", "skeny", "skenov")}), zásoba je ${n(c, "supply")} leadov. Ku každému leadu vidíš moje zdôvodnenie v pracovni Nory a skryté firmy nájdeš v Leadoch v záložke Skryté aj s dôvodom.`,
+        href: s === "working" ? undefined : "/leads",
+        cta: s === "working" ? undefined : "Otvoriť leady",
       }),
       method:
-        "Najprv lacno v kóde: firma musí byť aktívna, mať web a e-mail, nesmie byť reťazec. Potom spočítam skóre príležitosti 0 až 100: zastaraný web, chýbajúce HTTPS alebo mobil, overený konateľ, osobná schránka a prioritný odbor. Vyberám z odborov, ktoré si určil: realitné kancelárie, stavebné firmy a fyzioterapeuti. Najlepších zaradím Nore. Celé je to bez AI, takže ma to nestojí nič.",
+        "Idem systematicky: segment po segmente (najprv realitné, potom stavebné, potom fyzio) a kraj po kraji. Google mi dá firmy s webom, kód preverí web (rýchlosť, mobil, HTTPS, technológia, rok v pätičke), AI ho vyhodnotí zo screenshotu. Potom každý lead posúdim: patrí do odboru, je malá firma, a hlavne, je v dátach DOLOŽENÁ konkrétna príležitosť? Bez dôkazu firmu neposúvam. Chýbajúci e-mail hľadám na ich webe. Vhodné idú Nore, nevhodné skryjem s dôvodom. Poučenia z toho, čo Nora vyradí a čo ty zahodíš, si pamätám a používam ich pri ďalšom posudzovaní.",
     },
   },
 ];
@@ -423,9 +437,14 @@ export const departmentById = (id: string) => DEPARTMENTS.find((d) => d.id === i
 export const STATUS_LABEL: Record<AgentStatus, string> = {
   working: "Pracuje",
   waiting: "Čaká na teba",
-  idle: "Nečinná",
+  idle: "Má voľno",
   error: "Chyba",
 };
+
+/** Stav slovom so správnym rodom ("Nečinná" pri Nore, "Nečinný" pri Mirovi). */
+export function statusLabel(agent: Pick<AgentDef, "gender">, s: AgentStatus): string {
+  return s === "idle" ? (agent.gender === "m" ? "Nečinný" : "Nečinná") : STATUS_LABEL[s];
+}
 
 export const STATUS_COLOR: Record<AgentStatus, string> = {
   working: "#22c55e",

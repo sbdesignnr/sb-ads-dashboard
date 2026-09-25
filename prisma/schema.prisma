@@ -845,3 +845,21 @@ model ChecklistItem {
   @@index([projectId, order])
   @@map("checklist_items")
 }
+
+// Pamäť agentov: odôvodnenia (prečo je lead vhodný/nevhodný), záznamy skenov, spätná väzba
+// (od Nory a od človeka), naučené lekcie a novinky z AI. Slúži aj ako podklad pre prehľady.
+// kind = verdict | scan | sweep | feedback | lesson | news | email-search
+model AgentNote {
+  id        String   @id @default(cuid())
+  agent     String // miro | nora | lab | user
+  kind      String
+  leadId    String?  @map("lead_id")
+  title     String?
+  body      String?  @db.Text
+  data      Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([kind, createdAt])
+  @@index([leadId])
+  @@map("agent_notes")
+}

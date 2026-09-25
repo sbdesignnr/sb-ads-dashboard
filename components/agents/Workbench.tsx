@@ -39,6 +39,8 @@ interface LeadRow {
   /** skóre príležitosti a dôvody od Skauta (len pri jeho výbere) */
   opportunity?: number;
   reasons?: string[];
+  /** odôvodnenie Skauta: prečo je lead vhodný (z dát) */
+  verdict?: { why: string; headline: string; evidence: string[]; fit: number } | null;
 }
 interface RunRow {
   id: string;
@@ -238,9 +240,8 @@ export function Workbench({
     }
   };
 
-  const discard = async (id: string) => {
-    if (!confirm("Zahodiť tento výskum? Koncept mailu, ak už vznikol, ostane.")) return;
-    await fetch(`/api/agents/research/${id}`, { method: "DELETE" });
+  const discard = async (id: string, reason?: string) => {
+    await fetch(`/api/agents/research/${id}${reason ? `?reason=${encodeURIComponent(reason)}` : ""}`, { method: "DELETE" });
     setSelected(null);
     await load();
     onChanged();
@@ -308,7 +309,13 @@ export function Workbench({
                     {l.websiteScore != null && ` · skóre ${l.websiteScore}`}
                     {!l.companyEmail && <span className="text-amber-300"> · bez e-mailu</span>}
                   </p>
-                  {l.reasons && l.reasons.length > 0 && (
+                  {l.verdict ? (
+                    <p className="mt-0.5 line-clamp-3 text-[10.5px] leading-snug text-sky-300/80">
+                      <b className="text-sky-200">Prečo: </b>
+                      {l.verdict.headline || l.verdict.why}
+                      {l.verdict.evidence.length > 0 && <span className="text-sky-300/60"> ({l.verdict.evidence.slice(0, 2).join("; ")})</span>}
+                    </p>
+                  ) : l.reasons && l.reasons.length > 0 && (
                     <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-snug text-sky-300/80">{l.reasons.slice(0, 3).join(" · ")}</p>
                   )}
                 </div>
@@ -384,7 +391,7 @@ export function Workbench({
                   run={detail}
                   busy={busy === detail.id}
                   onApply={() => apply(detail.id)}
-                  onDiscard={() => discard(detail.id)}
+                  onDiscard={(reason) => discard(detail.id, reason)}
                   onRetry={() => start(detail.lead)}
                   canStart={!running && busy === null}
                   onReload={() => Promise.all([load(), loadDetail(detail.id)]).then(() => onChanged())}
@@ -424,7 +431,7 @@ function RunView({
   run: RunDetail;
   busy: boolean;
   onApply: () => void;
-  onDiscard: () => void;
+  onDiscard: (reason?: string) => void;
   onRetry: () => void;
   canStart: boolean;
   onReload: () => void;
@@ -436,6 +443,7 @@ function RunView({
   };
   const [showEvidence, setShowEvidence] = useState(false);
   const [showDropped, setShowDropped] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const idx = stepIndex(run.step);
 
   return (
@@ -655,10 +663,23 @@ function RunView({
                     Otvoriť frontu na schválenie <ArrowUpRight className="h-3.5 w-3.5" />
                   </Link>
                 )}
-                <button onClick={onDiscard} className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[12.5px] text-muted transition hover:bg-white/10 hover:text-red-300">
+                <button onClick={() => setDiscardOpen((v) => !v)} className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[12.5px] text-muted transition hover:bg-white/10 hover:text-red-300">
                   <Trash2 className="h-3.5 w-3.5" /> Zahodiť výskum
                 </button>
               </div>
+              {discardOpen && (
+                <div className="mt-2 rounded-xl border border-red-400/25 bg-red-400/[0.05] p-3">
+                  <p className="mb-2 text-[12px] text-foreground">Prečo ju zahadzuješ? Agenti sa z toho poučia, aby ti takéto ponuky nosili menej.</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {["Firma nepatrí do odboru", "Nevhodný cieľ (koncern, inštitúcia)", "Slabý alebo generický mail", "Fakty nesedia", "Nemáme im čo ponúknuť", "Iný dôvod"].map((r) => (
+                      <button key={r} onClick={() => onDiscard(r)} className="rounded-full border border-white/15 bg-white/[0.05] px-2.5 py-1 text-[11.5px] text-foreground transition hover:border-red-300/50 hover:bg-red-400/15">
+                        {r}
+                      </button>
+                    ))}
+                    <button onClick={() => onDiscard()} className="rounded-full px-2.5 py-1 text-[11.5px] text-muted hover:text-foreground">Bez dôvodu</button>
+                  </div>
+                </div>
+              )}
               <p className="mt-2 text-[11.5px] text-muted">
                 Koncept sa nikam neodošle, kým ho neschváliš v kampaniach. Ak lead už má koncept, prepíše sa (ručne upravený sa spýta).
               </p>
