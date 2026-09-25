@@ -26,10 +26,14 @@ export const SOFT_STOP = 0.9;
 export const ALLOCATION: Record<SpendAgent, number> = { nora: 26, skaut: 7, atelier: 13, leads: 4 };
 
 // Cenník Anthropic v USD za 1 M tokenov (vstup, výstup). Neznáme modely sa účtujú ako
-// Sonnet; Opus sa počíta konzervatívne.
+// Sonnet 4.x (3/15), teda skôr nad skutočnou cenou.
 const PRICES: { re: RegExp; input: number; output: number }[] = [
   { re: /haiku/i, input: 1, output: 5 },
-  { re: /opus/i, input: 15, output: 75 },
+  // Cenník platformy (overené 24. 9. 2026): Opus 5.5 4/20 $, Sonnet 5 2/10 $, Haiku 4.5 1/5 $ za 1 M tokenov
+  { re: /opus-5-5|opus-5\.5/i, input: 4, output: 20 },
+  { re: /opus/i, input: 5, output: 25 },
+  { re: /fable|mythos/i, input: 10, output: 50 },
+  { re: /sonnet-5/i, input: 2, output: 10 },
   { re: /./, input: 3, output: 15 },
 ];
 const EUR_PER_USD = 0.92;
@@ -94,6 +98,12 @@ export function recordAnthropic(model: string, usage: UsageLike | undefined): vo
   });
 }
 
+/** Zapíše iný platený výdavok (napr. generovanie obrázkov). */
+export function recordOther(kind: string, eur: number, model?: string): void {
+  const ctx = als.getStore();
+  void insert({ agent: ctx?.agent ?? "leads", kind, model, calls: 1, eur, ref: ctx?.ref });
+}
+
 /** Zapíše volania Google Places. */
 export function recordPlaces(calls = 1): void {
   const ctx = als.getStore();
@@ -113,7 +123,7 @@ export interface BudgetSnapshot {
   todayEur: number;
   pctUsed: number;
   byAgent: Record<SpendAgent, number>;
-  byKind: { anthropic: number; places: number };
+  byKind: { anthropic: number; places: number; other: number };
   allocation: Record<SpendAgent, number>;
   /** odhad výdavkov do konca mesiaca podľa doterajšieho tempa */
   projectedEur: number;
@@ -133,7 +143,7 @@ export async function getBudget(): Promise<BudgetSnapshot> {
     todayEur: 0,
     pctUsed: 0,
     byAgent: { nora: 0, skaut: 0, atelier: 0, leads: 0 },
-    byKind: { anthropic: 0, places: 0 },
+    byKind: { anthropic: 0, places: 0, other: 0 },
     allocation: ALLOCATION,
     projectedEur: 0,
     monthStart: monthStart().toISOString(),
@@ -157,6 +167,7 @@ export async function getBudget(): Promise<BudgetSnapshot> {
       if (r.agent in out.byAgent) out.byAgent[r.agent as SpendAgent] += v;
       if (r.kind === "anthropic") out.byKind.anthropic += v;
       if (r.kind === "places") out.byKind.places += v;
+      if (r.kind !== "anthropic" && r.kind !== "places") out.byKind.other += v;
     }
     out.todayEur = today._sum.eur ?? 0;
     out.pctUsed = out.spentEur / out.capEur;

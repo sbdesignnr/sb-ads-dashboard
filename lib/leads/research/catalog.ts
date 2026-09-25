@@ -26,10 +26,11 @@ export const PROCESS =
 
 /** Štartovacie ponuky, ktoré Samuel môže dodať s minimálnym rizikom pre klienta. Každá vyžaduje jeho schválenie pred odoslaním. */
 export const STARTER_OFFERS = [
-  "Bezplatný prototyp novej úvodnej stránky (Figma alebo klikateľný náhľad) do 5-7 dní, z ich vlastných textov a fotiek - bez záväzku, ak sa nepáči, nič neplatia",
-  "Bezplatné opravenie JEDNEJ konkrétnej veci na ich webe/Google profile ako ukážka práce (napr. náhľad pri zdieľaní, popis stránky pre Google, kontaktný formulár, doplnenie Google profilu)",
-  "Bezplatný písomný rozbor s tromi konkrétnymi zmenami (pošle sa po odpovedi)",
+  "Krátka bezplatná konzultácia (15-20 minút, telefón alebo video): ukážem im konkrétny smer nového webu pre ich firmu a povieme si, či to pre nich dáva zmysel - bez záväzku, nič sa nevyrába vopred",
+  "Bezplatný písomný rozbor s tromi konkrétnymi zmenami na ich webe (pošle sa po odpovedi)",
+  "Bezplatné opravenie JEDNEJ konkrétnej veci na ich webe/Google profile ako ukážka práce (napr. náhľad pri zdieľaní, popis stránky pre Google, kontaktný formulár, doplnenie Google profilu) - až po odpovedi",
   "Testovacia reklamná kampaň (Google/Meta) na jeden konkrétny dopyt v ich meste - nastavenie zadarmo, platia len reklamný rozpočet",
+  "Bezplatný prototyp novej úvodnej stránky (Figma alebo klikateľný náhľad) do 5-7 dní, z ich vlastných textov a fotiek - pripravuje sa až keď prejavia záujem na konzultácii, nie vopred",
 ] as const;
 
 export interface Reference {

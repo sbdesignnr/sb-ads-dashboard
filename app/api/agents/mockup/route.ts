@@ -6,7 +6,7 @@ import { executeMockup, publicMockupUrl, startMockup } from "@/lib/agents/mockup
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 // návrh (1–2 min) beží po odpovedi v after(); počíta sa do tohto limitu
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 /** GET /api/agents/mockup?leadId= — posledné návrhy leadu (bez HTML a obrázkov). */
 export async function GET(req: NextRequest) {
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
         createdAt: r.createdAt,
         url: publicMockupUrl(r.token),
         qaIssues: Array.isArray(r.qa) ? (r.qa as unknown[]).length : 0,
-        fontPair: ((r.spec as { theme?: { fonts?: { display?: string } } } | null)?.theme?.fonts?.display) ?? null,
+        fontPair: ((r.spec as { theme?: { fonts?: { display?: string } }; fontPair?: string } | null)?.theme?.fonts?.display ?? (r.spec as { fontPair?: string } | null)?.fontPair) ?? null,
       })),
     });
   } catch (e) {

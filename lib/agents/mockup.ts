@@ -5,7 +5,7 @@ import type { EvidencePack } from "@/lib/leads/research/collect";
 import { buildMockup } from "@/lib/agents/atelier/build";
 import { getBudget, withSpend } from "@/lib/agents/budget";
 
-export const MOCKUP_STALE_MS = 8 * 60_000;
+export const MOCKUP_STALE_MS = 14 * 60_000;
 
 export const publicMockupUrl = (token: string) =>
   `${(process.env.NEXT_PUBLIC_APP_URL || "https://ads.sbdesign.sk").replace(/\/$/, "")}/nahlad/${token}`;
@@ -36,7 +36,7 @@ export async function startMockup(leadId: string, opts: { researchId?: string } 
 /** Vykoná návrh (1–2 min) a uloží výsledok. Chyby sa zapisujú do záznamu. */
 export async function executeMockup(
   mockupId: string,
-  opts: { director?: boolean; pack?: EvidencePack; findingsText?: string } = {},
+  opts: { director?: boolean; pack?: EvidencePack; findingsText?: string; direction?: string } = {},
 ): Promise<{ ok: boolean; token?: string; error?: string }> {
   const row = await prisma.leadMockup.findUnique({ where: { id: mockupId }, select: { leadId: true, token: true } });
   if (!row) return { ok: false, error: "Záznam sa nenašiel." };
@@ -55,6 +55,7 @@ export async function executeMockup(
         pack: opts.pack,
         findingsText: opts.findingsText,
         director: opts.director,
+        direction: opts.direction,
         onStep: (m) => {
           pending = pending.then(() => setStep(m));
         },
@@ -66,7 +67,7 @@ export async function executeMockup(
           status: "done",
           step: null,
           html: r.html,
-          spec: r.spec as object,
+          spec: (r.spec ?? undefined) as object | undefined,
           concept: (r.concept ?? undefined) as object | undefined,
           qa: r.qa as unknown as object,
           heroJpg: new Uint8Array(r.heroJpg),

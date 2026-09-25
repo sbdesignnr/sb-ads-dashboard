@@ -29,10 +29,10 @@ export async function qaHtml(html: string, referer?: string): Promise<QaIssue[]>
   try {
     for (const vp of [{ name: "desktop" as const, w: 1440, h: 900 }, { name: "mobil" as const, w: 390, h: 844 }]) {
       const page = await browser.newPage();
-      await page.evaluateOnNewDocument("window.__name = function (f) { return f; }");
+      await page.evaluateOnNewDocument("window.__name = function (f) { return f; }; window.__RT_STATIC = 1;");
       await page.setViewport({ width: vp.w, height: vp.h });
       if (referer) await page.setExtraHTTPHeaders({ Referer: referer });
-      await page.setContent(html, { waitUntil: "load", timeout: 40_000 }).catch(() => {});
+      await page.setContent(html.replace(/data-fx="[^"]*"/, 'data-fx=""'), { waitUntil: "load", timeout: 40_000 }).catch(() => {});
       await page.waitForNetworkIdle({ idleTime: 800, timeout: 20_000 }).catch(() => {});
       // pomocná funkcia, ktorú esbuild (tsx) vkladá do funkcií posielaných do prehliadača
       await page.evaluate("window.__name = function (f) { return f; }");

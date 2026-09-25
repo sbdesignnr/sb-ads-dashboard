@@ -3,12 +3,14 @@
 import { prisma } from "@/lib/prisma";
 import Anthropic from "@anthropic-ai/sdk";
 import { runResearchAgent, writeOutreachEmail, type AgentResult, type Finding, type OfferPlan } from "@/lib/leads/research/strategist";
+import type { MailCraft } from "@/lib/leads/research/mailcraft";
+import type { Council, ScoutNote } from "@/lib/leads/research/council";
 import { isEditedByHand } from "@/lib/leads/draft-state";
 import { getBudget, withSpend } from "@/lib/agents/budget";
 import { executeMockup, publicMockupUrl, startMockup } from "@/lib/agents/mockup";
 
 /** Beh, ktorý sa neozval dlhšie, sa považuje za spadnutý (funkcia mohla skončiť časovým limitom). */
-export const STALE_MS = 8 * 60_000;
+export const STALE_MS = 14 * 60_000;
 
 export interface BriefFinding {
   id: string;
@@ -32,12 +34,21 @@ export interface ResearchBrief {
   usageEur: number;
   /** hotový návrh domovskej stránky k tomuto výskumu */
   mockup?: { id: string; url: string } | null;
+  /** ako mail vznikol (uhly, simulovaný adresát) */
+  craft?: MailCraft | null;
+  /** porada agentov a jej rozhodnutie */
+  council?: Council | null;
+  /** poznámka Skauta (Miro), prečo bol lead vybraný */
+  scout?: ScoutNote | null;
 }
 
 /** Zmenší výsledok agenta na to, čo sa oplatí uložiť a ukázať (dôkazy skrátené). */
-export function toBrief(r: AgentResult, mockup?: { id: string; url: string } | null): ResearchBrief {
+export function toBrief(r: AgentResult, mockup?: { id: string; url: string } | null, scout?: ScoutNote | null): ResearchBrief {
   return {
     mockup: mockup ?? null,
+    craft: r.craft ?? null,
+    council: r.council ?? null,
+    scout: scout ?? null,
     understanding: r.understanding,
     nicheNotes: r.nicheNotes,
     findings: r.findings.map((f) => ({
@@ -119,10 +130,14 @@ export async function startResearch(leadId: string): Promise<StartResult> {
 
 /** Vykoná beh (1–2 min). Volá sa na pozadí (after()) — chyby sa zapisujú do záznamu. */
 export interface ResearchOptions {
-  /** vyrobiť aj hotový návrh domovskej stránky (Ateliér) a poslať ho v maile */
+  /** vyrobiť aj hotový návrh domovskej stránky (Ateliér) a poslať ho v maile; predvolene VYPNUTÉ (drahé, ponuka sa neposiela vopred) */
   withMockup?: boolean;
   /** prémiový návrh (koncept od Opusa) */
   director?: boolean;
+  /** poznámka Skauta (Miro) pre Noru */
+  scoutNote?: ScoutNote | null;
+  /** hlboký režim: porada Miro + Nora pred písaním mailu (≈ +0,03 €); varianty mailu sa robia vždy */
+  deep?: boolean;
 }
 
 export async function executeResearch(researchId: string, leadId: string, opts: ResearchOptions = {}): Promise<void> {
@@ -147,6 +162,8 @@ async function executeResearchInner(researchId: string, leadId: string, opts: Re
       onStep: (m) => {
         pending = pending.then(() => setStep(m));
       },
+      scoutNote: opts.scoutNote ?? null,
+      deep: Boolean(opts.deep),
       beforeEmail: opts.withMockup
         ? async ({ findings, offer, pack }) => {
             const started = await startMockup(leadId, { researchId });
@@ -177,7 +194,7 @@ async function executeResearchInner(researchId: string, leadId: string, opts: Re
       data: {
         status: ok ? "done" : "failed",
         step: null,
-        brief: toBrief(result, mockup) as object,
+        brief: toBrief(result, mockup, opts.scoutNote ?? null) as object,
         emailSubject: result.email?.subject ?? null,
         emailBody: result.email?.body ?? null,
         offerName: result.offer?.name ?? null,
@@ -297,7 +314,7 @@ export async function rewriteEmailWithMockup(researchId: string, mockupId?: stri
       emailSubject: written.email.subject,
       emailBody: written.email.body,
       appliedAt: null,
-      brief: { ...brief, mockup: { id: mockup.id, url } } as unknown as object,
+      brief: { ...brief, mockup: { id: mockup.id, url }, craft: written.craft ?? brief.craft ?? null } as unknown as object,
     },
   });
   return { ok: true, subject: written.email.subject, body: written.email.body };

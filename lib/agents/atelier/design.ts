@@ -85,7 +85,7 @@ Odpovedz VÝHRADNE kompletným HTML dokumentom (od <!doctype html> po </html>), 
 
 const CRITIC_SYSTEM = `Si prísny kreatívny riaditeľ, ktorý hodnotí návrh domovskej stránky podľa screenshotov (desktop po častiach, potom mobil). Hľadaš to, čo by odhalilo, že ide o AI šablónu, a technické chyby.
 
-Posudzuj: hierarchiu a rytmus, typografiu (mierka, kontrast, čitateľnosť), farby a kontrast textu, prácu s obrázkami (rozmazané, natiahnuté, chýbajúce), medzery a zarovnanie, polish detailov, originalitu, chyby (prekrývanie textu, orezaný text, horizontálny posun, prázdne miesta, rozbité obrázky), mobilnú verziu.
+Ak nie je uvedené inak, animácie a interakcie nevidíš (screenshot je statický), hodnoť len to, čo je na obrázku. Najprísnejšie posúď ORIGINALITU: pôsobí návrh ako jedinečná práca na mieru, alebo ako šablóna, ktorú by šlo použiť pre hocikoho po výmene loga? Zapíš, čo by z toho urobilo výnimočný návrh. Posudzuj: hierarchiu a rytmus, typografiu (mierka, kontrast, čitateľnosť), farby a kontrast textu, prácu s obrázkami (rozmazané, natiahnuté, chýbajúce), medzery a zarovnanie, polish detailov, originalitu, chyby (prekrývanie textu, orezaný text, horizontálny posun, prázdne miesta, rozbité obrázky), mobilnú verziu.
 
 Odpovedz VÝHRADNE JSON: {"score": číslo 1-10, "generic_tells": ["…"], "issues": [{"area":"…","problem":"…","fix":"konkrétna zmena v CSS/HTML"}], "verdict": "jedna veta"}. Max 8 problémov, zoradených podľa dopadu. Buď konkrétny a stručný.`;
 
@@ -206,14 +206,17 @@ export async function critiquePage(
   desktop: { base64: string; label: string }[],
   mobile: { base64: string; label: string }[],
   costs: StageCost[],
+  model: string = CRITIC_MODEL,
+  note?: string,
 ): Promise<Critique> {
   const content: Anthropic.MessageParam["content"] = [];
+  if (note) content.push({ type: "text", text: note });
   for (const s of [...desktop, ...mobile]) {
     content.push({ type: "text", text: `Screenshot: ${s.label}` });
     content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: s.base64 } });
   }
   content.push({ type: "text", text: "Vyhodnoť návrh." });
-  return jsonCall<Critique>(client, "kritika", CRITIC_MODEL, CRITIC_SYSTEM, content, 1800, costs);
+  return jsonCall<Critique>(client, "kritika", model, CRITIC_SYSTEM, content, 6000, costs);
 }
 
 export async function refinePage(client: Anthropic, html: string, critique: Critique, costs: StageCost[]): Promise<{ html: string; applied: number; skipped: number }> {

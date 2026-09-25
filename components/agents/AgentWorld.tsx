@@ -46,6 +46,7 @@ import { depthSort, footprint, iso, type Bounds } from "./iso";
 import { AgentPanel, PlotPanel } from "./AgentPanel";
 import { Workbench } from "./Workbench";
 import { BudgetChip } from "./BudgetChip";
+import { MorningChip } from "./MorningChip";
 import { useAgentStatus } from "./useAgentStatus";
 
 // ── čas dňa ────────────────────────────────────────────────────────────────
@@ -1007,6 +1008,7 @@ export function AgentWorld() {
             ))}
         </div>
         {error && <div className="pointer-events-auto rounded-lg bg-red-500/20 px-2.5 py-1.5 text-[11px] text-red-300">Stav sa nepodarilo načítať ({error})</div>}
+        <MorningChip />
         {budget && <BudgetChip budget={budget} />}
         <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
           {AGENTS.map((a) => {

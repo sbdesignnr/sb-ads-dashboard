@@ -35,6 +35,10 @@
     {
       "path": "/api/cron/agents-night",
       "schedule": "*/20 0-3 * * *"
+    },
+    {
+      "path": "/api/cron/agents-digest",
+      "schedule": "40 5 * * *"
     }
   ],
   "functions": {

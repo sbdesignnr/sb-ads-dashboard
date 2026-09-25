@@ -4,17 +4,19 @@
 import { prisma } from "@/lib/prisma";
 import { canRunAutonomously } from "./budget";
 import { executeResearch, startResearch } from "./research";
-import { getShortlist } from "./skaut";
+import { pickWithTriage } from "./skaut";
 
 /** Najviac toľko ponúk denne (5 × 7 = 35 týždenne; cieľ usera je aspoň 30). */
 export const DAILY_RESEARCH_CAP = 5;
-/** Odhad ceny jedného behu pre kontrolu rozpočtu (AI ≈ 0,13 + Google ≈ 0,06). */
-export const EST_RESEARCH_EUR = 0.2;
-/** Najviac toľko hotových návrhov stránok týždenne v nočnom režime (≈ 40 mesačne). */
-export const WEEKLY_MOCKUP_CAP = 10;
+/** Odhad ceny jedného behu pre kontrolu rozpočtu (AI ≈ 0,15 + Google ≈ 0,06). */
+export const EST_RESEARCH_EUR = 0.25;
+/** Porada Miro + Nora (≈ +0,03 €) len pre najlepšie leady (fit ≥ 8), najviac toľko týždenne. */
+export const DEEP_WEEKLY_CAP = 15;
 
 export interface NightResult {
   ran: { leadId: string; company: string; ok: boolean; error?: string | null }[];
+  /** leady, ktoré Miro vyradil ako nevhodné (koncerny, iný odbor…) */
+  rejected?: { id: string; company: string; reason: string }[];
   skipped?: string;
   spentEur?: number;
 }
@@ -24,8 +26,8 @@ export async function runNightQueue(deadlineAt: number, maxRuns = 2): Promise<Ni
 
   const out: NightResult = { ran: [] };
   for (let i = 0; i < maxRuns; i++) {
-    // ďalší beh sa nezačne, ak by sa už nestihol (jeden trvá 1–2 min)
-    if (Date.now() + 130_000 > deadlineAt) {
+    // ďalší beh sa nezačne, ak by sa už nestihol (jeden trvá 2–3 min)
+    if (Date.now() + 240_000 > deadlineAt) {
       out.skipped ??= "Nezostáva dosť času na ďalší beh.";
       break;
     }
@@ -41,22 +43,29 @@ export async function runNightQueue(deadlineAt: number, maxRuns = 2): Promise<Ni
       out.skipped ??= gate.reason;
       break;
     }
-    const { picks } = await getShortlist(1);
+    const { picks, rejected } = await pickWithTriage(1, 6);
+    if (rejected.length) out.rejected = [...(out.rejected ?? []), ...rejected];
     const top = picks[0];
     if (!top) {
+      if (rejected.length) continue; // Miro vyradil celú dávku, skúsi ďalšiu
       out.skipped ??= "Skaut nemá koho vybrať (zásoba vhodných leadov v prioritných odboroch je prázdna).";
       break;
     }
-    const started = await startResearch(top.lead.id);
+    const started = await startResearch(top.opportunity.lead.id);
     if (!started.ok) {
       out.skipped ??= started.error;
       break;
     }
-    // Návrh domovskej stránky (Ateliér) len pre obmedzený počet leadov týždenne (rozpočet).
-    const weekMockups = await prisma.leadMockup.count({ where: { status: "done", createdAt: { gte: new Date(Date.now() - 7 * 24 * 3_600_000) } } }).catch(() => WEEKLY_MOCKUP_CAP);
-    await executeResearch(started.id, top.lead.id, { withMockup: weekMockups < WEEKLY_MOCKUP_CAP });
+    // Návrhy stránok sa v nočnom režime nerobia (drahé a nevieme, či o službu majú záujem).
+    // Porada Miro + Nora sa robí len pre najlepšie leady a pod týždenným stropom.
+    const deepWeek = await prisma
+      .$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM lead_research WHERE status = 'done' AND created_at >= now() - interval '7 days' AND jsonb_typeof(brief->'council') = 'object'`
+      .then((r) => r[0]?.n ?? 0)
+      .catch(() => DEEP_WEEKLY_CAP);
+    const deep = (top.note.fit ?? 0) >= 8 && deepWeek < DEEP_WEEKLY_CAP;
+    await executeResearch(started.id, top.opportunity.lead.id, { withMockup: false, deep, scoutNote: top.note });
     const row = await prisma.leadResearch.findUnique({ where: { id: started.id }, select: { status: true, error: true } });
-    out.ran.push({ leadId: top.lead.id, company: top.lead.companyName, ok: row?.status === "done", error: row?.error });
+    out.ran.push({ leadId: top.opportunity.lead.id, company: top.opportunity.lead.companyName, ok: row?.status === "done", error: row?.error });
   }
   return out;
 }

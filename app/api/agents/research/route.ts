@@ -7,7 +7,7 @@ import { executeResearch, startResearch, STALE_MS } from "@/lib/agents/research"
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 // beh agenta (1–2 min) prebieha po odpovedi v after(), ten sa počíta do tohto limitu
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 const leadSelect = {
   id: true,
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
 
   const started = await startResearch(leadId);
   if (!started.ok) return NextResponse.json({ error: started.error }, { status: started.status });
-  // návrh domovskej stránky je predvolene zapnutý (ponuka je potom hotová vec, nie sľub)
-  after(() => executeResearch(started.id, leadId, { withMockup: withMockup !== false, director: Boolean(director) }));
+  // návrh domovskej stránky sa robí len na výslovnú žiadosť (drahé; maily ho predvolene neobsahujú)
+  after(() => executeResearch(started.id, leadId, { withMockup: withMockup === true, director: Boolean(director), deep: true }));
   return NextResponse.json({ id: started.id });
 }

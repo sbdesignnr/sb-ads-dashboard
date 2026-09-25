@@ -22,6 +22,9 @@ import { buildGreeting } from "../person-name";
 import { greetableOwnerName } from "../owner-source";
 import { collectEvidence, type EvidenceItem, type EvidencePack } from "./collect";
 import { PROCESS, REFERENCES, referencesFor, SERVICES, STARTER_OFFERS } from "./catalog";
+import { holdCouncil, type Council, type ScoutNote } from "./council";
+import { judgeMails, planMail, type MailCraft, type MailVariantNote, type VariantScore } from "./mailcraft";
+import { ANGLES, nicheCard } from "./playbook";
 
 export interface Finding {
   id: string;
@@ -56,6 +59,10 @@ export interface AgentResult {
   skipReason: string | null;
   /** verejný odkaz na hotový návrh domovskej stránky (ak vznikol) */
   mockupUrl?: string | null;
+  /** ako mail vznikol: adresát, varianty uhlov a ich hodnotenie simulovaným adresátom */
+  craft?: MailCraft | null;
+  /** porada agentov (Miro, Nora, Ateliér) a jej rozhodnutie */
+  council?: Council | null;
   pack: EvidencePack;
   usage: AiUsage & { estimatedEur: number };
   issues: string[];
@@ -112,7 +119,8 @@ PRAVIDLÁ
 2. Hľadaj ZAUJÍMAVÉ, nie samozrejmé: čím sa firma odlišuje (z ich textov), čo v recenziách zákazníci chvália alebo kritizujú, kde ich konkurenti v meste predbiehajú (a kde oni predbiehajú konkurentov), čo na webe chýba práve vzhľadom na to, čo o sebe tvrdia, prípadné rozpory. Samozrejmosti platné pre každý web (chýba meta description, HTTPS, PageSpeed) sú len doplnok, nie hlavný argument.
 3. 3 až 6 zistení, každé o inej veci; zoradené od najsilnejšieho. "claim" smie obsahovať IBA to, čo priamo vyplýva z citátov (žiadne dodatky, iné firmy ani čísla, ktoré citát nemá); výklad, dôsledky a porovnania patria do "why_it_matters".
 4. Ponuka musí byť ŠITÁ NA MIERU: konkrétny výstup (čo presne dostanú), prečo práve tento (odkaz na zistenia), realistický termín, minimálne riziko pre nich (napr. bez záväzku, platia až po schválení), a čo Samuel urobí vopred. Vyber z jeho služieb a štartovacích ponúk (zoznam v zadaní) a prispôsob ich TEJTO firme; ak navrhuješ niečo mimo zoznamu, nastav from_catalog=false. Cenu neuvádzaj.
-   Ponuka musí byť pre majiteľa ZAUJÍMAVÁ a viditeľná (nový vzhľad, hotová ukážka, funkcia, ktorú hneď vidí) - technické SEO drobnosti (meta popis, štruktúrované dáta) sú iba doplnok, nikdy hlavná ponuka.
+   Ponuka musí byť pre majiteľa ZAUJÍMAVÁ, konkrétna a JEDNODUCHÁ na prijatie - technické SEO drobnosti (meta popis, štruktúrované dáta) sú iba doplnok, nikdy hlavná ponuka.
+   PRED odpoveďou majiteľa sa nevyrába NIČ (žiadny návrh stránky, prototyp ani vizuál): Samuel nevie, či o službu majú záujem, a nechce míňať prácu ani peniaze naprázdno. Preto ponúkaj krok, ktorý sa robí až po odpovedi (krátka konzultácia, písomný rozbor, testovacia kampaň); "my_upfront_work" má byť v podstate nulová práca.
    NESĽUBUJ výsledky, ktoré nemáš pod kontrolou: poradie v Google, hviezdičky vo vyhľadávaní (Google ich pri vlastných recenziách firmy cez schema.org nezobrazuje), návštevnosť, počet dopytov ani tržby. Sľubuješ iba to, čo Samuel dodá (ukážku, prototyp, opravu).
    Tvrdenie, že na webe niečo CHÝBA alebo je PRÁZDNE, smieš uviesť iba ak to dokazuje technický údaj zistený kódom (položka "Technické vlastnosti webu") alebo výslovný text. Z toho, že sme v texte stránky nič nenašli, to netvrď - obsah môže byť načítaný cez JavaScript, PDF alebo obrázky.
 5. Ak je v zadaní referencia z rovnakého odboru, použi ju (reference_slug); inak null.
@@ -183,11 +191,13 @@ DOSTANEŠ overené zistenia o ich firme a návrh ponuky. Z toho napíš e-mail, 
 - MAX 5 viet, spolu 45-90 slov (viac ako 100 sa neschváli), 2-3 krátke odseky. Jedna hlavná myšlienka, jedna ponuka. Ponuku zhrň JEDNOU vetou - podrobnosti (čo presne obsahuje, ako to vzniká) pošleš, keď odpovedia.
 - Prvá veta je konkrétny fakt o NICH z overených zistení (nie o webe všeobecne). Prvý odsek začni malým písmenom (nadväzuje na oslovenie s čiarkou), okrem vlastného mena, značky alebo domény.
 - Ponuku uveď priamo a konkrétne: čo dostanú a dokedy, a že pre nich nie je žiadne riziko. Referenciu NESPOMÍNAJ - pridá ju systém ako odkaz na konci. Číslo dní uveď tak, ako je v termíne ponuky.
-- Záver = jedna konkrétna veta o ďalšom kroku (napr. "Stačí odpísať a pustím sa do toho."), NIE otázka na názor. Žiadne dni v týždni ani dátumy; termín iba ten z ponuky.
+- Záver = jedna konkrétna veta o ďalšom kroku (napr. "Stačí odpísať a dohodneme si krátky hovor."), NIE otázka na názor. Žiadne dni v týždni ani dátumy; termín iba ten z ponuky.
 - Píš jednoducho, hovorovo-spisovne. Krátke a dlhšie vety striedaj. Konkrétne podstatné mená namiesto prívlastkov.
 - ZAKÁZANÉ otvárania a frázy: "všimol som si", "pozrel som sa na Váš web", pochvala v prvej vete ("slušná vizitka", "naozaj skvelé"), "viem, čo v tomto odbore funguje", "rád by som", "dovoľte mi". Nehodnoť ich vopred - fakty nech hovoria samy.
 - ZAKÁZANÉ "AI" vzory: trojice vymenovaní ("A, B a C"), "nielen X, ale aj Y", "Keď X, tak Y", "To znamená, že…", rétorické otázky, superlatívy a prívlastky ("výnimočný", "kľúčový", "komplexný"), otváracie otázky, zovšeobecnenia o skupine ľudí, "odíde ku konkurencii", "časť záujemcov".
 - Čísla iba z overených zistení (napr. "z ôsmich ambulancií v Nitre má online objednávanie šesť"), inak žiadne čísla, percentá ani sumy. Cenu neuvádzaj.
+- Píš ľudsky, nie technicky: žiadne názvy technológií, verzie a skratky (PHP, CMS, WordPress verzie, "PageSpeed 44"), ktorým majiteľ firmy nerozumie. Povedz dôsledok, ktorý pozná (web je z roku X, na mobile sa zle číta, formulár chýba).
+- Žiadne poučky a všeobecné múdrosti po fakte ("dôvera sa buduje roky", "to je presne ten druh…"): po fakte hneď konkrétny dôsledok pre NICH.
 
 Zistenia NEPREBERAJ doslova - povedz ich po svojom. Zakázané frázy: "pôsobí zastarano", "zastaraný web", "chýba kontaktný formulár", "chýba rezervačný systém", "moderný web", "profesionálny web", "online prítomnosť", "komplexný".
 PRAVDIVOSŤ: používaj IBA overené zistenia a ponuku zo zadania. Nič nevymýšľaj.
@@ -272,7 +282,11 @@ export async function writeOutreachEmail(input: {
   /** dôkazné položky (id + text) — z nich sa overuje, že čísla v maile majú oporu */
   evidence: { id: string; text: string }[];
   mockupUrl?: string | null;
-}): Promise<{ email: { subject: string; body: string } | null; issues: string[] }> {
+  /** rozhodnutie porady (dôraz a uhol), ak porada prebehla */
+  guidance?: string;
+  /** false = úsporný režim: jeden pokus podľa pôvodného postupu bez plánu uhlov a variantov */
+  craft?: boolean;
+}): Promise<{ email: { subject: string; body: string } | null; issues: string[]; craft: MailCraft | null }> {
   const { client, lead, segmentName, findings, offer, evidence } = input;
   const mockupUrl = input.mockupUrl ?? null;
   const issues: string[] = [];
@@ -291,69 +305,65 @@ export async function writeOutreachEmail(input: {
       : ""
   }`;
 
-  // Otvorenie e-mailu sa strieda podľa leadu, aby maily nemali všetky rovnakú kostru.
+  // Otvorenie e-mailu sa strieda podľa leadu, aby maily nemali všetky rovnakú kostru (záložný režim
+  // bez plánu uhlov).
   const OPENINGS = [
     "Prvá veta = konkrétna vec z ich vlastného webu alebo cenníka (nie hodnotenie ani počet recenzií).",
     "Prvá veta = čo o nich píšu zákazníci v recenziách (ak je takéto overené zistenie), inak konkrétna vec z ich webu.",
     "Prvá veta = porovnanie s konkurentmi v meste s presným číslom zo zistení.",
     "Prvá veta = rozpor medzi tým, čo o sebe tvrdia, a tým, čo web reálne ukazuje.",
   ];
-  const openingHint = OPENINGS[[...lead.id].reduce((a, c) => a + c.charCodeAt(0), 0) % OPENINGS.length];
+  const seed = [...lead.id].reduce((a, c) => a + c.charCodeAt(0), 0);
+  const openingHint = OPENINGS[seed % OPENINGS.length];
   const greeting = buildGreeting(greetableOwnerName(lead));
   const formal = greeting.formal || FORMAL_SEGMENT_RE.test(segmentName);
   const signoff = formal ? "S úctou," : "S pozdravom,";
-  let email: AgentResult["email"] = null;
-  let emailFeedback = "";
-  for (let attempt = 1; attempt <= 3 && !email; attempt++) {
+  const niche = nicheCard(segmentName);
+  const byItem = new Map(evidence.map((i) => [i.id, i]));
+
+  interface Draft {
+    angle: string;
+    subject: string;
+    paragraphs: string[];
+    lintErrors: string[];
+    guidance: string;
+  }
+  /** Jeden návrh mailu podľa pokynu (uhol alebo záložné otvorenie); kód skontroluje pravidlá. */
+  const draftMail = async (guidance: string, feedback: string, angle: string): Promise<Draft | null> => {
     const msg = await createMessage(client, {
       model: process.env.LEADS_AGENT_MODEL?.trim() || "claude-sonnet-5",
       max_tokens: 700,
-      temperature: 0.7,
+      temperature: 0.8,
       system: EMAIL_SYSTEM,
       tools: [EMAIL_TOOL],
       tool_choice: { type: "tool", name: "uloz_email" },
-      messages: [{ role: "user", content: `${emailFacts}\n\nOTVORENIE TOHTO E-MAILU: ${openingHint} (ak na to nemáš overené zistenie, zvoľ najsilnejšie iné).\n\nNapíš e-mail.${emailFeedback}` }],
+      messages: [{ role: "user", content: `${emailFacts}\n\nKARTA ODBORU (${niche.name}; všeobecná znalosť, NIE fakty o firme):\n${niche.card}\n\n${guidance}\n\nDĹŽKA: spolu 55 až 90 slov (viac ako 100 slov sa zamietne). Nie je to výpočet výhod, je to krátky osobný mail.\n\nNapíš e-mail.${feedback}` }],
     });
     const block = msg.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
     const d = (block?.input ?? {}) as { subject?: string; paragraphs?: unknown; used_findings?: string[] };
     const subject = normalizeDashes(String(d.subject ?? "").trim()).slice(0, 120).toLowerCase();
-    let paragraphs = Array.isArray(d.paragraphs)
-      ? d.paragraphs.map((p) => normalizeDashes(String(p).trim())).filter(Boolean)
-      : [];
+    const paragraphs = Array.isArray(d.paragraphs) ? d.paragraphs.map((p) => normalizeDashes(String(p).trim())).filter(Boolean) : [];
+    if (!subject || !paragraphs.length) return null;
     const used = mailFindings.filter((f) => asArray<string>(d.used_findings).includes(f.id));
     // Číslo smie byť v maile, ak ho zistenie uvádza A zároveň je v plnom texte niektorej z
     // dôkazných položiek, ktoré cituje (napr. "79" recenzií je v Google profile).
-    const byItem = new Map(evidence.map((i) => [i.id, i]));
     const allowedNumbers = used.flatMap((f) => {
       const inEvidence = new Set(f.evidence.flatMap((e) => numbersIn(byItem.get(e.eid)?.text ?? "")));
       return [...numbersIn(f.claim), ...f.evidence.flatMap((e) => numbersIn(e.quote))].filter((n) => inEvidence.has(n));
     });
-    allowedNumbers.push(...numbersIn(offer.timeline));
+    // čísla z podmienok ponuky (napr. "15-20 minút", "5-7 dní") sú z katalógu, nie vymyslené
+    allowedNumbers.push(...numbersIn(offer.timeline), ...numbersIn(offer.deliverable), ...numbersIn(offer.risk_reversal));
     const allowedYears = allowedNumbers.filter((n) => /^(19|20)\d{2}$/.test(n)).map(Number);
-    const lint = (subj: string, paras: string[]) =>
-      lintEmail({ kind: "initial", subject: subj, paragraphs: paras, copyrightYear: lead.copyrightYear, allowedYears, allowedNumbers });
-    let res = lint(subject, paragraphs);
-    if (res.errors.length) {
-      emailFeedback = `\n\nPREDCHÁDZAJÚCI POKUS BOL ZAMIETNUTÝ: ${res.errors.join("; ")}. Oprav a dodrž všetky pravidlá.`;
-      issues.push(`e-mail pokus ${attempt}: ${res.errors.join("; ")}`);
-      continue;
-    }
-    const pr = await proofread(client, emailFacts, subject, paragraphs);
-    if (!pr || pr.verdict === "reject") {
-      emailFeedback = `\n\nKOREKTOR ZAMIETOL: ${(pr?.problems ?? ["nevrátil výsledok"]).join("; ")}. Oprav.`;
-      issues.push(`e-mail pokus ${attempt}: korektor zamietol`);
-      continue;
-    }
-    if (pr.verdict === "fixed") {
-      const fixed = pr.paragraphs.map((p) => normalizeDashes(p.trim())).filter(Boolean);
-      if (fixed.length === paragraphs.length) paragraphs = fixed;
-    }
-    res = lint(subject, paragraphs);
-    if (res.errors.length) {
-      emailFeedback = `\n\nPO KOREKTÚRE ZAMIETNUTÉ: ${res.errors.join("; ")}.`;
-      issues.push(`e-mail pokus ${attempt} po korektúre: ${res.errors.join("; ")}`);
-      continue;
-    }
+    const res = lintEmail({ kind: "initial", subject, paragraphs, copyrightYear: lead.copyrightYear, allowedYears, allowedNumbers });
+    lintCtx.set(`${angle}|${subject}`, { allowedYears, allowedNumbers });
+    return { angle, subject, paragraphs, lintErrors: res.errors, guidance };
+  };
+  const lintCtx = new Map<string, { allowedYears: number[]; allowedNumbers: string[] }>();
+  const relint = (d: Draft, paragraphs: string[]) => {
+    const ctx = lintCtx.get(`${d.angle}|${d.subject}`) ?? { allowedYears: [], allowedNumbers: [] };
+    return lintEmail({ kind: "initial", subject: d.subject, paragraphs, copyrightYear: lead.copyrightYear, ...ctx });
+  };
+  const assemble = (subject: string, paragraphs: string[]) => {
     const body = [
       greeting.line,
       lowerOpener(paragraphs[0], lead.companyName),
@@ -362,11 +372,131 @@ export async function writeOutreachEmail(input: {
       ...(refLine && !mockupUrl ? [`Ukážka mojej práce z Vášho odboru: ${refLine.url}`] : []),
       `${signoff}\nSamuel Bibeň`,
     ].join("\n\n");
-    email = { subject, body };
+    return { subject, body };
+  };
+
+  // 1) plán: kto číta a tri rôzne uhly
+  const plan = input.craft === false ? null : await planMail(client, { companyName: lead.companyName, city: lead.companyCity, segmentName, findings: mailFindings, offer, mockupReady: Boolean(mockupUrl), guidance: input.guidance });
+  let candidates: Draft[] = [];
+  if (plan) {
+    const drafts = await Promise.all(
+      plan.angles.map(async (a) => {
+        const label = ANGLES.find((x) => x.id === a.angle);
+        const guidance = `UHOL TOHTO MAILU: ${label?.label}. ${label?.how}\nOpri sa o zistenie ${a.finding_id}. Obsah prvej vety: ${a.opening}\nNajpravdepodobnejšia námietka adresáta: „${a.objection}“. Zmier ju JEDNOU vetou VLASTNÝMI SLOVAMI, prirodzene a ľudsky (nekopíruj túto formuláciu doslova, bez vymyslených faktov): ${a.defusal}\nInšpirácia pre predmet: ${a.subject_idea}\nAdresát: ${plan.recipient}`;
+        let d = await draftMail(guidance, "", a.angle);
+        if (d && d.lintErrors.length) {
+          issues.push(`variant „${a.angle}“ zamietnutý pravidlami: ${d.lintErrors.join("; ")}`);
+          d = await draftMail(guidance, `\n\nPREDCHÁDZAJÚCI POKUS BOL ZAMIETNUTÝ: ${d.lintErrors.join("; ")}. Oprav a dodrž všetky pravidlá.`, a.angle);
+        }
+        return d;
+      }),
+    );
+    candidates = drafts.filter((d): d is Draft => Boolean(d && !d.lintErrors.length));
+  }
+
+  // 2) korektúra a kontrola faktov KAŽDÉHO variantu (paralelne). Simulovaný adresát nevie overiť, či je
+  //    tvrdenie pravdivé, a vymyslený konkrétny detail by ohodnotil najlepšie; preto do výberu idú len
+  //    varianty, ktoré prešli kontrolou pravdivosti.
+  const rejectedNotes: MailVariantNote[] = [];
+  const proofed = await Promise.all(
+    candidates.map(async (c): Promise<Draft | null> => {
+      const pr = await proofread(client, emailFacts, c.subject, c.paragraphs);
+      if (!pr || pr.verdict === "reject") {
+        const why = pr?.problems?.length ? pr.problems.join("; ") : "korektor nevrátil výsledok";
+        issues.push(`variant „${c.angle}“: korektor zamietol (${why})`);
+        rejectedNotes.push({ angle: c.angle, subject: c.subject, preview: c.paragraphs[0].slice(0, 200), lintErrors: [`Kontrola pravdivosti: ${why}`.slice(0, 300)], score: null, chosen: false });
+        return null;
+      }
+      let paragraphs = c.paragraphs;
+      if (pr.verdict === "fixed") {
+        const fixed = pr.paragraphs.map((p) => normalizeDashes(p.trim())).filter(Boolean);
+        if (fixed.length === paragraphs.length) paragraphs = fixed;
+      }
+      const res = relint(c, paragraphs);
+      if (res.errors.length) {
+        issues.push(`variant „${c.angle}“ po korektúre: ${res.errors.join("; ")}`);
+        rejectedNotes.push({ angle: c.angle, subject: c.subject, preview: c.paragraphs[0].slice(0, 200), lintErrors: res.errors, score: null, chosen: false });
+        return null;
+      }
+      return { ...c, paragraphs };
+    }),
+  );
+  candidates = proofed.filter((c): c is Draft => Boolean(c));
+
+  // 3) simulovaný adresát vyberie najlepší z pravdivých variantov
+  let ranking = candidates.map((_, i) => i);
+  let scores: (VariantScore | null)[] = candidates.map(() => null);
+  let verdict = "";
+  if (candidates.length >= 2 && plan) {
+    const judged = await judgeMails(
+      client,
+      plan.recipient,
+      segmentName,
+      candidates.map((c) => ({ angle: c.angle, subject: c.subject, body: c.paragraphs.join("\n\n") })),
+      seed,
+    );
+    if (judged) {
+      scores = judged.scores;
+      verdict = judged.verdict;
+      ranking = ranking.sort((a, b) => (scores[b]?.total ?? -1e9) - (scores[a]?.total ?? -1e9));
+    }
+  }
+  let email: AgentResult["email"] = null;
+  let chosen = -1;
+  if (ranking.length) {
+    chosen = ranking[0];
+    email = assemble(candidates[chosen].subject, candidates[chosen].paragraphs);
+  }
+
+  // 4) záloha: pôvodný sekvenčný režim (jeden pokyn, spätná väzba z pravidiel a korektúry)
+  let emailFeedback = "";
+  for (let attempt = 1; attempt <= 3 && !email; attempt++) {
+    const d = await draftMail(openingHint + " (ak na to nemáš overené zistenie, zvoľ najsilnejšie iné).", emailFeedback, "zaloha");
+    if (!d) continue;
+    if (d.lintErrors.length) {
+      emailFeedback = `\n\nPREDCHÁDZAJÚCI POKUS BOL ZAMIETNUTÝ: ${d.lintErrors.join("; ")}. Oprav a dodrž všetky pravidlá.`;
+      issues.push(`e-mail pokus ${attempt}: ${d.lintErrors.join("; ")}`);
+      continue;
+    }
+    const pr = await proofread(client, emailFacts, d.subject, d.paragraphs);
+    if (!pr || pr.verdict === "reject") {
+      emailFeedback = `\n\nKOREKTOR ZAMIETOL: ${(pr?.problems ?? ["nevrátil výsledok"]).join("; ")}. Oprav.`;
+      issues.push(`e-mail pokus ${attempt}: korektor zamietol`);
+      continue;
+    }
+    let paragraphs = d.paragraphs;
+    if (pr.verdict === "fixed") {
+      const fixed = pr.paragraphs.map((p) => normalizeDashes(p.trim())).filter(Boolean);
+      if (fixed.length === paragraphs.length) paragraphs = fixed;
+    }
+    const res = relint(d, paragraphs);
+    if (res.errors.length) {
+      emailFeedback = `\n\nPO KOREKTÚRE ZAMIETNUTÉ: ${res.errors.join("; ")}.`;
+      issues.push(`e-mail pokus ${attempt} po korektúre: ${res.errors.join("; ")}`);
+      continue;
+    }
+    email = assemble(d.subject, paragraphs);
   }
   if (!email) issues.push("E-mail sa nepodarilo napísať tak, aby prešiel kontrolou kvality.");
 
-  return { email, issues };
+  const craft: MailCraft | null = plan
+    ? {
+        recipient: plan.recipient,
+        verdict,
+        variants: [
+          ...candidates.map((c, i) => ({
+            angle: c.angle,
+            subject: c.subject,
+            preview: c.paragraphs[0].slice(0, 200),
+            lintErrors: c.lintErrors,
+            score: scores[i],
+            chosen: i === chosen,
+          })),
+          ...rejectedNotes,
+        ],
+      }
+    : null;
+  return { email, issues, craft };
 }
 
 export async function runResearchAgent(input: {
@@ -378,7 +508,13 @@ export async function runResearchAgent(input: {
    * Volá sa po overení zistení a pred písaním mailu: Ateliér môže vyrobiť hotový návrh
    * domovskej stránky. Vráti jeho verejný odkaz (mail potom nesľubuje, ale ukazuje hotovú vec).
    */
-  beforeEmail?: (ctx: { findings: Finding[]; offer: OfferPlan; pack: EvidencePack }) => Promise<{ url: string } | null>;
+  beforeEmail?: (ctx: { findings: Finding[]; offer: OfferPlan; pack: EvidencePack; council: Council | null }) => Promise<{ url: string } | null>;
+  /** poznámka Skauta (Miro): prečo tento lead a čím ho osloviť */
+  scoutNote?: ScoutNote | null;
+  /** hlboký režim: porada Miro + Nora pred písaním mailu (dôraz, uhol, námietka); ≈ +0,03 € */
+  deep?: boolean;
+  /** false = mail iba jedným pokusom (bez troch variantov a simulovaného adresáta); predvolene sa varianty robia vždy */
+  craft?: boolean;
 }): Promise<AgentResult> {
   const { lead, segmentName } = input;
   const step = input.onStep ?? (() => {});
@@ -392,7 +528,11 @@ export async function runResearchAgent(input: {
   step(`Zozbieraných ${pack.items.length} dôkazových položiek${pack.notes.length ? ` (nepodarilo sa: ${pack.notes.join(" ")})` : ""}`);
 
   const refs = referencesFor(segmentName);
-  const catalog = `MOJE SLUŽBY:\n${SERVICES.map((s) => `- ${s.name}: ${s.what}`).join("\n")}\nPROCES: ${PROCESS}\nŠTARTOVACIE PONUKY (vyber a prispôsob; každá vyžaduje Samuelov súhlas):\n${STARTER_OFFERS.map((o, i) => `${i + 1}. ${o}`).join("\n")}\nREFERENCIE Z ICH ODBORU (slug | klient | odbor): ${refs.length ? refs.map((r) => `${r.slug} | ${r.client} | ${r.industry}`).join("; ") : "žiadna"}`;
+  const catalog = `MOJE SLUŽBY:\n${SERVICES.map((s) => `- ${s.name}: ${s.what}`).join("\n")}\nPROCES: ${PROCESS}\nŠTARTOVACIE PONUKY (vyber a prispôsob; každá vyžaduje Samuelov súhlas):\n${STARTER_OFFERS.map((o, i) => `${i + 1}. ${o}`).join("\n")}\nREFERENCIE Z ICH ODBORU (slug | klient | odbor): ${refs.length ? refs.map((r) => `${r.slug} | ${r.client} | ${r.industry}`).join("; ") : "žiadna"}${
+    input.scoutNote
+      ? `\nPOZNÁMKA SKAUTA MIRA (jeho odhad z dát, NIE overený fakt o firme): fit ${input.scoutNote.fit ?? "?"}/10, ${input.scoutNote.verdict} Návrh ako osloviť: ${input.scoutNote.hint || "—"}`
+      : ""
+  }\n\nKARTA ODBORU (${nicheCard(segmentName).name}; všeobecná znalosť o tom, ako sa v odbore rozhoduje, NIE fakty o firme):\n${nicheCard(segmentName).card}`;
 
   // B) analýza + ponuka (jedno volanie s celým balíkom)
   let findings: Finding[] = [];
@@ -489,12 +629,20 @@ export async function runResearchAgent(input: {
     };
   step(`Overené zistenia: ${findings.length}, zahodených (nedoložených): ${dropped.length}`);
 
+  // C1) porada agentov: Miro, Nora a Ateliér sa dohodnú na dôraze, smere dizajnu a uhle mailu
+  let council: Council | null = null;
+  if (input.deep) {
+    step("Porada: Miro a Nora vymieňajú názory…");
+    council = await holdCouncil(client, { companyName: lead.companyName, city: lead.companyCity, segmentName, scout: input.scoutNote ?? null, understanding, findings, offer });
+    if (!council) issues.push("porada agentov sa nepodarila (pokračuje sa bez nej)");
+  }
+
   // C2) hotový návrh domovskej stránky (voliteľné) — z ponuky sa stane hotová vec, nie sľub
   let mockupUrl: string | null = null;
   if (input.beforeEmail) {
     step("Ateliér: navrhuje novú domovskú stránku…");
     try {
-      mockupUrl = (await input.beforeEmail({ findings, offer, pack }))?.url ?? null;
+      mockupUrl = (await input.beforeEmail({ findings, offer, pack, council }))?.url ?? null;
     } catch (e) {
       issues.push(`návrh stránky zlyhal: ${(e as Error).message.slice(0, 120)}`);
     }
@@ -502,11 +650,22 @@ export async function runResearchAgent(input: {
 
   // D) e-mail z overených zistení
   step("Píšem e-mail z overených zistení…");
-  const written = await writeOutreachEmail({ client, lead, segmentName, findings, offer, evidence: pack.items, mockupUrl });
+  const guidance = council
+    ? [
+        `Dôraz: ${council.decision.offerFocus}`,
+        council.decision.openWith ? `Prvá veta sa opiera o zistenie ${council.decision.openWith}` : "",
+        council.decision.mailAngle ? `Preferovaný uhol: ${council.decision.mailAngle}` : "",
+        council.decision.objection ? `Najpravdepodobnejšia námietka majiteľa: ${council.decision.objection}${council.decision.defusal ? ` (zmierniť vetou: ${council.decision.defusal})` : ""}` : "",
+        council.decision.risks.length ? `Riziká: ${council.decision.risks.join("; ")}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : undefined;
+  const written = await writeOutreachEmail({ client, lead, segmentName, findings, offer, evidence: pack.items, mockupUrl, guidance, craft: input.craft !== false });
   issues.push(...written.issues);
   const email = written.email;
 
-  return { understanding, nicheNotes, findings, dropped, offer, email, skipReason: null, mockupUrl, pack, usage: getAiUsage(), issues };
+  return { understanding, nicheNotes, findings, dropped, offer, email, skipReason: null, mockupUrl, craft: written.craft, council, pack, usage: getAiUsage(), issues };
 }
 
 export { EmailQualityError };

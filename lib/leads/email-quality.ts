@@ -60,6 +60,8 @@ const BLOCKLIST: [RegExp, string][] = [
   [/chýba\s+kontaktný\s+formulár/iu, "\"chýba kontaktný formulár\""],
   [/chýba\s+rezervačný\s+systém/iu, "\"chýba rezervačný systém\""],
   [/(?:pekné|pekná|pekný)\s+(?:fotky|fotka|web)/iu, "pozitívne hodnotenie webu/fotiek"],
+  [/všimol\s+som\s+si/iu, "\"všimol som si\" (zakázané otvorenie)"],
+  [/pozrel\s+som\s+sa\s+na\s+(?:v[aá]š|vaše|Váš|Vaše)/u, "\"pozrel som sa na Váš web\" (zakázané otvorenie)"],
 ];
 
 // Generické záverečné otázky a stopové klišé — znejú ako hromadný e-mail (používateľ:
@@ -68,6 +70,8 @@ const GENERIC_PHRASES: [RegExp, string][] = [
   [/dáva\s+(?:Vám\s+)?(?:to|tento\s+pohľad|tento\s+názor|toto)\s+zmysel/iu, "generická otázka \"Dáva Vám to zmysel?\""],
   [/sedí\s+Vám\s+(?:to|tento|takýto)/iu, "generická otázka \"Sedí Vám tento pohľad?\""],
   [/čo\s+na\s+to\s+hovoríte/iu, "generická otázka \"Čo na to hovoríte?\""],
+  [/presne\s+ten\s+druh/iu, "poučka \"to je presne ten druh…\" (po fakte hneď konkrétny dôsledok pre NICH)"],
+  [/(?:dôvera|povesť|meno)\s+(?:sa\s+)?buduje\s+roky|buduje\s+roky/iu, "všeobecná múdrosť \"dôvera sa buduje roky\""],
   [/(?:alebo\s+)?(?:to\s+)?vidíte\s+to\s+(?:inak|podobne)|vnímate\s+to\s+inak|máte\s+na\s+to\s+iný\s+názor/iu, "generická otázka \"…alebo to vidíte inak?\""],
   [/časť\s+(?:z\s+)?(?:tých|týchto|takýchto|nich|záujemcov|klientov|pacientov|ľudí|hostí|zákazníkov|návštevníkov)/iu, "klišé \"časť záujemcov odíde\""],
   [/(?:ku|k|u)\s+konkurenci\p{L}*|odíd\p{L}*\s+(?:inam|inde)|skús\p{L}*\s+to\s+inde|(?:to\s+)?vzd(?:á|ajú|ať)(?:\s+to)?(?![\p{L}])|ľudia\s+odchádzajú|odchádzaj\p{L}*\s+(?:bez|inam|inde)/iu, "klišé \"odíde ku konkurencii / skúsi to inde\""],

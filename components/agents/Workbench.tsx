@@ -26,6 +26,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ago } from "./AgentPanel";
 import type { ResearchBrief } from "@/lib/agents/research";
+import { ANGLES } from "@/lib/leads/research/playbook";
 
 interface LeadRow {
   id: string;
@@ -73,11 +74,11 @@ interface RunDetail extends Omit<RunRow, "lead"> {
 }
 
 const eur = (v: number | null | undefined) => (v == null ? "–" : `${v.toFixed(2).replace(".", ",")} €`);
-const BASE_EUR = 0.19; // výskum (Claude) + Google
+const BASE_EUR = 0.25; // výskum (Claude) + porada Miro a Nora + varianty mailu + Google
 const MOCKUP_EUR = 0.07; // návrh stránky (Sonnet) v rámci výskumu Nory
 const MOCKUP_ALONE_EUR = 0.1; // samostatný návrh (Sonnet + jedno volanie Google)
-const PREMIUM_EUR = 0.35; // koncept od art directora (Opus)
-const COST_HINT = "≈ 0,25 €";
+const PREMIUM_EUR = 1.0; // prémiový návrh: Opus píše stránku od nuly (koncept, stavba, kritika, oprava)
+const COST_HINT = "≈ 0,3 €";
 
 const STEPS = [
   { key: "collect", label: "Zbieram dôkazy (web, Google profil, konkurenti)" },
@@ -127,8 +128,6 @@ export function Workbench({
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [withMockup, setWithMockup] = useState(true);
-  const [premium, setPremium] = useState(false);
   const qRef = useRef("");
   qRef.current = q;
 
@@ -187,11 +186,11 @@ export function Workbench({
     wasRunning.current = Boolean(running);
   }, [running, onChanged]);
 
-  const runCost = BASE_EUR + (withMockup ? MOCKUP_EUR : 0) + (withMockup && premium ? PREMIUM_EUR : 0);
+  const runCost = BASE_EUR;
   const start = async (lead: { id: string; companyName: string }) => {
     if (
       !confirm(
-        `Nora pripraví ponuku pre „${lead.companyName}“${withMockup ? " a Ateliér k nej vyrobí hotový návrh domovskej stránky" : ""}.\n\nTrvá ${withMockup ? "2 až 4" : "1 až 2"} minúty a stojí približne ${runCost.toFixed(2).replace(".", ",")} € (AI + Google). Nič sa neodošle bez tvojho schválenia.`,
+        `Nora pripraví ponuku a mail pre „${lead.companyName}“.\n\nTrvá 1 až 2 minúty a stojí približne ${runCost.toFixed(2).replace(".", ",")} € (AI + Google). Nič sa neodošle bez tvojho schválenia.`,
       )
     )
       return;
@@ -200,7 +199,7 @@ export function Workbench({
       const r = await fetch("/api/agents/research", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leadId: lead.id, withMockup, director: withMockup && premium }),
+        body: JSON.stringify({ leadId: lead.id, withMockup: false }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
@@ -288,16 +287,9 @@ export function Workbench({
               className="w-full rounded-lg border border-white/12 bg-white/[0.04] py-2 pl-8 pr-3 text-[13px] text-foreground outline-none placeholder:text-muted focus:border-white/30"
             />
           </div>
-          <div className="mb-3 space-y-1.5 rounded-xl border border-white/10 bg-white/[0.03] p-2.5 text-[12px]">
-            <label className="flex cursor-pointer items-start gap-2 text-foreground">
-              <input type="checkbox" checked={withMockup} onChange={(e) => setWithMockup(e.target.checked)} className="mt-0.5 accent-sky-400" />
-              <span>Vyrobiť aj hotový návrh domovskej stránky <span className="text-muted">(+ ≈ {MOCKUP_EUR.toFixed(2).replace(".", ",")} €)</span></span>
-            </label>
-            <label className={cn("flex items-start gap-2", withMockup ? "cursor-pointer text-foreground" : "cursor-not-allowed text-muted/50")}>
-              <input type="checkbox" checked={premium && withMockup} disabled={!withMockup} onChange={(e) => setPremium(e.target.checked)} className="mt-0.5 accent-amber-400" />
-              <span>Prémiový návrh od art directora <span className="text-muted">(+ ≈ {PREMIUM_EUR.toFixed(2).replace(".", ",")} €, originálnejší)</span></span>
-            </label>
-          </div>
+          <p className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] p-2.5 text-[11.5px] leading-relaxed text-muted">
+            Nora pripraví overené zistenia, ponuku a mail (porada s Mirom, tri varianty, simulovaný adresát). Návrh stránky sa do mailu nedáva; ak ho raz chceš na konzultáciu, dá sa vyrobiť samostatne v detaile výskumu.
+          </p>
           <p className="mb-2 px-1 text-[11px] text-muted">
             {q.trim()
               ? "Výsledky hľadania"
@@ -600,6 +592,43 @@ function RunView({
             </Section>
           )}
 
+          {b.scout && (
+            <Section title="Poznámka Skauta" hint="Miro vybral tento lead a odovzdal ho Nore">
+              <div className="rounded-xl border border-sky-400/25 bg-sky-400/[0.06] p-3 text-[13px] leading-relaxed text-foreground/90">
+                <p>
+                  <span className="font-semibold text-sky-300">Miro:</span>{" "}
+                  {b.scout.fit != null ? `fit ${b.scout.fit}/10` : "bez hodnotenia"}
+                  {b.scout.size ? `, veľkosť: ${b.scout.size}` : ""}. {b.scout.verdict}
+                </p>
+                {b.scout.hint && <p className="mt-1 text-muted">Ako osloviť: {b.scout.hint}</p>}
+                {b.scout.reasons.length > 0 && <p className="mt-1 text-[12px] text-muted">Signály: {b.scout.reasons.join(" · ")}</p>}
+              </div>
+            </Section>
+          )}
+
+          {b.council && (
+            <Section title="Porada agentov" hint="Miro a Nora sa dohodli, ako majiteľa osloviť">
+              <div className="space-y-2">
+                {b.council.turns.map((t, i) => {
+                  const who = t.agent === "miro" ? { n: "Miro", c: "text-sky-300 border-sky-400/25 bg-sky-400/[0.06]" } : t.agent === "nora" ? { n: "Nora", c: "text-amber-300 border-amber-400/25 bg-amber-400/[0.06]" } : { n: "Ateliér", c: "text-violet-300 border-violet-400/25 bg-violet-400/[0.06]" };
+                  return (
+                    <div key={i} className={cn("rounded-xl border p-3 text-[13px] leading-relaxed text-foreground/90", who.c)}>
+                      <span className="font-semibold">{who.n}:</span> {t.text}
+                    </div>
+                  );
+                })}
+                <div className="rounded-xl border border-white/15 bg-white/[0.05] p-3 text-[13px] leading-relaxed">
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted">Rozhodnutie porady</p>
+                  <p><span className="text-muted">Dôraz:</span> {b.council.decision.offerFocus}</p>
+                  {b.council.decision.openWith && <p className="mt-1"><span className="text-muted">Prvá veta o zistení:</span> {b.council.decision.openWith}</p>}
+                  {b.council.decision.mailAngle && <p className="mt-1"><span className="text-muted">Uhol mailu:</span> {ANGLES.find((a) => a.id === b.council!.decision.mailAngle)?.label ?? b.council.decision.mailAngle}</p>}
+                  {b.council.decision.objection && <p className="mt-1"><span className="text-muted">Očakávaná námietka:</span> {b.council.decision.objection}{b.council.decision.defusal ? ` → ${b.council.decision.defusal}` : ""}</p>}
+                  {b.council.decision.risks.length > 0 && <p className="mt-1 text-[12px] text-muted">Riziká: {b.council.decision.risks.join(" · ")}</p>}
+                </div>
+              </div>
+            </Section>
+          )}
+
           <MockupCard leadId={run.lead.id} researchId={run.id} hasEmail={Boolean(run.emailBody)} mailHasLink={Boolean(run.emailBody?.includes("/nahlad/"))} onReload={onReload} />
 
           {run.emailBody ? (
@@ -640,6 +669,27 @@ function RunView({
                 <p className="text-[13px] text-amber-300">{run.error ?? "Mail sa nepodarilo napísať."}</p>
               </Section>
             )
+          )}
+
+          {b.craft && b.craft.variants.length > 0 && (
+            <Section title="Prečo práve tento mail" hint="Nora napísala varianty z rôznych uhlov a simulovaný adresát ich ohodnotil">
+              {b.craft.recipient && <p className="mb-2 text-[12.5px] leading-relaxed text-muted">Adresát: {b.craft.recipient}</p>}
+              <ul className="space-y-2">
+                {b.craft.variants.map((v, i) => (
+                  <li key={i} className={cn("rounded-xl border p-3 text-[12.5px] leading-relaxed", v.chosen ? "border-emerald-400/40 bg-emerald-400/[0.07]" : "border-white/10 bg-white/[0.03]")}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold text-foreground">{ANGLES.find((a) => a.id === v.angle)?.label ?? v.angle}</span>
+                      {v.chosen && <span className="rounded-full bg-emerald-400/20 px-2 py-0.5 text-[11px] font-medium text-emerald-300">vybraný</span>}
+                      {v.score && <span className="text-muted">otvorí {Math.round(v.score.open)} % · odpíše {Math.round(v.score.reply)} % · dôvera {v.score.trust}/10 · strojový dojem {v.score.aiSmell}/10</span>}
+                    </div>
+                    <p className="mt-1 text-muted">Predmet: {v.subject}. {v.preview}</p>
+                    {v.lintErrors.length > 0 && <p className="mt-1 text-red-300/90">Vyradený: {v.lintErrors.join("; ")}</p>}
+                    {v.score?.stopsAt && v.score.stopsAt !== "číta do konca" && <p className="mt-1 text-muted/80">Prestal by čítať pri: „{v.score.stopsAt}“</p>}
+                  </li>
+                ))}
+              </ul>
+              {b.craft.verdict && <p className="mt-2 text-[12px] text-muted">{b.craft.verdict}</p>}
+            </Section>
           )}
 
           {b.nicheNotes && (
@@ -748,7 +798,7 @@ function MockupCard({
 
   const make = async (director: boolean) => {
     const eur = MOCKUP_ALONE_EUR + (director ? PREMIUM_EUR : 0);
-    if (!confirm(`Ateliér vyrobí návrh novej domovskej stránky${director ? " (prémiový, koncept od art directora)" : ""}.\n\nTrvá 1 až 2 minúty a stojí približne ${eur.toFixed(2).replace(".", ",")} €.`)) return;
+    if (!confirm(`Ateliér vyrobí návrh novej domovskej stránky${director ? " (prémiový, píše sa od nuly: animácie, funkcie na mieru, generované fotky)" : ""}.\n\nTrvá ${director ? "8 až 10 minút" : "1 až 2 minúty"} a stojí približne ${eur.toFixed(2).replace(".", ",")} €.`)) return;
     setBusy(director ? "p" : "n");
     try {
       const r = await fetch("/api/agents/mockup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leadId, director }) });

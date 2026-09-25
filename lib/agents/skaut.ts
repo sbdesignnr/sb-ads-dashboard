@@ -5,6 +5,8 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { QUALIFY_AT } from "@/lib/leads/qualification";
 import { isVerifiedOwnerSource } from "@/lib/leads/owner-source";
+import type { ScoutNote } from "@/lib/leads/research/council";
+import { FIT_MIN, triageLeads, type Triage } from "./triage";
 
 /** Prioritné odbory (rozhodnutie usera 24. 9. 2026): realitné kancelárie, stavebné firmy, fyzioterapeuti. */
 export const PRIORITY_SEGMENT_RE = /realit|stave?b|fyzio/i;
@@ -146,4 +148,51 @@ export async function backlogCount(): Promise<number> {
       },
     },
   });
+}
+
+export interface ScoutPick {
+  opportunity: Opportunity;
+  note: ScoutNote;
+}
+
+const BAD_SIZE = new Set(["large", "chain", "institution"]);
+
+/**
+ * Výber pre nočný režim: z najlepších kandidátov vyradí (Haiku predfilter) koncerny, inštitúcie
+ * a nesprávne zaradené firmy a vráti prvých `count` vhodných aj s poznámkou pre Noru.
+ * Vyradené leady dostanú status "rejected" s dôvodom (vidno v zozname leadov).
+ */
+export async function pickWithTriage(count = 1, look = 6): Promise<{ picks: ScoutPick[]; rejected: { id: string; company: string; reason: string }[] }> {
+  const { picks } = await getShortlist(look);
+  if (!picks.length) return { picks: [], rejected: [] };
+  const extra = await prisma.lead.findMany({
+    where: { id: { in: picks.map((p) => p.lead.id) } },
+    select: { id: true, aiSummary: true, aiPainPoint: true, aiOpportunity: true, websiteTechnology: true, websiteIssues: true, visualIssues: true, industry: true, ownerName: true },
+  });
+  const byId = new Map(extra.map((e) => [e.id, e]));
+  const verdicts = await triageLeads(
+    picks.map((p) => ({
+      ...p.lead,
+      aiSummary: null, aiPainPoint: null, aiOpportunity: null, websiteTechnology: null, websiteIssues: [], visualIssues: [], industry: null, ownerName: null,
+      ...byId.get(p.lead.id),
+    })),
+  );
+  const chosen: ScoutPick[] = [];
+  const rejected: { id: string; company: string; reason: string }[] = [];
+  for (const p of picks) {
+    const t: Triage | undefined = verdicts.get(p.lead.id);
+    const bad = t && (t.fit < FIT_MIN || !t.nicheOk || BAD_SIZE.has(t.size));
+    if (bad && t) {
+      const reason = `Miro: nevhodný cieľ (${t.fit}/10${t.redFlags.length ? ", " + t.redFlags.join(", ") : ""}). ${t.reason}`.slice(0, 300);
+      await prisma.lead.update({ where: { id: p.lead.id }, data: { status: "rejected", disqualifyReason: reason } }).catch(() => {});
+      rejected.push({ id: p.lead.id, company: p.lead.companyName, reason });
+      continue;
+    }
+    if (chosen.length < count)
+      chosen.push({
+        opportunity: p,
+        note: { fit: t?.fit ?? null, size: t?.size ?? null, reasons: p.reasons, hint: t?.hint ?? "", verdict: t?.reason ?? "" },
+      });
+  }
+  return { picks: chosen, rejected };
 }

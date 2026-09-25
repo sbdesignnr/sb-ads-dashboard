@@ -1,9 +1,10 @@
-import { recordAnthropic } from "../agents/budget";
+import { anthropicEur, recordAnthropic } from "../agents/budget";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Lead } from "@prisma/client";
 import { buildGreeting } from "./person-name";
 import { greetableOwnerName } from "./owner-source";
 import { lintEmail } from "./email-quality";
+import { prisma } from "@/lib/prisma";
 
 const MODEL = "claude-sonnet-4-6";
 // Model na písanie a na korektúru cold emailov. Dá sa prepísať env premennou
@@ -417,10 +418,15 @@ export interface AiUsage {
   calls: number;
 }
 const usageTotals: AiUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0 };
+/** Presná cena volaní od posledného resetu (podľa cenníka modelov v pokladnici agentov). */
+let eurTotal = 0;
 
 function trackUsage(u: Anthropic.Usage | undefined, model?: string) {
   if (!u) return;
-  if (model) recordAnthropic(model, u);
+  if (model) {
+    recordAnthropic(model, u);
+    eurTotal += anthropicEur(model, u);
+  }
   usageTotals.input += u.input_tokens ?? 0;
   usageTotals.output += u.output_tokens ?? 0;
   usageTotals.cacheRead += u.cache_read_input_tokens ?? 0;
@@ -431,14 +437,15 @@ function trackUsage(u: Anthropic.Usage | undefined, model?: string) {
 /** Vynuluje počítadlo (na začiatku dávky). */
 export function resetAiUsage(): void {
   Object.assign(usageTotals, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0 });
+  eurTotal = 0;
 }
 
-/** Spotreba od posledného resetu + hrubý odhad ceny v EUR (cenník triedy Sonnet: $3/$15 za 1M tokenov). */
+/** Spotreba od posledného resetu + cena v EUR (presná podľa cenníka modelov; záložný odhad ako Sonnet 3/15 $). */
 export function getAiUsage(): AiUsage & { estimatedEur: number } {
   const usd =
     (usageTotals.input * 3 + usageTotals.output * 15 + usageTotals.cacheRead * 0.3 + usageTotals.cacheWrite * 3.75) /
     1_000_000;
-  return { ...usageTotals, estimatedEur: Math.round(usd * 0.92 * 1000) / 1000 };
+  return { ...usageTotals, estimatedEur: eurTotal > 0 ? Math.round(eurTotal * 1000) / 1000 : Math.round(usd * 0.92 * 1000) / 1000 };
 }
 
 // Novšie modely majú iné obmedzenia API (napr. Sonnet 5 odmieta `temperature`, Opus 5.5
@@ -463,7 +470,11 @@ export async function createMessage(
     if (quirks.noTemperature) delete p.temperature;
     if (quirks.autoToolChoice && p.tool_choice?.type === "tool") p.tool_choice = { type: "auto" };
     try {
-      const res = await client.messages.create(p);
+      // dlhé odpovede (návrhy stránok) sa čítajú streamom: SDK inak odmietne volanie s veľkým max_tokens
+      const res =
+        p.max_tokens > 8000
+          ? await client.messages.stream(p as unknown as Anthropic.MessageCreateParamsStreaming).finalMessage()
+          : await client.messages.create(p);
       trackUsage(res.usage, p.model);
       return res;
     } catch (e) {
@@ -480,7 +491,9 @@ export async function createMessage(
       modelQuirks.set(params.model, quirks);
     }
   }
-  return client.messages.create(params);
+  return params.max_tokens > 8000
+    ? client.messages.stream(params as unknown as Anthropic.MessageCreateParamsStreaming).finalMessage()
+    : client.messages.create(params);
 }
 
 /** Em/en pomlčka → obyčajná "-" (špecifikácia povoľuje len "-"); radšej opraviť než mail zamietnuť. */
@@ -489,7 +502,9 @@ export function normalizeDashes(s: string): string {
     .replace(/\s*[—–]\s*/g, " - ")
     // Slovenské úvodzovky „…" namiesto rovných "…" a anglických “…”.
     .replace(/"([^"\n]+)"/g, "„$1“")
-    .replace(/[“”]([^“”\n]+)[“”]/g, "„$1“");
+    .replace(/[“”]([^“”\n]+)[“”]/g, "„$1“")
+    // zle uzavreté slovenské úvodzovky „takto„ -> „takto“
+    .replace(/„([^„“”"\n]{1,120})„/g, "„$1“");
 }
 
 export function textFrom(msg: Anthropic.Message): string {
@@ -599,6 +614,38 @@ export async function generateOutreachEmail(input: {
       ? `\n\nZADANIE\nUhol otvorenia: ${OPENING_ANGLES[angleKey]}\n${ENDINGS[endingKey]}\nNápoveda k otázke (odvetvie): ${questionHint(segmentName)}`
       : "";
 
+  // Follow-up má prinášať NOVÝ konkrétny fakt. Ak Nora o firme spravila výskum, jeho overené
+  // zistenia (každé s doslovným citátom zo zdroja) sú na to najlepší materiál.
+  let researchBlock = "";
+  const researchNumbers: string[] = [];
+  if (type !== "initial") {
+    try {
+      const r = await prisma.leadResearch.findFirst({
+        where: { leadId: lead.id, status: "done" },
+        orderBy: { createdAt: "desc" },
+        select: { brief: true },
+      });
+      const brief = (r?.brief ?? null) as {
+        findings?: { id: string; claim: string; audit?: string; evidence?: { eid: string; quote: string }[] }[];
+        evidence?: { id: string; text: string }[];
+      } | null;
+      const ok = (brief?.findings ?? []).filter((f) => f.audit === "ok" || !f.audit).slice(0, 6);
+      if (ok.length) {
+        researchBlock = `\n\nĎALŠIE OVERENÉ ZISTENIA O FIRME (z výskumu; jediný povolený zdroj NOVÉHO faktu; použi najviac JEDNO, ktoré v predošlých mailoch ešte nezaznelo, a povedz ho po svojom):\n${ok
+          .map((f) => `${f.id}: ${f.claim} (dôkaz: „${f.evidence?.[0]?.quote ?? ""}“)`)
+          .join("\n")}`;
+        const numsOf = (t: string) => (t.match(/\d[\d.,]*/g) ?? []).map((n) => n.replace(/[.,]+$/g, ""));
+        const byItem = new Map((brief?.evidence ?? []).map((e) => [e.id, e.text]));
+        for (const f of ok) {
+          const inEvidence = new Set((f.evidence ?? []).flatMap((e) => numsOf(byItem.get(e.eid) ?? "")));
+          researchNumbers.push(...[...numsOf(f.claim), ...(f.evidence ?? []).flatMap((e) => numsOf(e.quote))].filter((n) => inEvidence.has(n)));
+        }
+      }
+    } catch {
+      /* výskum je doplnok, follow-up ide aj bez neho */
+    }
+  }
+
   // Meno adresáta MODEL NEDOSTÁVA (oslovenie robí kód) — nemá ako ho použiť zle.
   const clip = (t: string | null | undefined, n: number) => (t ?? "").trim().slice(0, n) || "—";
   const facts = `FIRMA
@@ -614,7 +661,7 @@ Hlavné vizuálne problémy: ${(lead.visualIssues ?? []).slice(0, 4).join("; ") 
 Rok v pätičke: ${staleYear ?? "—"}
 Rýchlosť načítania na mobile: ${speed}
 Celkový vizuálny dojem: ${clip(lead.aiVisualReason, 220)}
-Kontext o firme (len pomôcka, nekopíruj vety ani klišé): ${clip(lead.aiSummary, 320)}${threadBlock}${styleBlock}`;
+Kontext o firme (len pomôcka, nekopíruj vety ani klišé): ${clip(lead.aiSummary, 320)}${threadBlock}${researchBlock}${styleBlock}`;
 
   // Roky, ktoré sa smú v maile objaviť, lebo sú v dátach (napr. "copyright 2015").
   const allowedYears = [...facts.matchAll(/(?<!\d)(?:19|20)\d{2}(?!\d)/g)].map((m) => Number(m[0]));
@@ -678,6 +725,7 @@ Kontext o firme (len pomôcka, nekopíruj vety ani klišé): ${clip(lead.aiSumma
         paragraphs: paras,
         copyrightYear: staleYear,
         allowedYears,
+        allowedNumbers: researchNumbers,
       });
 
     // 2) tvrdé pravidlá
