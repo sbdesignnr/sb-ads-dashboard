@@ -1008,7 +1008,12 @@ export function AgentWorld() {
             ))}
         </div>
         {error && <div className="pointer-events-auto rounded-lg bg-red-500/20 px-2.5 py-1.5 text-[11px] text-red-300">Stav sa nepodarilo načítať ({error})</div>}
-        <GuideChip />
+        <GuideChip
+          onOpenWorkbench={(leadId) => {
+            if (leadId) setPinnedLead(leadId);
+            setWorkbench(true);
+          }}
+        />
         {budget && <BudgetChip budget={budget} />}
         <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
           {AGENTS.map((a) => {

@@ -136,7 +136,8 @@ export async function getShortlist(
     where,
     orderBy: { websiteScore: { sort: "desc", nulls: "last" } },
     take: 600,
-    select: { ...select, _count: { select: { research: { where: { status: "failed" } } } } },
+    // beh, ktorý zlyhal len pre prázdny kredit Anthropic, sa do limitu 2 zlyhaní nepočíta
+    select: { ...select, _count: { select: { research: { where: { status: "failed", OR: [{ error: null }, { NOT: { error: { contains: "credit balance" } } }] } } } } },
   });
   const scored = rows
     .filter((r) => r._count.research < 2)

@@ -52,7 +52,7 @@ const FLOW: { when: string; who: string; text: string; tone: string }[] = [
   },
 ];
 
-export function GuideChip() {
+export function GuideChip({ onOpenWorkbench }: { onOpenWorkbench?: (leadId?: string) => void }) {
   const [open, setOpen] = useState(false);
   const [d, setD] = useState<Digest | null>(null);
   const [loading, setLoading] = useState(false);
@@ -159,20 +159,72 @@ export function GuideChip() {
                 <p className="mb-3 rounded-lg bg-emerald-400/[0.08] px-2.5 py-2 text-emerald-100">Nič. Všetko je vybavené, agenti pracujú ďalej.</p>
               ) : (
                 <ul className="mb-3 space-y-1.5">
-                  {d.todo.map((t, i) => (
-                    <li key={t.id}>
-                      <Link href={path(t.href)} onClick={() => setOpen(false)} className="group flex items-start gap-2.5 rounded-lg bg-white/[0.05] px-2.5 py-2 text-foreground transition hover:bg-white/10">
+                  {d.todo.map((t, i) => {
+                    const row = (
+                      <>
                         <span className="mt-px flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-400 px-1 text-[10.5px] font-bold tabular-nums text-black">{i + 1}</span>
                         <span className="flex-1 leading-snug">
                           {t.label} <span className="font-semibold text-amber-200">({t.count})</span>
                           {t.detail && <span className="block text-[11px] text-muted">{t.detail}</span>}
                         </span>
                         <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 text-muted transition group-hover:text-foreground" />
-                      </Link>
-                    </li>
-                  ))}
+                      </>
+                    );
+                    const cls = "group flex w-full items-start gap-2.5 rounded-lg bg-white/[0.05] px-2.5 py-2 text-left text-foreground transition hover:bg-white/10";
+                    return (
+                      <li key={t.id}>
+                        {t.external ? (
+                          <a href={t.href} target="_blank" rel="noopener noreferrer" className={cls}>{row}</a>
+                        ) : t.action === "workbench" && onOpenWorkbench ? (
+                          <button type="button" onClick={() => { setOpen(false); onOpenWorkbench(); }} className={cls}>{row}</button>
+                        ) : (
+                          <Link href={path(t.href)} onClick={() => setOpen(false)} className={cls}>{row}</Link>
+                        )}
+                        {t.items && t.items.length > 0 && (
+                          <ul className="mt-1 space-y-1 pl-8">
+                            {t.items.map((it, k) => (
+                              <li key={k} className="text-[11.5px] leading-snug text-red-200/90">
+                                {onOpenWorkbench && it.leadId ? (
+                                  <button type="button" onClick={() => { setOpen(false); onOpenWorkbench(it.leadId); }} className="text-left underline decoration-dotted underline-offset-2 hover:text-red-100">{it.label}</button>
+                                ) : (
+                                  it.label
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
+
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">Koľko to stojí</p>
+              <div className="mb-3 rounded-xl border border-white/10 bg-white/[0.04] p-2.5">
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  {[
+                    ["Cez noc", d.cost.nightEur],
+                    ["Za 24 hodín", d.cost.last24hEur],
+                    ["Za 7 dní", d.cost.weekEur],
+                  ].map(([l, v]) => (
+                    <div key={String(l)} className="rounded-lg bg-black/20 py-1.5">
+                      <div className="text-[15px] font-semibold tabular-nums text-foreground">{eur(Number(v))}</div>
+                      <div className="text-[10.5px] text-muted">{l}</div>
+                    </div>
+                  ))}
+                </div>
+                {d.cost.nightByAgent.length > 0 && (
+                  <p className="mt-2 leading-snug text-muted">
+                    Cez noc (00:00 až 08:00): {d.cost.nightByAgent.map((n) => `${n.agent === "nora" ? "Nora" : n.agent === "skaut" ? "Miro" : n.agent} ${eur(n.eur)}`).join(", ")}.
+                  </p>
+                )}
+                <p className="mt-2 leading-snug text-muted">
+                  Najbližší týždeň: <b className="text-foreground">{eur(d.cost.weekLowEur)} až {eur(d.cost.weekHighEur)}</b> (ponuka stojí ~0,30 € v základnom a ~0,49 € v hlbokom režime; Miro ~0,5 až 1,2 € denne).
+                  {d.cost.daysUntilStop != null && d.cost.daysUntilStop < 30 && (
+                    <span className="text-amber-200"> Pri plnom tempe ({eur(d.cost.monthHighEur)} mesačne) sa rozpočet {d.budget.capEur} € vyčerpá za ~{d.cost.daysUntilStop} dní a agenti sa zastavia.</span>
+                  )}
+                </p>
+              </div>
 
               <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">Tvoj týždeň (posledných 7 dní)</p>
               <div className="mb-3 rounded-xl border border-white/10 bg-white/[0.04] p-2.5">

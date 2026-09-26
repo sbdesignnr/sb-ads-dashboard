@@ -508,8 +508,20 @@ function RunView({
           <p className="mb-1 flex items-center gap-2 text-sm font-medium text-red-300">
             <CircleAlert className="h-4 w-4" /> Nora to tentoraz nedotiahla
           </p>
-          <p className="text-[13px] text-red-200/90">{run.error ?? "Neznáma chyba."}</p>
-          <p className="mt-2 text-[12px] text-muted">Nepodložené tvrdenia radšej zahodí, než by hádala. Skús znova, alebo vyber iný lead.</p>
+          {/credit balance/i.test(run.error ?? "") ? (
+            <>
+              <p className="text-[13px] text-red-200/90">Na účte Anthropic došiel kredit, preto Nora nemohla písať. Nič sa nestalo s firmou ani s dátami.</p>
+              <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-[12.5px] font-medium text-amber-200 underline underline-offset-2">
+                Dobiť kredit (Plans &amp; Billing)
+              </a>
+              <p className="mt-2 text-[12px] text-muted">Po dobití kredit tento lead Nora skúsi znova sama v noci, alebo ho môžeš spustiť ručne nižšie.</p>
+            </>
+          ) : (
+            <>
+              <p className="text-[13px] text-red-200/90">{run.error ?? "Neznáma chyba."}</p>
+              <p className="mt-2 text-[12px] text-muted">Nepodložené tvrdenia radšej zahodí, než by hádala. Skús znova, alebo vyber iný lead.</p>
+            </>
+          )}
           <button onClick={onRetry} disabled={!canStart} className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-white/20 disabled:opacity-40">
             <RotateCcw className="h-3.5 w-3.5" /> Skúsiť znova ({COST_HINT})
           </button>

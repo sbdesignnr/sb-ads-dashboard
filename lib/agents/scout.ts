@@ -13,6 +13,7 @@ import { enrichLead, scanSegment } from "@/lib/leads/scanner";
 import { findEmailForLead } from "@/lib/leads/email-finder";
 import { ensureOwner } from "./owner";
 import { agentMarket, marketWhere, type Market } from "./market";
+import { anthropicCreditOk } from "./credit";
 
 /** Zásoba vhodných leadov pre Noru, pod ktorou Miro skenuje ďalej (nad ňou šetrí rozpočet). */
 export const POOL_TARGET = 60;
@@ -84,6 +85,7 @@ export async function runScoutCycle(deadlineAt: number, opts: { dry?: boolean } 
   if (!(await notesAvailable())) return { ...res, skipped: "Chýba tabuľka agent_notes (spusti SQL z postupu)." };
   const gate = await canRunAutonomously("skaut", 0.15);
   if (!gate.ok) return { ...res, skipped: gate.reason };
+  if (!(await anthropicCreditOk())) return { ...res, skipped: "Kredit Anthropic je prázdny: dobi ho v Plans & Billing, Miro potom pokračuje sám." };
   const { market, reason: marketReason } = await agentMarket();
   if (market === "both") res.log.push(`Trh: ${marketReason}.`);
 

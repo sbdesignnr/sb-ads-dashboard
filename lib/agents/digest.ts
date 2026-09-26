@@ -2,8 +2,9 @@
 // (výskumy, návrhy, maily, pokladnica), nič sa nevymýšľa. Posiela sa na Telegram a zobrazuje v
 // /agenti; nič sa neodosiela zákazníkom.
 import { prisma } from "@/lib/prisma";
-import { AGENTS_START, getBudget } from "@/lib/agents/budget";
-import { DAILY_RESEARCH_CAP } from "@/lib/agents/night";
+import { AGENTS_START, SOFT_STOP, getBudget } from "@/lib/agents/budget";
+import { DAILY_RESEARCH_CAP, DEEP_WEEKLY_CAP, OFFER_DEEP_EUR, OFFER_LEAN_EUR, SKAUT_DAY_FULL_EUR, SKAUT_DAY_LIGHT_EUR } from "@/lib/agents/night";
+import { CREDIT_URL, anthropicCreditOk, isCreditError } from "@/lib/agents/credit";
 import { draftsWaitingWhere, researchReadyWhere } from "@/lib/agents/queue";
 import { PRIORITY_KEYWORDS, poolWhere, getShortlist } from "@/lib/agents/skaut";
 import { agentMarket } from "@/lib/agents/market";
@@ -36,6 +37,28 @@ export interface DigestTodo {
   count: number;
   href: string;
   detail?: string;
+  /** odkaz mimo aplikácie (otvorí sa v novom okne) */
+  external?: boolean;
+  /** kliknutie otvorí pracovňu Nory priamo v /agenti (odkaz na tú istú stránku by nič neurobil) */
+  action?: "workbench";
+  /** konkrétne položky (napr. zlyhané behy), ktoré sa zobrazia pod nadpisom */
+  items?: { label: string; leadId?: string }[];
+}
+
+/** Koľko agenti minuli a koľko približne minú najbližší týždeň. */
+export interface CostOutlook {
+  nightEur: number;
+  nightFrom: string;
+  nightTo: string;
+  nightByAgent: { agent: string; eur: number }[];
+  last24hEur: number;
+  weekEur: number;
+  /** odhad na najbližší týždeň: pokojnejšie tempo a plné tempo (5 ponúk za noc, 2 skeny denne) */
+  weekLowEur: number;
+  weekHighEur: number;
+  monthHighEur: number;
+  /** pri plnom tempe: za koľko dní sa dosiahne 90 % mesačného rozpočtu (nočné behy sa potom zastavia) */
+  daysUntilStop: number | null;
 }
 
 export interface HealthItem {
@@ -56,6 +79,9 @@ export interface Digest {
   opens: number;
   clicks: number;
   spentSinceEur: number;
+  cost: CostOutlook;
+  /** má účet Anthropic kredit? (false = agenti nemôžu písať ani hľadať) */
+  creditOk: boolean;
   budget: { spentEur: number; capEur: number; pctUsed: number; todayEur: number; available: boolean; projectedEur: number };
   todo: DigestTodo[];
   /** týždenný cieľ a doterajší postup */
@@ -78,7 +104,7 @@ const baseUrl = () => (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_U
 export async function buildDigest(sinceHours = 16): Promise<Digest> {
   const since = new Date(Date.now() - sinceHours * 3_600_000);
   const weekFrom = new Date(Math.max(Date.now() - 7 * 24 * 3_600_000, AGENTS_START.getTime()));
-  const [research, mockups, viewed, rejected, mails, pendingOffers, drafts, budget, spend, weekOffers, weekMails, shortlist, health, autopilot, lessonNotes, newsNotes] = await Promise.all([
+  const [research, mockups, viewed, rejected, mails, pendingOffers, drafts, budget, spend, weekOffers, weekMails, shortlist, health, autopilot, lessonNotes, newsNotes, creditOk] = await Promise.all([
     prisma.leadResearch.findMany({
       where: { createdAt: { gte: since } },
       orderBy: { createdAt: "desc" },
@@ -119,7 +145,9 @@ export async function buildDigest(sinceHours = 16): Promise<Digest> {
     scoutFunnel(7),
     listNotes({ kind: "lesson", since: new Date(Date.now() - 14 * 86_400_000) }, 12),
     listNotes({ kind: "news", since: new Date(Date.now() - 14 * 86_400_000) }, 3),
+    anthropicCreditOk(),
   ]);
+  const cost = await costOutlook(shortlist.candidates, budget.spentEur, budget.capEur);
 
   const mockupByResearch = new Map(mockups.filter((m) => m.researchId).map((m) => [m.researchId as string, m]));
   const offers: DigestOffer[] = research.map((r) => {
@@ -134,7 +162,7 @@ export async function buildDigest(sinceHours = 16): Promise<Digest> {
       city: r.lead.companyCity,
       offer: r.offerName,
       status: r.status === "done" ? "done" : skipped ? "skipped" : "failed",
-      note: r.status === "done" ? null : (r.error ?? "").slice(0, 200),
+      note: r.status === "done" ? null : isCreditError(r.error) ? "Prázdny kredit Anthropic, beh sa po dobití zopakuje sám." : (r.error ?? "").slice(0, 200),
       mockupUrl: mk ? publicMockupUrl(mk.token) : null,
       premium: Boolean(mk && (mk.spec as { freeform?: boolean } | null)?.freeform),
       angle: chosen?.angle ?? null,
@@ -146,11 +174,22 @@ export async function buildDigest(sinceHours = 16): Promise<Digest> {
   const todo: DigestTodo[] = [];
   const doneOffers = offers.filter((o) => o.status === "done").length;
   if (pendingOffers > 0)
-    todo.push({ id: "offers", label: "Prezrieť ponuky od Nory a použiť ich ako koncepty", count: pendingOffers, href: `${baseUrl()}/agenti`, detail: doneOffers ? `${doneOffers} z nich pribudlo cez noc` : undefined });
+    todo.push({ id: "offers", label: "Prezrieť ponuky od Nory a použiť ich ako koncepty", count: pendingOffers, href: `${baseUrl()}/agenti`, action: "workbench", detail: doneOffers ? `${doneOffers} z nich pribudlo cez noc` : undefined });
   if (drafts > 0) todo.push({ id: "drafts", label: "Schváliť koncepty mailov na odoslanie", count: drafts, href: `${baseUrl()}/leads/kampane` });
   if (replies.length) todo.push({ id: "replies", label: "Odpovedať na odpovede leadov", count: replies.length, href: `${baseUrl()}/leads`, detail: replies.map((r) => r.company).slice(0, 3).join(", ") });
-  const failed = offers.filter((o) => o.status === "failed").length;
-  if (failed) todo.push({ id: "failed", label: "Skontrolovať zlyhané behy Nory", count: failed, href: `${baseUrl()}/agenti` });
+  // zlyhania pre prázdny kredit rieši jedna úloha (dobiť kredit); ostatné sa vypíšu s dôvodom priamo v paneli
+  const failedRuns = offers.filter((o) => o.status === "failed" && !isCreditError(research.find((r) => r.id === o.researchId)?.error));
+  if (!creditOk)
+    todo.unshift({ id: "credit", label: "Dobiť kredit Anthropic (bez neho agenti nepracujú)", count: 1, href: CREDIT_URL, external: true, detail: "Plans & Billing → Add credit. Zlyhané behy sa potom zopakujú samy." });
+  if (failedRuns.length)
+    todo.push({
+      id: "failed",
+      label: "Skontrolovať zlyhané behy Nory",
+      count: failedRuns.length,
+      href: `${baseUrl()}/agenti`,
+      action: "workbench",
+      items: failedRuns.slice(0, 5).map((o) => ({ label: `${o.company}: ${(o.note ?? "neznáma chyba").slice(0, 110)}`, leadId: o.leadId })),
+    });
 
   return {
     at: new Date().toISOString(),
@@ -164,6 +203,8 @@ export async function buildDigest(sinceHours = 16): Promise<Digest> {
     opens: mails.filter((m) => m.openedAt && m.openedAt >= since).length,
     clicks: mails.filter((m) => m.clickedAt && m.clickedAt >= since).length,
     spentSinceEur: Math.round((spend._sum.eur ?? 0) * 100) / 100,
+    cost,
+    creditOk,
     budget: { spentEur: budget.spentEur, capEur: budget.capEur, pctUsed: budget.pctUsed, todayEur: budget.todayEur, available: budget.available, projectedEur: budget.projectedEur },
     todo,
     week: {
@@ -175,6 +216,7 @@ export async function buildDigest(sinceHours = 16): Promise<Digest> {
     },
     supply: { ready: shortlist.candidates, daysLeft: Math.ceil(shortlist.candidates / DAILY_RESEARCH_CAP), perNight: DAILY_RESEARCH_CAP },
     health: [
+      ...(creditOk ? [] : [{ level: "error" as const, text: "Kredit Anthropic je prázdny: Miro ani Nora nemôžu pracovať, dobi ho v Plans & Billing.", href: CREDIT_URL }]),
       ...health,
       ...(shortlist.candidates < 15
         ? [{ level: "warn" as const, text: `Zásoba pre Noru je nízka: ${shortlist.candidates} leadov, vystačí približne ${Math.ceil(shortlist.candidates / DAILY_RESEARCH_CAP)} dní. Doplní ju ranný sken; pomôže aj analýza firiem v Leadoch.`, href: `${baseUrl()}/leads` }]
@@ -191,6 +233,41 @@ export async function buildDigest(sinceHours = 16): Promise<Digest> {
       at: lessonNotes[0]?.createdAt.toISOString() ?? null,
     },
     news: newsNotes.find((n) => n.body) ? { title: newsNotes.find((n) => n.body)!.title ?? "", body: newsNotes.find((n) => n.body)!.body ?? "", at: newsNotes.find((n) => n.body)!.createdAt.toISOString() } : null,
+  };
+}
+
+/** Skutočné náklady (cez noc, 24 h, 7 dní) a odhad na najbližší týždeň z nameraných cien jednej ponuky. */
+async function costOutlook(supplyReady: number, spentEur: number, capEur: number): Promise<CostOutlook> {
+  const now = new Date();
+  const today06 = new Date(now);
+  today06.setUTCHours(6, 0, 0, 0);
+  // noc = 22:00 až 06:00 UTC (00:00 až 08:00 u nás); ak práve prebieha, počíta sa po teraz
+  const nightEnd = today06 > now ? now : today06;
+  const nightStart = new Date((today06 > now ? today06.getTime() - 86_400_000 : today06.getTime()) - 8 * 3_600_000);
+  const clamp = (d: Date) => (d < AGENTS_START ? AGENTS_START : d);
+  const [night, last24, week] = await Promise.all([
+    prisma.agentSpend.groupBy({ by: ["agent"], where: { createdAt: { gte: clamp(nightStart), lt: nightEnd } }, _sum: { eur: true } }).catch(() => []),
+    prisma.agentSpend.aggregate({ where: { createdAt: { gte: clamp(new Date(now.getTime() - 24 * 3_600_000)) } }, _sum: { eur: true } }).catch(() => ({ _sum: { eur: 0 } })),
+    prisma.agentSpend.aggregate({ where: { createdAt: { gte: clamp(new Date(now.getTime() - 7 * 86_400_000)) } }, _sum: { eur: true } }).catch(() => ({ _sum: { eur: 0 } })),
+  ]);
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  const cap = DAILY_RESEARCH_CAP * 7;
+  const deep = Math.min(DEEP_WEEKLY_CAP, cap);
+  const weekHigh = deep * OFFER_DEEP_EUR + (cap - deep) * OFFER_LEAN_EUR + 7 * SKAUT_DAY_FULL_EUR;
+  const weekLow = Math.min(cap, supplyReady) * OFFER_LEAN_EUR + 7 * SKAUT_DAY_LIGHT_EUR;
+  const room = capEur * SOFT_STOP - spentEur;
+  const perDay = weekHigh / 7;
+  return {
+    nightEur: r2(night.reduce((a, n) => a + (n._sum.eur ?? 0), 0)),
+    nightFrom: nightStart.toISOString(),
+    nightTo: nightEnd.toISOString(),
+    nightByAgent: night.map((n) => ({ agent: n.agent, eur: r2(n._sum.eur ?? 0) })).filter((n) => n.eur > 0),
+    last24hEur: r2(last24._sum.eur ?? 0),
+    weekEur: r2(week._sum.eur ?? 0),
+    weekLowEur: r2(weekLow),
+    weekHighEur: r2(weekHigh),
+    monthHighEur: r2((weekHigh * 30) / 7),
+    daysUntilStop: perDay > 0 ? Math.max(0, Math.floor(room / perDay)) : null,
   };
 }
 
@@ -259,7 +336,8 @@ export function digestTelegram(d: Digest): string {
   if (d.viewedMockups.length) lines.push(`• Návrh si otvorili: ${d.viewedMockups.slice(0, 4).map((v) => `<a href="${escapeHtml(v.url)}">${escapeHtml(v.company)}</a> (${v.views}×)`).join(", ")}`);
   if (d.replies.length) lines.push(`• Odpovedali: ${d.replies.slice(0, 4).map((r) => escapeHtml(r.company)).join(", ")}`);
   if (d.opens || d.clicks) lines.push(`• Maily: ${d.opens} otvorení, ${d.clicks} klikov`);
-  lines.push(`• Minuté: ${eur(d.spentSinceEur)}${d.budget.available ? `, mesiac ${eur(d.budget.spentEur)} z ${d.budget.capEur} €` : ""}`);
+  lines.push(`• Minuté cez noc: ${eur(d.cost.nightEur)}, za 7 dní ${eur(d.cost.weekEur)}${d.budget.available ? `, mesiac ${eur(d.budget.spentEur)} z ${d.budget.capEur} €` : ""}`);
+  lines.push(`• Odhad na týždeň: ${eur(d.cost.weekLowEur)} až ${eur(d.cost.weekHighEur)}${d.cost.daysUntilStop != null && d.cost.daysUntilStop < 30 ? ` (pri plnom tempe rozpočet vystačí ~${d.cost.daysUntilStop} dní)` : ""}`);
   lines.push(`• Týždeň: ${d.week.offers} z ${d.week.target} ponúk, odoslaných ${d.week.sent}, otvorení ${d.week.opened}, odpovedí ${d.week.replied}`);
   lines.push(`• Zásoba pre Noru: ${d.supply.ready} leadov (~${d.supply.daysLeft} dní)`);
   if (d.autopilot.available)
