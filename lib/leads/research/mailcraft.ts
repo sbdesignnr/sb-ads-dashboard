@@ -99,6 +99,7 @@ const PLAN_SYSTEM = `Si predajný stratég a psychológ pre SB Design (Samuel Bi
 ${SALES_PRINCIPLES}
 
 PRAVIDLÁ PLÁNU
+- Uhly zoraď od NAJSILNEJŠIEHO (prvý = ten, ktorý by si poslal, keby si mohol poslať len jeden).
 - Tri uhly MUSIA byť rôzne (rôzne id) a pokiaľ sa dá, opierať sa o rôzne overené zistenia. Uhol smie byť použitý iba ak preň existuje overené zistenie; uhol „hotova-vec“ iba ak už hotový návrh existuje.
 - "opening" popisuje OBSAH prvej vety (konkrétny fakt o nich z overeného zistenia), nie hotovú vetu.
 - "defusal" je jedna vecná veta pre najpravdepodobnejšiu námietku pri tomto uhle; nesmie tvrdiť nič, čo nie je v ponuke alebo zisteniach.

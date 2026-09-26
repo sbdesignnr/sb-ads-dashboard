@@ -2,8 +2,8 @@
 // (výskumy, návrhy, maily, pokladnica), nič sa nevymýšľa. Posiela sa na Telegram a zobrazuje v
 // /agenti; nič sa neodosiela zákazníkom.
 import { prisma } from "@/lib/prisma";
-import { AGENTS_START, SOFT_STOP, getBudget } from "@/lib/agents/budget";
-import { DAILY_RESEARCH_CAP, DEEP_WEEKLY_CAP, OFFER_DEEP_EUR, OFFER_LEAN_EUR, SKAUT_DAY_FULL_EUR, SKAUT_DAY_LIGHT_EUR } from "@/lib/agents/night";
+import { AGENTS_START, SOFT_STOP, getBudget, paceAllowance, type BudgetSnapshot } from "@/lib/agents/budget";
+import { DAILY_RESEARCH_CAP, DEEP_WEEKLY_CAP, OFFER_DEEP_EUR, OFFER_LEAN_EUR, SKAUT_DAY_FULL_EUR } from "@/lib/agents/night";
 import { CREDIT_URL, anthropicCreditOk, isCreditError } from "@/lib/agents/credit";
 import { draftsWaitingWhere, researchReadyWhere } from "@/lib/agents/queue";
 import { PRIORITY_KEYWORDS, poolWhere, getShortlist } from "@/lib/agents/skaut";
@@ -53,12 +53,13 @@ export interface CostOutlook {
   nightByAgent: { agent: string; eur: number }[];
   last24hEur: number;
   weekEur: number;
-  /** odhad na najbližší týždeň: pokojnejšie tempo a plné tempo (5 ponúk za noc, 2 skeny denne) */
-  weekLowEur: number;
-  weekHighEur: number;
-  monthHighEur: number;
-  /** pri plnom tempe: za koľko dní sa dosiahne 90 % mesačného rozpočtu (nočné behy sa potom zastavia) */
-  daysUntilStop: number | null;
+  /** odhad na najbližších 7 dní s ohľadom na rozpočtové tempo */
+  weekEstimateEur: number;
+  /** ustálené týždenné tempo (rovnomerne rozložený mesačný rozpočet) a koľko ponúk Nory sa v ňom zmestí */
+  steadyWeekEur: number;
+  steadyOffersPerWeek: number;
+  /** použiteľný mesačný strop (strop × 90 %) */
+  monthTargetEur: number;
 }
 
 export interface HealthItem {
@@ -147,7 +148,7 @@ export async function buildDigest(sinceHours = 16): Promise<Digest> {
     listNotes({ kind: "news", since: new Date(Date.now() - 14 * 86_400_000) }, 3),
     anthropicCreditOk(),
   ]);
-  const cost = await costOutlook(shortlist.candidates, budget.spentEur, budget.capEur);
+  const cost = await costOutlook(budget);
 
   const mockupByResearch = new Map(mockups.filter((m) => m.researchId).map((m) => [m.researchId as string, m]));
   const offers: DigestOffer[] = research.map((r) => {
@@ -236,8 +237,8 @@ export async function buildDigest(sinceHours = 16): Promise<Digest> {
   };
 }
 
-/** Skutočné náklady (cez noc, 24 h, 7 dní) a odhad na najbližší týždeň z nameraných cien jednej ponuky. */
-async function costOutlook(supplyReady: number, spentEur: number, capEur: number): Promise<CostOutlook> {
+/** Skutočné náklady (cez noc, 24 h, 7 dní) a odhad na najbližší týždeň podľa rozpočtového tempa. */
+async function costOutlook(budget: BudgetSnapshot): Promise<CostOutlook> {
   const now = new Date();
   const today06 = new Date(now);
   today06.setUTCHours(6, 0, 0, 0);
@@ -251,12 +252,17 @@ async function costOutlook(supplyReady: number, spentEur: number, capEur: number
     prisma.agentSpend.aggregate({ where: { createdAt: { gte: clamp(new Date(now.getTime() - 7 * 86_400_000)) } }, _sum: { eur: true } }).catch(() => ({ _sum: { eur: 0 } })),
   ]);
   const r2 = (v: number) => Math.round(v * 100) / 100;
-  const cap = DAILY_RESEARCH_CAP * 7;
-  const deep = Math.min(DEEP_WEEKLY_CAP, cap);
-  const weekHigh = deep * OFFER_DEEP_EUR + (cap - deep) * OFFER_LEAN_EUR + 7 * SKAUT_DAY_FULL_EUR;
-  const weekLow = Math.min(cap, supplyReady) * OFFER_LEAN_EUR + 7 * SKAUT_DAY_LIGHT_EUR;
-  const room = capEur * SOFT_STOP - spentEur;
-  const perDay = weekHigh / 7;
+  const daysInMonth = (Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1) - Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)) / 86_400_000;
+  const nora = paceAllowance(budget, "nora");
+  const skaut = paceAllowance(budget, "skaut");
+  const steadyNora = (nora.share * 7) / daysInMonth;
+  const steadySkaut = (skaut.share * 7) / daysInMonth;
+  // odhad týždňa: rozpočtové tempo plus doteraz nevyčerpaná rezerva, najviac plné tempo (5 ponúk za noc, Miro na plno)
+  const fullNora = DAILY_RESEARCH_CAP * 7 * OFFER_LEAN_EUR + DEEP_WEEKLY_CAP * (OFFER_DEEP_EUR - OFFER_LEAN_EUR);
+  const fullSkaut = 7 * SKAUT_DAY_FULL_EUR;
+  const noraWeek = Math.min(fullNora, steadyNora + Math.max(0, nora.allowed - budget.byAgent.nora));
+  const skautWeek = Math.min(fullSkaut, steadySkaut + Math.max(0, skaut.allowed - budget.byAgent.skaut));
+  const deepShare = DEEP_WEEKLY_CAP * OFFER_DEEP_EUR;
   return {
     nightEur: r2(night.reduce((a, n) => a + (n._sum.eur ?? 0), 0)),
     nightFrom: nightStart.toISOString(),
@@ -264,10 +270,10 @@ async function costOutlook(supplyReady: number, spentEur: number, capEur: number
     nightByAgent: night.map((n) => ({ agent: n.agent, eur: r2(n._sum.eur ?? 0) })).filter((n) => n.eur > 0),
     last24hEur: r2(last24._sum.eur ?? 0),
     weekEur: r2(week._sum.eur ?? 0),
-    weekLowEur: r2(weekLow),
-    weekHighEur: r2(weekHigh),
-    monthHighEur: r2((weekHigh * 30) / 7),
-    daysUntilStop: perDay > 0 ? Math.max(0, Math.floor(room / perDay)) : null,
+    weekEstimateEur: r2(noraWeek + skautWeek),
+    steadyWeekEur: r2(steadyNora + steadySkaut),
+    steadyOffersPerWeek: Math.max(0, Math.floor(DEEP_WEEKLY_CAP + (steadyNora - deepShare) / OFFER_LEAN_EUR)),
+    monthTargetEur: r2(budget.capEur * SOFT_STOP),
   };
 }
 
@@ -337,7 +343,7 @@ export function digestTelegram(d: Digest): string {
   if (d.replies.length) lines.push(`• Odpovedali: ${d.replies.slice(0, 4).map((r) => escapeHtml(r.company)).join(", ")}`);
   if (d.opens || d.clicks) lines.push(`• Maily: ${d.opens} otvorení, ${d.clicks} klikov`);
   lines.push(`• Minuté cez noc: ${eur(d.cost.nightEur)}, za 7 dní ${eur(d.cost.weekEur)}${d.budget.available ? `, mesiac ${eur(d.budget.spentEur)} z ${d.budget.capEur} €` : ""}`);
-  lines.push(`• Odhad na týždeň: ${eur(d.cost.weekLowEur)} až ${eur(d.cost.weekHighEur)}${d.cost.daysUntilStop != null && d.cost.daysUntilStop < 30 ? ` (pri plnom tempe rozpočet vystačí ~${d.cost.daysUntilStop} dní)` : ""}`);
+  lines.push(`• Najbližší týždeň ≈ ${eur(d.cost.weekEstimateEur)}; ustálené tempo ~${d.cost.steadyOffersPerWeek} ponúk týždenne za ${eur(d.cost.steadyWeekEur)} (mesačne najviac ${eur(d.cost.monthTargetEur)} z ${d.budget.capEur} €)`);
   lines.push(`• Týždeň: ${d.week.offers} z ${d.week.target} ponúk, odoslaných ${d.week.sent}, otvorení ${d.week.opened}, odpovedí ${d.week.replied}`);
   lines.push(`• Zásoba pre Noru: ${d.supply.ready} leadov (~${d.supply.daysLeft} dní)`);
   if (d.autopilot.available)

@@ -4,7 +4,7 @@
 // zásoba pre Noru nízka, oskenuje ďalší segment po segmente (kraje sa striedajú). Všetko je pod
 // rozpočtom, každé rozhodnutie sa zapisuje (agent_notes) a nič sa neodosiela.
 import { prisma } from "@/lib/prisma";
-import { AGENTS_START, canRunAutonomously, withSpend } from "./budget";
+import { AGENTS_START, canRunPaced, withSpend } from "./budget";
 import { applyVerdicts, assessLeads, ARCHIVE_PREFIX, RETRY_REASON_RE, VERDICT_VERSION, type AssessLead, type Verdict } from "./assess";
 import { latestVerdicts, listNotes, notesAvailable, writeNote } from "./notes";
 import { getShortlist, PRIORITY_KEYWORDS } from "./skaut";
@@ -19,7 +19,7 @@ import { anthropicCreditOk } from "./credit";
 export const POOL_TARGET = 60;
 /** Najviac toľko skenov denne (jeden stojí ≈ 0,3 €). */
 export const SCANS_PER_DAY = 2;
-export const SCAN_EST_EUR = 0.35;
+export const SCAN_EST_EUR = 0.45;
 const MAX_ENRICH = 4;
 const MAX_ASSESS = 16;
 const MAX_EMAIL = 6;
@@ -83,7 +83,7 @@ export async function runScoutCycle(deadlineAt: number, opts: { dry?: boolean } 
   if (opts.dry) return dryCycle(res);
   if (process.env.AGENT_SCOUT_DISABLED === "1") return { ...res, skipped: "Skenovanie je vypnuté (AGENT_SCOUT_DISABLED)." };
   if (!(await notesAvailable())) return { ...res, skipped: "Chýba tabuľka agent_notes (spusti SQL z postupu)." };
-  const gate = await canRunAutonomously("skaut", 0.15);
+  const gate = await canRunPaced("skaut", 0.15);
   if (!gate.ok) return { ...res, skipped: gate.reason };
   if (!(await anthropicCreditOk())) return { ...res, skipped: "Kredit Anthropic je prázdny: dobi ho v Plans & Billing, Miro potom pokračuje sám." };
   const { market, reason: marketReason } = await agentMarket();
@@ -127,7 +127,7 @@ export async function runScoutCycle(deadlineAt: number, opts: { dry?: boolean } 
     } else if (await prisma.leadScanJob.findFirst({ where: { status: "running", createdAt: { gt: new Date(Date.now() - 20 * 60_000) } }, select: { id: true } })) {
       res.log.push("Práve beží iný sken, počkám.");
     } else {
-      const g = await canRunAutonomously("skaut", SCAN_EST_EUR);
+      const g = await canRunPaced("skaut", SCAN_EST_EUR);
       if (!g.ok) res.log.push(`Sken preskočený: ${g.reason}`);
       else await scanOnce(res, left, market);
     }

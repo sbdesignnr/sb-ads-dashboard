@@ -27,8 +27,14 @@ export const SOFT_STOP = 0.9;
  * okamihu. Skoršie záznamy sú testy pri vývoji, v tabuľke ostávajú, ale do stropu sa nerátajú.
  */
 export const AGENTS_START = new Date(process.env.AGENTS_START?.trim() || "2026-09-25T12:00:00Z");
-/** Orientačné rozdelenie stropu medzi agentov (súčet = 50 €). Nora je hlavný výdavok (30 ponúk týždenne), Miro hľadá a dopĺňa zásobu. */
-export const ALLOCATION: Record<SpendAgent, number> = { nora: 32, skaut: 12, atelier: 3, leads: 3 };
+/**
+ * Rozdelenie stropu medzi agentov (súčet = 50 €). Nora píše ponuky (~0,30 € kus), Miro hľadá firmy
+ * a plní zásobu. Tempo míňania sa drží rovnomerne cez mesiac (pozri canRunPaced), aby sa 50 € nevyčerpalo
+ * za dva týždne.
+ */
+export const ALLOCATION: Record<SpendAgent, number> = { nora: 28, skaut: 17, atelier: 2, leads: 3 };
+/** Rezerva nad rovnomerným tempom: toľko smie agent minúť "dopredu" (jeden beh navyše). */
+export const PACE_BURST_EUR: Record<SpendAgent, number> = { nora: 0.7, skaut: 0.8, atelier: 0, leads: 0 };
 
 // Cenník Anthropic v USD za 1 M tokenov (vstup, výstup). Neznáme modely sa účtujú ako
 // Sonnet 4.x (3/15), teda skôr nad skutočnou cenou.
@@ -201,6 +207,20 @@ export async function getBudget(): Promise<BudgetSnapshot> {
  * Smie Skaut / Nora pracovať sami (v noci)? Vyžaduje fungujúcu evidenciu výdavkov a to,
  * že po odhadovanej cene behu ostane výdavok pod mäkkým stropom a pod podielom agenta.
  */
+/** Podiel kalendárneho mesiaca, ktorý už uplynul (0 až 1). */
+export function monthFraction(now = new Date()): number {
+  const s = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+  const e = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+  return (now.getTime() - s) / (e - s);
+}
+
+/** Mesačný podiel agenta z použiteľného stropu (strop × SOFT_STOP) a kumulatívne povolené míňanie k dnešku. */
+export function paceAllowance(budget: BudgetSnapshot, agent: SpendAgent): { share: number; allowed: number } {
+  const total = Object.values(budget.allocation).reduce((a, b) => a + b, 0) || 1;
+  const share = (budget.allocation[agent] / total) * budget.capEur * SOFT_STOP;
+  return { share, allowed: share * monthFraction() + PACE_BURST_EUR[agent] };
+}
+
 export async function canRunAutonomously(
   agent: SpendAgent,
   estimateEur: number,
@@ -213,4 +233,22 @@ export async function canRunAutonomously(
   if (budget.byAgent[agent] + estimateEur > budget.allocation[agent] * 1.25)
     return { ok: false, reason: `Podiel agenta ${agent} na rozpočte je vyčerpaný.`, budget };
   return { ok: true, budget };
+}
+
+/**
+ * Ako canRunAutonomously, plus rovnomerné tempo: agent smie k dnešnému dňu minúť najviac svoj mesačný
+ * podiel krát uplynutá časť mesiaca (plus jeden beh navyše). Nevyčerpá tak celý rozpočet hneď na
+ * začiatku mesiaca a nespotrebovaný podiel sa prenáša do ďalších dní.
+ */
+export async function canRunPaced(
+  agent: SpendAgent,
+  estimateEur: number,
+): Promise<{ ok: boolean; reason?: string; budget: BudgetSnapshot }> {
+  const gate = await canRunAutonomously(agent, estimateEur);
+  if (!gate.ok) return gate;
+  const { share, allowed } = paceAllowance(gate.budget, agent);
+  const spent = gate.budget.byAgent[agent];
+  if (spent + estimateEur > allowed)
+    return { ok: false, reason: `Šetrím rozpočet: ${agent === "nora" ? "Nora" : agent === "skaut" ? "Miro" : agent} smie k dnešku minúť ${allowed.toFixed(2)} € z mesačných ${share.toFixed(0)} € (minuté ${spent.toFixed(2)} €), ďalší beh čaká.`, budget: gate.budget };
+  return gate;
 }

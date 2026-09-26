@@ -219,10 +219,7 @@ export function GuideChip({ onOpenWorkbench }: { onOpenWorkbench?: (leadId?: str
                   </p>
                 )}
                 <p className="mt-2 leading-snug text-muted">
-                  Najbližší týždeň: <b className="text-foreground">{eur(d.cost.weekLowEur)} až {eur(d.cost.weekHighEur)}</b> (ponuka stojí ~0,30 € v základnom a ~0,49 € v hlbokom režime; Miro ~0,5 až 1,2 € denne).
-                  {d.cost.daysUntilStop != null && d.cost.daysUntilStop < 30 && (
-                    <span className="text-amber-200"> Pri plnom tempe ({eur(d.cost.monthHighEur)} mesačne) sa rozpočet {d.budget.capEur} € vyčerpá za ~{d.cost.daysUntilStop} dní a agenti sa zastavia.</span>
-                  )}
+                  Najbližších 7 dní: <b className="text-foreground">≈ {eur(d.cost.weekEstimateEur)}</b>. Rozpočet je rozložený rovnomerne, mesačne sa minie najviac <b className="text-foreground">{eur(d.cost.monthTargetEur)}</b> z {d.budget.capEur} € (zvyšok je rezerva). Ustálené tempo: <b className="text-foreground">~{d.cost.steadyOffersPerWeek} ponúk týždenne</b> za {eur(d.cost.steadyWeekEur)}.
                 </p>
               </div>
 

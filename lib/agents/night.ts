@@ -2,7 +2,7 @@
 // Nič sa neodosiela — výsledok čaká v pracovni na posúdenie. Chránia ho tri poistky:
 // mesačný rozpočet (fail-closed), denný limit počtu ponúk a vypínač AGENT_NIGHT_DISABLED=1.
 import { prisma } from "@/lib/prisma";
-import { AGENTS_START, canRunAutonomously } from "./budget";
+import { AGENTS_START, canRunPaced } from "./budget";
 import { executeResearch, startResearch } from "./research";
 import { anthropicCreditOk, isCreditError } from "./credit";
 import { pickWithTriage } from "./skaut";
@@ -10,15 +10,15 @@ import { pickWithTriage } from "./skaut";
 /** Najviac toľko ponúk denne (5 × 7 = 35 týždenne; cieľ usera je aspoň 30). */
 export const DAILY_RESEARCH_CAP = 5;
 /** Odhad ceny jedného behu pre kontrolu rozpočtu (základný režim ≈ 0,30 €, hlboký ≈ 0,49 € vrátane Google). */
-export const EST_RESEARCH_EUR = 0.4;
+export const EST_RESEARCH_EUR = 0.35;
 /** Namerané ceny jednej ponuky (AI + Google) pre odhad nákladov na týždeň. */
-export const OFFER_LEAN_EUR = 0.3;
+export const OFFER_LEAN_EUR = 0.27;
 export const OFFER_DEEP_EUR = 0.49;
 /** Denné náklady Mira: plné tempo (2 skeny + posudzovanie) a pokojné (len posudzovanie). */
 export const SKAUT_DAY_FULL_EUR = 1.2;
 export const SKAUT_DAY_LIGHT_EUR = 0.5;
-/** Porada Miro + Nora (≈ +0,03 €) len pre najlepšie leady (fit ≥ 8), najviac toľko týždenne. */
-export const DEEP_WEEKLY_CAP = 15;
+/** Hlboký režim (porada Miro + Nora, silnejší model pre texty; ≈ +0,2 €) len pre najlepšie leady (fit ≥ 8), najviac toľko týždenne. */
+export const DEEP_WEEKLY_CAP = 3;
 
 export interface NightResult {
   ran: { leadId: string; company: string; ok: boolean; error?: string | null }[];
@@ -47,7 +47,7 @@ export async function runNightQueue(deadlineAt: number, maxRuns = 2): Promise<Ni
       out.skipped ??= `Denný limit ${DAILY_RESEARCH_CAP} ponúk je vyčerpaný.`;
       break;
     }
-    const gate = await canRunAutonomously("nora", EST_RESEARCH_EUR);
+    const gate = await canRunPaced("nora", EST_RESEARCH_EUR);
     out.spentEur = gate.budget.spentEur;
     if (!gate.ok) {
       out.skipped ??= gate.reason;

@@ -1,5 +1,6 @@
 import { backlogCount, PRIORITY_SEGMENT_RE } from "../agents/skaut";
 import { canRunAutonomously } from "../agents/budget";
+import { notesAvailable } from "../agents/notes";
 import { prisma } from "@/lib/prisma";
 import type { Lead, LeadSegment } from "@prisma/client";
 import {
@@ -493,6 +494,9 @@ export async function scanDaily(
   newLeads: number;
   skipped: boolean;
 }> {
+  // Skenovanie má na starosti autopilot Skauta (Miro): slovenský trh, rovnomerné tempo míňania, odôvodnené
+  // posúdenie. Tento denný sken by ho zdvojoval a míňal mimo rozpočtového tempa (a hľadal aj v ČR).
+  if (process.env.AGENT_SCOUT_DISABLED !== "1" && (await notesAvailable())) return { scanned: 0, addedQualified: 0, newLeads: 0, skipped: true };
   const target = opts.targetNew ?? 120;
   // Each run fully analyzes every discovered site, so keep the daily footprint
   // small enough to finish within the cron time budget.

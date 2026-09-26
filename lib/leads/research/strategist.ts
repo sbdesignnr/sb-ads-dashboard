@@ -417,7 +417,8 @@ export async function writeOutreachEmail(input: {
   if (!plan && input.craft !== false) issues.push("plán uhlov mailu sa nepodaril, píšem jednoduchým postupom");
   if (plan) {
     const drafts = await Promise.all(
-      plan.angles.map(async (a) => {
+      // základný režim píše 2 najsilnejšie uhly (šetrí ~0,05 € na ponuku), hlboký všetky 3
+      plan.angles.slice(0, input.deep ? 3 : 2).map(async (a) => {
         const label = ANGLES.find((x) => x.id === a.angle);
         const guidance = `UHOL TOHTO MAILU: ${label?.label}. ${label?.how}\nOpri sa o zistenie ${a.finding_id}. Obsah prvej vety: ${a.opening}\nNajpravdepodobnejšia námietka adresáta: „${a.objection}“. Zmier ju JEDNOU vetou VLASTNÝMI SLOVAMI, prirodzene a ľudsky (nekopíruj túto formuláciu doslova, bez vymyslených faktov): ${a.defusal}\nInšpirácia pre predmet: ${a.subject_idea}\nSTÁVKA (čo to stojí ich firmu, ich očami): ${a.stake}\nHODNOTA ZADARMO (konkrétny nápad zmeny, ktorý vložíš do mailu): ${a.gift}\nAdresát: ${plan.recipient}`;
         let d = await draftMail(guidance, "", a.angle);
