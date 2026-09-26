@@ -129,7 +129,7 @@
 .ag-flag { transition: transform 0.6s cubic-bezier(0.3, 1.6, 0.5, 1); }
 
 .ag-house { transition: filter 0.25s ease; }
-.ag-house-hover { filter: drop-shadow(0 0 10px rgba(255, 235, 170, 0.75)); }
+.ag-house-hover { filter: drop-shadow(0 0 9px rgba(103, 232, 249, 0.7)); }
 
 /* ── postavička ──────────────────────────────────────────────────────────── */
 .ag-arm, .ag-leg, .ag-head, .ag-torso, .ag-eyes {
@@ -253,7 +253,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ag-sway, .ag-cloud, .ag-bird, .ag-flap, .ag-smoke, .ag-jet, .ag-ripple, .ag-twinkle,
-  .ag-bob, .ag-bounce, .ag-dash, .ag-flutter, .ag-ring, .ag-star {
+  .ag-bob, .ag-bounce, .ag-dash, .ag-flutter, .ag-ring, .ag-star, .ag-thrust, .ag-meridian {
     animation: none !important;
   }
 }
@@ -276,3 +276,41 @@
 }
 .ag-gear { transform-box: fill-box; transform-origin: 50% 50%; animation: ag-gear 4s linear infinite; }
 @keyframes ag-gear { to { transform: rotate(360deg); } }
+
+/* ── operačné centrum: trysky, glóbus, rám a atmosféra ───────────────────── */
+.ag-thrust { transform-box: fill-box; transform-origin: 50% 0%; animation: ag-thrust 0.9s ease-in-out infinite alternate; }
+@keyframes ag-thrust {
+  from { transform: scaleY(0.82); opacity: 0.75; }
+  to { transform: scaleY(1.12); opacity: 1; }
+}
+.ag-meridian { transform-box: fill-box; transform-origin: 50% 50%; animation: ag-meridian 4.8s linear infinite; }
+@keyframes ag-meridian {
+  0% { transform: scaleX(1); }
+  50% { transform: scaleX(0.06); }
+  100% { transform: scaleX(1); }
+}
+.ag-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 78% 70% at 50% 46%, rgba(0, 0, 0, 0) 55%, rgba(2, 5, 13, 0.62) 100%),
+    repeating-linear-gradient(0deg, rgba(120, 190, 255, 0.028) 0, rgba(120, 190, 255, 0.028) 1px, transparent 1px, transparent 3px);
+}
+.ag-frame { position: absolute; inset: 8px; pointer-events: none; z-index: 5; }
+.ag-frame i {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 0 solid rgba(103, 232, 249, 0.75);
+}
+.ag-frame i:nth-child(1) { left: 0; top: 0; border-left-width: 2px; border-top-width: 2px; border-top-left-radius: 6px; }
+.ag-frame i:nth-child(2) { right: 0; top: 0; border-right-width: 2px; border-top-width: 2px; border-top-right-radius: 6px; }
+.ag-frame i:nth-child(3) { left: 0; bottom: 0; border-left-width: 2px; border-bottom-width: 2px; border-bottom-left-radius: 6px; }
+.ag-frame i:nth-child(4) { right: 0; bottom: 0; border-right-width: 2px; border-bottom-width: 2px; border-bottom-right-radius: 6px; }
+.ag-planet {
+  position: absolute;
+  border-radius: 9999px;
+  pointer-events: none;
+  transition: all 2s ease;
+}

@@ -1,6 +1,6 @@
 "use client";
 
-// Svet agentov: plávajúci ostrov s domčekmi a postavičkami, ktoré ukazujú REÁLNY stav
+// Operačné centrum agentov: plávajúca paluba s modulmi a operatívcami, ktorí ukazujú REÁLNY stav
 // agentov (pracuje / čaká na schválenie / nečinný). Kamera sa dá ťahať a približovať,
 // deň a noc sa riadia časom. Kliknutím na agenta sa otvorí jeho panel.
 
@@ -29,7 +29,7 @@ import {
   Chair,
   Fence,
   Flowers,
-  Fountain,
+  HoloCore,
   HoloChips,
   Lamp,
   Mailbox,
@@ -56,18 +56,19 @@ type PhaseMode = "auto" | Phase;
 
 const phaseFromHour = (h: number): Phase => (h >= 6 && h < 8 ? "dawn" : h >= 8 && h < 18 ? "day" : h >= 18 && h < 20 ? "dusk" : "night");
 
+// Operačné centrum svieti stále (neónové pásy, displeje); čas dňa mení len oblohu a jemné zafarbenie scény.
 const PHASE: Record<Phase, { tint: string; lights: boolean; stars: number }> = {
-  day: { tint: "#ffffff", lights: false, stars: 0 },
-  dawn: { tint: "#ffe2d2", lights: true, stars: 0.25 },
-  dusk: { tint: "#ffc9a6", lights: true, stars: 0.35 },
-  night: { tint: "#8291cc", lights: true, stars: 1 },
+  day: { tint: "#ffffff", lights: true, stars: 0.4 },
+  dawn: { tint: "#f0e6ff", lights: true, stars: 0.55 },
+  dusk: { tint: "#f6dbe9", lights: true, stars: 0.65 },
+  night: { tint: "#a8b8ea", lights: true, stars: 1 },
 };
 
 const SKY: Record<Phase, string> = {
-  day: "linear-gradient(180deg,#4f9cf0 0%,#8ec8ff 46%,#d9efff 100%)",
-  dawn: "linear-gradient(180deg,#54619f 0%,#e69bb8 52%,#ffdcae 100%)",
-  dusk: "linear-gradient(180deg,#2a3577 0%,#b9527f 50%,#ffab62 100%)",
-  night: "linear-gradient(180deg,#040713 0%,#0b173d 52%,#1c2e63 100%)",
+  day: "radial-gradient(ellipse 90% 60% at 50% 105%,rgba(56,189,248,.24) 0%,rgba(56,189,248,0) 70%),linear-gradient(180deg,#040a1c 0%,#0a1f47 55%,#0e3560 100%)",
+  dawn: "radial-gradient(ellipse 90% 60% at 50% 105%,rgba(244,114,182,.18) 0%,rgba(244,114,182,0) 70%),linear-gradient(180deg,#050a1e 0%,#171f52 55%,#41356e 100%)",
+  dusk: "radial-gradient(ellipse 90% 60% at 50% 105%,rgba(251,146,60,.17) 0%,rgba(251,146,60,0) 70%),linear-gradient(180deg,#040820 0%,#161d54 52%,#3a2b5c 100%)",
+  night: "radial-gradient(ellipse 90% 60% at 50% 105%,rgba(56,189,248,.12) 0%,rgba(56,189,248,0) 70%),linear-gradient(180deg,#02040c 0%,#060d24 52%,#0c1838 100%)",
 };
 
 // ── scéna ──────────────────────────────────────────────────────────────────
@@ -709,7 +710,7 @@ export function AgentWorld() {
     FLOWERS.forEach(([gx, gy], i) => list.push({ key: `fl${i}`, b: pointBox(gx, gy, 0.2), node: <Flowers gx={gx} gy={gy} /> }));
     ROCKS.forEach(([gx, gy, s], i) => list.push({ key: `rock${i}`, b: pointBox(gx, gy, 0.2), node: <Rock gx={gx} gy={gy} s={s} /> }));
     LAMPS.forEach(([gx, gy], i) => list.push({ key: `lamp${i}`, b: pointBox(gx, gy, 0.1), node: <Lamp gx={gx} gy={gy} /> }));
-    list.push({ key: "fountain", b: { x0: 6.0, x1: 8.0, y0: 6.0, y1: 8.0 }, node: <Fountain gx={7} gy={7} /> });
+    list.push({ key: "fountain", b: { x0: 6.0, x1: 8.0, y0: 6.0, y1: 8.0 }, node: <HoloCore gx={7} gy={7} /> });
     list.push({ key: "bench1", b: { x0: 2.8, x1: 3.8, y0: 5.7, y1: 6.05 }, node: <Bench gx={2.8} gy={5.7} along="x" /> });
     DEPARTMENTS.forEach((d) =>
       list.push({ key: `sign-${d.id}`, b: pointBox(d.sign[0], d.sign[1], 0.12), node: <Signpost gx={d.sign[0]} gy={d.sign[1]} label={d.name} sub={d.tagline} color={d.color} /> }),
@@ -765,7 +766,7 @@ export function AgentWorld() {
                 opacity={0.8}
               />
             )}
-            <House g={h} name={agent.name} status={st} accent={agent.look.accent} roof={agent.house?.roof ?? "#d96a35"} wall={agent.house?.wall ?? "#f4e7d1"} hover={isHover || isSel} />
+            <House g={h} name={agent.name} status={st} accent={agent.look.accent} hover={isHover || isSel} />
           </g>
         ),
       });
@@ -856,17 +857,18 @@ export function AgentWorld() {
     { id: "night", icon: <Moon className="h-3.5 w-3.5" />, label: "Noc" },
   ];
 
+  const planetGlow = "0 0 40px 4px rgba(90,150,255,.24), inset -22px -18px 36px rgba(0,0,20,.72)";
   const celestial = {
-    day: { x: "78%", y: "13%", size: 96, bg: "radial-gradient(circle,#fffbe0 0%,#ffe680 45%,rgba(255,220,100,0) 72%)", o: 1 },
-    dawn: { x: "84%", y: "38%", size: 120, bg: "radial-gradient(circle,#fff0d0 0%,#ffb27a 45%,rgba(255,150,100,0) 72%)", o: 1 },
-    dusk: { x: "14%", y: "40%", size: 130, bg: "radial-gradient(circle,#ffe0b0 0%,#ff8a5c 45%,rgba(255,110,80,0) 72%)", o: 1 },
-    night: { x: "16%", y: "15%", size: 64, bg: "radial-gradient(circle at 36% 34%,#ffffff 0%,#f4f7ff 46%,#dfe7fb 100%)", o: 1, glow: "0 0 26px 8px rgba(200,215,255,.55), 0 0 90px 30px rgba(150,175,255,.28)" },
+    day: { x: "80%", y: "17%", size: 118, bg: "radial-gradient(circle at 30% 26%,#b4d2ff 0%,#4f78cc 30%,#1e3474 60%,#070d26 100%)", o: 1, glow: planetGlow },
+    dawn: { x: "80%", y: "20%", size: 118, bg: "radial-gradient(circle at 30% 26%,#cdbcff 0%,#6a6ccf 30%,#2a2f78 60%,#080c28 100%)", o: 1, glow: planetGlow },
+    dusk: { x: "80%", y: "20%", size: 118, bg: "radial-gradient(circle at 30% 26%,#d2c4ff 0%,#7a72d2 30%,#2e2c74 60%,#080a26 100%)", o: 1, glow: planetGlow },
+    night: { x: "80%", y: "17%", size: 108, bg: "radial-gradient(circle at 30% 26%,#7d9ee0 0%,#2d4a94 32%,#101c48 62%,#050914 100%)", o: 1, glow: planetGlow },
   }[phase];
 
   return (
     <div
       ref={containerRef}
-      className="ag-root relative h-full w-full cursor-grab overflow-hidden rounded-2xl border border-border active:cursor-grabbing"
+      className="ag-root relative h-full w-full cursor-grab overflow-hidden rounded-2xl border border-cyan-400/25 shadow-[0_0_0_1px_rgba(8,15,35,0.9),0_18px_60px_-20px_rgba(34,211,238,0.25)] active:cursor-grabbing"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -900,8 +902,8 @@ export function AgentWorld() {
           <Ground />
           {PLOTS.filter((p) => AGENTS.some((a) => a.plot === p.id)).map((p) => (
             <g key={p.id}>
-              <polygon points={footprint(p.gx, p.gy, p.w, p.d)} fill="#9ee08f" opacity={0.6} />
-              <polygon points={footprint(p.gx, p.gy, p.w, p.d)} fill="none" stroke="#f3e5cf" strokeWidth={2} opacity={0.5} />
+              <polygon points={footprint(p.gx, p.gy, p.w, p.d)} fill="#0a1226" opacity={0.75} />
+              <polygon points={footprint(p.gx, p.gy, p.w, p.d)} fill="none" stroke="#3f5390" strokeWidth={1.4} opacity={0.8} />
             </g>
           ))}
           {sorted.map((e) => (
@@ -944,7 +946,7 @@ export function AgentWorld() {
               const a = (i * 137.5 * Math.PI) / 180;
               const [x, y] = iso(1 + ((Math.sin(a) + 1) / 2) * 12, 1 + ((Math.cos(a * 1.3) + 1) / 2) * 12, 24 + (i % 4) * 14);
               return (
-                <circle key={i} cx={x} cy={y} r={2.4} fill="#fff2a0" className="ag-firefly" style={{ animationDelay: `${-i * 0.9}s`, animationDuration: `${7 + (i % 5)}s`, ["--fx" as string]: `${(i % 2 ? 1 : -1) * (16 + (i % 3) * 8)}px`, ["--fy" as string]: `${-10 - (i % 4) * 5}px` } as React.CSSProperties} />
+                <circle key={i} cx={x} cy={y} r={2.4} fill="#9ff3ff" className="ag-firefly" style={{ animationDelay: `${-i * 0.9}s`, animationDuration: `${7 + (i % 5)}s`, ["--fx" as string]: `${(i % 2 ? 1 : -1) * (16 + (i % 3) * 8)}px`, ["--fy" as string]: `${-10 - (i % 4) * 5}px` } as React.CSSProperties} />
               );
             })}
           </g>
@@ -954,6 +956,14 @@ export function AgentWorld() {
           })}
         </g>
       </svg>
+
+      <div className="ag-vignette" />
+      <div className="ag-frame">
+        <i />
+        <i />
+        <i />
+        <i />
+      </div>
 
       {/* bubliny a štítky nad hlavami */}
       <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
@@ -965,12 +975,12 @@ export function AgentWorld() {
             <div key={a.id} ref={(el) => { bubbleRefs.current[a.id] = el; }} className="ag-bubble">
               <div className="flex -translate-x-1/2 -translate-y-full flex-col items-center gap-1.5 pb-1">
                 {sp && (
-                  <div key={sp.id} className="ag-bubble-inner relative max-w-[240px] rounded-2xl rounded-bl-md border border-white/15 bg-[#0d1524]/92 px-3 py-2 text-[12.5px] leading-snug text-foreground shadow-xl shadow-black/40 backdrop-blur-md">
+                  <div key={sp.id} className="ag-bubble-inner relative max-w-[240px] rounded-lg border border-cyan-300/25 bg-[#07101f]/92 px-3 py-2 text-[12.5px] leading-snug text-foreground shadow-xl shadow-black/40 backdrop-blur-md">
                     {sp.text}
-                    <span className="absolute -bottom-1.5 left-4 h-3 w-3 rotate-45 border-b border-r border-white/15 bg-[#0d1524]/92" />
+                    <span className="absolute -bottom-1.5 left-4 h-3 w-3 rotate-45 border-b border-r border-cyan-300/25 bg-[#07101f]/92" />
                   </div>
                 )}
-                <div className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-white/15 bg-[#0d1524]/85 px-2.5 py-1 text-[11.5px] font-semibold text-foreground shadow-lg shadow-black/30 backdrop-blur-md">
+                <div className="flex items-center gap-1.5 whitespace-nowrap rounded-md border border-cyan-300/25 bg-[#07101f]/88 px-2.5 py-1 text-[11.5px] font-semibold text-foreground shadow-lg shadow-black/30 backdrop-blur-md">
                   <span className={cn("h-2 w-2 rounded-full", st !== "idle" && "animate-pulse")} style={{ background: col, boxShadow: `0 0 8px ${col}` }} />
                   {a.name}
                   <span className="font-normal text-muted">{snapshots ? statusLabel(a, st) : "Načítavam…"}</span>
@@ -995,7 +1005,7 @@ export function AgentWorld() {
       {/* HUD */}
       <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-wrap items-center gap-2">
         <div className="pointer-events-auto flex items-center gap-3 rounded-xl border border-white/12 bg-[#0d1524]/80 px-3 py-2 text-xs shadow-lg backdrop-blur-md">
-          <span className="font-semibold text-foreground max-md:hidden">Impérium agentov</span>
+          <span className="font-semibold tracking-wide text-foreground max-md:hidden">OPERAČNÉ CENTRUM</span>
           <span className="h-3 w-px bg-white/15 max-md:hidden" />
           {(["working", "waiting", "idle", "error"] as AgentStatus[])
             .filter((s) => counts[s] > 0 || s !== "error")
@@ -1060,7 +1070,7 @@ export function AgentWorld() {
         <button title="Oddialiť" onClick={() => { const { w, h } = view.current; zoomAt(0.8, w / 2, h / 2); }} className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-white/10 hover:text-foreground">
           <ZoomOut className="h-4 w-4" />
         </button>
-        <button title="Zobraziť celý ostrov" onClick={() => { fitView(true, false); setSelected(null); }} className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-white/10 hover:text-foreground">
+        <button title="Zobraziť celé centrum" onClick={() => { fitView(true, false); setSelected(null); }} className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-white/10 hover:text-foreground">
           <Maximize2 className="h-4 w-4" />
         </button>
       </div>

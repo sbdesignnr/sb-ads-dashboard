@@ -52,7 +52,7 @@ function Typed({ text, onDone }: { text: string; onDone?: () => void }) {
 function Avatar({ agent, size = 56 }: { agent: AgentDef; size?: number }) {
   const l = agent.look;
   return (
-    <svg width={size} height={size} viewBox="-26 -100 52 66" className="shrink-0 rounded-2xl" style={{ background: "linear-gradient(160deg,#243756,#152036)" }}>
+    <svg width={size} height={size} viewBox="-26 -100 52 66" className="shrink-0 rounded-xl ring-1 ring-cyan-300/35" style={{ background: "linear-gradient(160deg,#1c2f57,#0a1226)" }}>
       <defs>
         <radialGradient id={`face-${agent.id}`} cx="0.35" cy="0.3" r="0.8">
           <stop offset="0.55" stopColor="#fff" stopOpacity={0} />
