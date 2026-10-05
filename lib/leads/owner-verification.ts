@@ -97,6 +97,47 @@ export function findLeaderOnSite(
   return null;
 }
 
+// Užšia množina rolí pre SLEPÉ dohľadanie (bez known kandidáta): vynecháva "majiteľ"/"vlastník"/
+// "riaditeľ", lebo v realitnej a stavebnej reči bežne znamenajú "majiteľ/vlastník bytu, pozemku,
+// nehnuteľnosti" — nič o firme. Tieto slová sa naďalej používajú v findLeaderOnSite (LEADERSHIP_RE
+// vyššie), kde je riziko nízke, lebo tam sa len POTVRDZUJE už known meno kandidáta.
+const DISCOVERY_ROLE_RE = /konate[ľl](?:ka)?|jednate[ľl](?:ka)?|spolumajite[ľl](?:ka)?|zakladate[ľl](?:ka)?|\bceo\b|founder/gi;
+
+/**
+ * Nájde meno PRIAMO OZNAČENÉ rolou z DISCOVERY_ROLE_RE na vlastnom webe firmy (napr. "Konateľ: Ján
+ * Novák", "Peter Horák, konateľ spoločnosti") — bez toho, aby sme meno vopred poznali (na rozdiel od
+ * findLeaderOnSite, ktorý len POTVRDZUJE známeho kandidáta). Vyžaduje rolu hneď pri mene (~40 znakov,
+ * v tej istej vete), aby sa nezamenil zamestnanec, referencia alebo klient spomenutý inde na stránke.
+ * Veľké/malé písmená mena sa porovnávajú PRESNE (nie case-insensitive), inak by "vlastníka" pred
+ * menom firmy vyzeralo ako meno osoby.
+ */
+export function discoverLeaderOnSite(siteText: string | null | undefined): { spelled: string } | null {
+  if (!siteText) return null;
+  const NAME = String.raw`\p{Lu}\p{Ll}+(?:[-'’]\p{Lu}?\p{Ll}+)?`;
+  const TITLE = String.raw`(?:(?:Mgr|Ing|JUDr|MUDr|MVDr|PhDr|RNDr|Bc)\.\s*)?`;
+  const pair = new RegExp(`${TITLE}(${NAME})\\s+(${NAME})`, "u");
+  const ok = (a: string, b: string) => foldName(a).length >= 2 && foldName(b).length >= 2;
+  const role = new RegExp(DISCOVERY_ROLE_RE.source, "gi");
+  let m: RegExpExecArray | null;
+  while ((m = role.exec(siteText))) {
+    const end = m.index + m[0].length;
+    const after = siteText.slice(end, end + 45).split(/[.\n]/)[0] ?? "";
+    const hitAfter = pair.exec(after);
+    if (hitAfter && ok(hitAfter[1], hitAfter[2])) return { spelled: `${hitAfter[1]} ${hitAfter[2]}` };
+    const before = (siteText.slice(Math.max(0, m.index - 45), m.index).split(/[.\n]/).pop() ?? "").slice(-35);
+    const hits = [...before.matchAll(new RegExp(pair.source, "gu"))];
+    const last = hits.at(-1);
+    if (last && ok(last[1], last[2])) return { spelled: `${last[1]} ${last[2]}` };
+  }
+  return null;
+}
+
+/** websiteTier, ale bez potreby poznať meno vopred (pozri discoverLeaderOnSite). */
+function discoveredTier(siteText: string | null | undefined): { name: string; position: string | null; source: OwnerSource } | null {
+  const hit = discoverLeaderOnSite(siteText);
+  return hit ? { name: hit.spelled, position: null, source: "website" } : null;
+}
+
 /** Zo zoznamu členov orgánu vyber toho, kto je najvhodnejší adresát. */
 function preferredOwner(owners: RegistryPerson[]): RegistryPerson {
   const rank = (o: RegistryPerson) => {
@@ -198,7 +239,7 @@ export async function verifyOwner(input: {
     // Kontakt z importu v orgáne nie je. Konateľa z registra dosadíme LEN ak je
     // schránka všeobecná; osobná schránka patrí niekomu inému.
     if (!isGenericMailbox(input.email)) {
-      const web = websiteTier(candidateName, input.candidate?.position, input.siteText);
+      const web = websiteTier(candidateName, input.candidate?.position, input.siteText) ?? discoveredTier(input.siteText);
       return {
         registry,
         owner: web,
@@ -224,6 +265,17 @@ export async function verifyOwner(input: {
       reason: registry
         ? "register nemá konateľa; osoba potvrdená na webe firmy"
         : "firma nie je v registri; osoba potvrdená na webe firmy",
+    };
+
+  // 3) DOHĽADANIE na webe bez známeho kandidáta (meno priamo pri role: "Konateľ: …").
+  const found = discoveredTier(input.siteText);
+  if (found)
+    return {
+      registry,
+      owner: found,
+      reason: registry
+        ? "register nemá konateľa; meno nájdené na webe pri označení role (konateľ/majiteľ)"
+        : "firma nie je v registri; meno nájdené na webe pri označení role (konateľ/majiteľ)",
     };
 
   return {

@@ -4,13 +4,13 @@
 
 /** Zásady prvého kontaktného mailu majiteľovi malej firmy (SK/CZ). */
 export const SALES_PRINCIPLES = `ZÁSADY PREDAJA A PSYCHOLÓGIE ADRESÁTA (všeobecná znalosť, nie fakty o firme)
-1. Adresát je vyťažený majiteľ, číta na mobile medzi dvoma prácami. O tom, či mail otvorí a prečíta, rozhodne za 3 sekundy predmet a prvá veta. Predmet má vyzerať ako od kolegu: krátky, malé písmená, bez marketingových slov.
-2. Dôveryhodnosť vzniká ŠPECIFICKOSŤOU: detail, ktorý hromadný mailer nenapíše a ktorý si majiteľ overí jedným pohľadom. Všeobecné komplimenty a všeobecné „váš web“ ju ničia.
+1. Adresát je vyťažený majiteľ, číta na mobile medzi dvoma prácami. O tom, či mail otvorí a prečíta, rozhodne za 3 sekundy predmet a prvá veta. Predmet má vyzerať ako od kolegu: krátky, prirodzený zápis (nie samé malé písmená ani samé veľké), bez marketingových slov.
+2. Dôveryhodnosť vzniká ŠPECIFICKOSŤOU aj úprimnosťou. Úvodný obdiv k ich práci je v poriadku a väčšinou žiaduci — musí ale znieť, že si sa NAOZAJ pozrel na TÚTO firmu (ich realizácie, recenzie, roky v odbore), nie univerzálna fráza, ktorá by sedela každému v odbore ("skvelá práca", "pekný web"). Prázdna všeobecná lichôtka bez obsahu dôveru ničí; úprimný, konkrétny dojem ju buduje.
 3. RECIPROCITA je najsilnejší nástroj: hotová vec zadarmo (návrh, ukážka) predtým, než čokoľvek pýtame. Nežiadaj hodinu času ani „call“; pýtaj jedno slovo odpovede alebo jeden klik.
 4. Znižuj trenie: jedna akcia, žiadna voľba. Väčší krok (stretnutie, cenník) prichádza až po odpovedi.
 5. Predvídaj najpravdepodobnejšiu námietku a zmierni ju JEDNOU vetou vecne (nie obranne): „už máme web“ -> nejde o výmenu naslepo, vidia hotovú ukážku; „nemám čas“ -> nič nemusia robiť; „je to drahé“ -> ukážka je zadarmo, o peniazoch sa hovorí až keď sa páči.
 6. Autonómia: nechaj ich slobodne rozhodnúť („ak nie, nič sa nedeje“). Tlak vyvoláva odpor (reaktancia).
-7. Sociálny dôkaz iba REÁLNY (referencia z ich odboru). Nikdy vymyslené čísla, „stovky klientov“, falošná naliehavosť, „posledné miesta“, lichôtky.
+7. Sociálny dôkaz iba REÁLNY (referencia z ich odboru). Nikdy vymyslené čísla, „stovky klientov“, falošná naliehavosť, „posledné miesta“, prázdne lichôtky bez obsahu.
 8. Nekritizuj ostro („váš web je zlý“ spúšťa obranu vlastného ega). Ukazuj PRÍLEŽITOSŤ a hrdosť na ich prácu: web má ukazovať to, čo reálne robia a v čom sú dobrí.
 9. Strach a strata sú pri prvom kontakte slabé a pôsobia manipulatívne; funguje zvedavosť a konkrétna hotová vec.
 10. Tón: pokojný, priamy, ako remeselník remeselníkovi. Nič nepredáva, ukazuje. Jeden mail = jedna myšlienka = jedna akcia.`;
@@ -66,11 +66,11 @@ export function nicheCard(segmentName: string): NicheCard {
 
 /** Uhly, z ktorých sa vyberajú varianty mailu (každý stojí na inom overenom zistení). */
 export const ANGLES = [
-  { id: "hotova-vec", label: "Hotová vec zadarmo", how: "Otvor tým, že už niečo urobil PRE NICH (návrh z ich materiálu), a povedz 1 konkrétnu vec, ktorú ukazuje. Reciprocita." },
-  { id: "hlas-zakaznikov", label: "Hlas zákazníkov", how: "Otvor tým, čo o nich píšu zákazníci v recenziách (iba doslovne overené), a že to na webe nie je vidieť. Hrdosť na vlastnú prácu." },
-  { id: "konkurenti", label: "Porovnanie v meste", how: "Otvor konkrétnym porovnaním s konkurentmi v ich meste (iba overené číslo). Mierne a vecne, bez kritiky." },
-  { id: "rozpor", label: "Rozpor", how: "Otvor rozporom medzi tým, čo o sebe tvrdia, a tým, čo web ukazuje. Zvedavosť, nie výčitka." },
-  { id: "detail", label: "Konkrétny detail", how: "Otvor jedným konkrétnym nálezom z ich webu, ktorý si overia jedným pohľadom. Špecifickosť = dôvera." },
+  { id: "hotova-vec", label: "Hotová vec zadarmo", how: "V nálezovom odseku (2. odsek) opíš, že už niečo urobil PRE NICH (návrh z ich materiálu), a povedz 1 konkrétnu vec, ktorú ukazuje. Reciprocita." },
+  { id: "hlas-zakaznikov", label: "Hlas zákazníkov", how: "V nálezovom odseku (2. odsek) sa oprieš o to, čo o nich píšu zákazníci v recenziách (iba doslovne overené), a že to na webe nie je vidieť. Hrdosť na vlastnú prácu." },
+  { id: "konkurenti", label: "Porovnanie v meste", how: "V nálezovom odseku (2. odsek) použi konkrétne porovnanie s konkurentmi v ich meste (iba overené číslo). Mierne a vecne, bez kritiky." },
+  { id: "rozpor", label: "Rozpor", how: "V nálezovom odseku (2. odsek) opíš rozpor medzi tým, čo o sebe tvrdia, a tým, čo web ukazuje. Zvedavosť, nie výčitka." },
+  { id: "detail", label: "Konkrétny detail", how: "V nálezovom odseku (2. odsek) použi jeden konkrétny nález z ich webu, ktorý si overia jedným pohľadom. Špecifickosť = dôvera." },
 ] as const;
 
 export type AngleId = (typeof ANGLES)[number]["id"];

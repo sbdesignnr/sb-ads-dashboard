@@ -2,13 +2,15 @@
 // overeného briefu a "Použiť ako koncept". Samotný agent je v lib/leads/research/.
 import { prisma } from "@/lib/prisma";
 import Anthropic from "@anthropic-ai/sdk";
-import { runResearchAgent, writeOutreachEmail, type AgentResult, type Finding, type OfferPlan } from "@/lib/leads/research/strategist";
+import { buildInitialOutreach, runResearchAgent, writeOutreachEmail, type AgentResult, type Finding, type OfferPlan } from "@/lib/leads/research/strategist";
 import type { MailCraft } from "@/lib/leads/research/mailcraft";
 import type { Council, ScoutNote } from "@/lib/leads/research/council";
 import { isEditedByHand } from "@/lib/leads/draft-state";
 import { getBudget, withSpend } from "@/lib/agents/budget";
 import { writeNote } from "@/lib/agents/notes";
 import { executeMockup, publicMockupUrl, startMockup } from "@/lib/agents/mockup";
+import { ensureOwner } from "@/lib/agents/owner";
+import { isVerifiedOwnerSource } from "@/lib/leads/owner-source";
 
 /** Beh, ktorý sa neozval dlhšie, sa považuje za spadnutý (funkcia mohla skončiť časovým limitom). */
 export const STALE_MS = 14 * 60_000;
@@ -209,6 +211,59 @@ async function executeResearchInner(researchId: string, leadId: string, opts: Re
           : result.skipReason
             ? `Vyradené: ${result.skipReason}`
             : "Nepodarilo sa zostaviť aspoň 2 overené zistenia a ponuku.",
+      },
+    });
+  } catch (e) {
+    await prisma.leadResearch
+      .update({
+        where: { id: researchId },
+        data: { status: "failed", step: null, error: (e as Error).message.slice(0, 400) },
+      })
+      .catch(() => {});
+  }
+}
+
+/**
+ * Prvý kontaktný mail cez PEVNÚ šablónu (user schválil naživo 5. 10. 2026, pozri
+ * buildInitialOutreach v strategist.ts): žiadna AI analýza, žiadna porada, žiadny návrh stránky -
+ * len overenie konateľa (lacné/zadarmo) a dosadenie mena + URL do schváleného textu. Nahrádza
+ * executeResearch pre KAŽDÝ prvý kontakt (nočný beh aj ručné tlačidlo v pracovni); drahšia AI
+ * analýza (zistenia, ponuka, porada) ostáva pre budúci "druhý mail" (hĺbková analýza + návrh
+ * webu, posiela sa až po prejavení záujmu - zatiaľ nedorobené).
+ */
+export async function executeInitialOutreach(researchId: string, leadId: string): Promise<void> {
+  const setStep = (step: string) =>
+    prisma.leadResearch.update({ where: { id: researchId }, data: { step } }).catch(() => {});
+  try {
+    let lead = await prisma.lead.findUnique({ where: { id: leadId } });
+    if (!lead) throw new Error("Lead zmizol.");
+    if (!isVerifiedOwnerSource(lead.ownerSource)) {
+      await setStep("Overujem konateľa v obchodnom registri…");
+      lead = (await ensureOwner(lead)).lead;
+    }
+    const { subject, body } = buildInitialOutreach(lead);
+    const brief: ResearchBrief = {
+      understanding: "Prvý kontaktný mail - pevná schválená šablóna (5. 10. 2026), bez AI analýzy.",
+      nicheNotes: "",
+      findings: [],
+      dropped: [],
+      offer: null,
+      evidence: [],
+      notes: [],
+      issues: [],
+      skipReason: null,
+      usageEur: 0,
+    };
+    await prisma.leadResearch.update({
+      where: { id: researchId },
+      data: {
+        status: "done",
+        step: null,
+        brief: brief as object,
+        emailSubject: subject,
+        emailBody: body,
+        offerName: "Bezplatná analýza a návrh webu (po prejavení záujmu)",
+        costEur: 0,
       },
     });
   } catch (e) {

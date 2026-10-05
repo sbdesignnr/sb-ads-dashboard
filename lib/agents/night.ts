@@ -3,7 +3,7 @@
 // mesačný rozpočet (fail-closed), denný limit počtu ponúk a vypínač AGENT_NIGHT_DISABLED=1.
 import { prisma } from "@/lib/prisma";
 import { AGENTS_START, canRunPaced } from "./budget";
-import { executeResearch, startResearch } from "./research";
+import { executeInitialOutreach, startResearch } from "./research";
 import { anthropicCreditOk, isCreditError } from "./credit";
 import { pickWithTriage } from "./skaut";
 
@@ -66,14 +66,7 @@ export async function runNightQueue(deadlineAt: number, maxRuns = 2): Promise<Ni
       out.skipped ??= started.error;
       break;
     }
-    // Návrhy stránok sa v nočnom režime nerobia (drahé a nevieme, či o službu majú záujem).
-    // Porada Miro + Nora sa robí len pre najlepšie leady a pod týždenným stropom.
-    const deepWeek = await prisma
-      .$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM lead_research WHERE status = 'done' AND created_at >= now() - interval '7 days' AND jsonb_typeof(brief->'council') = 'object'`
-      .then((r) => r[0]?.n ?? 0)
-      .catch(() => DEEP_WEEKLY_CAP);
-    const deep = (top.note.fit ?? 0) >= 8 && deepWeek < DEEP_WEEKLY_CAP;
-    await executeResearch(started.id, top.opportunity.lead.id, { withMockup: false, deep, scoutNote: top.note });
+    await executeInitialOutreach(started.id, top.opportunity.lead.id);
     const row = await prisma.leadResearch.findUnique({ where: { id: started.id }, select: { status: true, error: true } });
     out.ran.push({ leadId: top.opportunity.lead.id, company: top.opportunity.lead.companyName, ok: row?.status === "done", error: row?.error });
     if (isCreditError(row?.error)) {

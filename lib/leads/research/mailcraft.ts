@@ -20,13 +20,14 @@ export const effortFor = (model: string, effort: "low" | "medium" | "high"): Rec
 export interface MailAngleBrief {
   angle: string;
   finding_id: string;
+  /** obsah nálezového odseku (2. odsek, po úvodnom obdive) */
   opening: string;
   objection: string;
   defusal: string;
   subject_idea: string;
   /** čo to stojí ich firmu, ich očami */
   stake: string;
-  /** konkrétny nápad zmeny, ktorý dostanú zadarmo priamo v maile */
+  /** konkrétna vec, ktorú vyzdvihneš v úvodnom odseku OBDIV (1. odsek) */
   gift: string;
 }
 
@@ -79,12 +80,12 @@ const PLAN_TOOL: Anthropic.Tool = {
           properties: {
             angle: { type: "string", description: "id uhla zo zoznamu" },
             finding_id: { type: "string", description: "id zistenia (F1…), o ktoré sa uhol opiera" },
-            opening: { type: "string", description: "obsah prvej vety (nie hotová veta)" },
+            opening: { type: "string", description: "obsah NÁLEZOVÉHO odseku (2. odsek, hneď po úvodnom obdive) - čo si si všimol o ich webe/online prezentácii; nie hotová veta" },
             objection: { type: "string", description: "najpravdepodobnejšia námietka adresáta pri tomto uhle" },
             defusal: { type: "string", description: "jedna vecná veta, ktorá námietku zmierni (bez vymyslených faktov)" },
             subject_idea: { type: "string", description: "inšpirácia pre predmet, 2-4 slová" },
             stake: { type: "string", description: "čo to stojí ICH firmu (zákazky, dôvera, konkurencia), ich očami, 1 veta, bez čísel" },
-            gift: { type: "string", description: "jeden konkrétny nápad, ktorý môže majiteľ použiť hneď a bez programátora (hotová formulácia nadpisu/vety z ich faktov alebo presný postup); čitateľ ho dostane zadarmo v maile" },
+            gift: { type: "string", description: "konkrétna vec, ktorú vyzdvihneš v ÚVODNOM odseku OBDIV (1. odsek) - z čoho je vidno, že si sa na TÚTO firmu naozaj pozrel (napr. čo konkrétne oceňuješ na ich recenziách, realizáciách alebo praxi); musí vychádzať z overených zistení" },
           },
           required: ["angle", "finding_id", "opening", "objection", "defusal", "subject_idea", "stake", "gift"],
         },
@@ -101,7 +102,7 @@ ${SALES_PRINCIPLES}
 PRAVIDLÁ PLÁNU
 - Uhly zoraď od NAJSILNEJŠIEHO (prvý = ten, ktorý by si poslal, keby si mohol poslať len jeden).
 - Tri uhly MUSIA byť rôzne (rôzne id) a pokiaľ sa dá, opierať sa o rôzne overené zistenia. Uhol smie byť použitý iba ak preň existuje overené zistenie; uhol „hotova-vec“ iba ak už hotový návrh existuje.
-- "opening" popisuje OBSAH prvej vety (konkrétny fakt o nich z overeného zistenia), nie hotovú vetu.
+- "opening" popisuje OBSAH nálezového odseku (2. odsek, hneď po úvodnom obdive): konkrétny fakt o nich z overeného zistenia, nie hotovú vetu.
 - "defusal" je jedna vecná veta pre najpravdepodobnejšiu námietku pri tomto uhle; nesmie tvrdiť nič, čo nie je v ponuke alebo zisteniach.
 - Nič nevymýšľaj; fakty o firme sú iba overené zistenia.
 Výsledok vlož VÝHRADNE cez nástroj "uloz_plan".`;

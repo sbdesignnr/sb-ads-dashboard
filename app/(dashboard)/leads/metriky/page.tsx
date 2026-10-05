@@ -58,7 +58,12 @@ interface Metrics {
     replied: number;
   };
   series: { date: string; count: number }[];
-  lists: { replied: Row[]; openedNotReplied: Row[]; clicked: Row[] };
+  lists: {
+    allSent: Row[];
+    replied: Row[];
+    openedNotReplied: Row[];
+    clicked: Row[];
+  };
 }
 
 function fmtDate(iso: string | null): string {
@@ -145,17 +150,81 @@ function RowList({
   kind,
 }: {
   rows: Row[];
-  kind: "replied" | "opened" | "clicked";
+  kind: "all" | "replied" | "opened" | "clicked";
 }) {
   if (!rows.length) {
     return (
       <p className="py-8 text-center text-sm text-muted">
-        {kind === "replied"
-          ? "Zatiaľ nikto neodpovedal. Odpovede sa kontrolujú automaticky každé 2 hodiny."
-          : kind === "opened"
-            ? "Zatiaľ nikto neotvoril bez odpovede."
-            : "Zatiaľ nikto neklikol na odkaz v maile."}
+        {kind === "all"
+          ? "Ešte nič nie je odoslané."
+          : kind === "replied"
+            ? "Zatiaľ nikto neodpovedal. Odpovede sa kontrolujú automaticky každé 2 hodiny."
+            : kind === "opened"
+              ? "Zatiaľ nikto neotvoril bez odpovede."
+              : "Zatiaľ nikto neklikol na odkaz v maile."}
       </p>
+    );
+  }
+  if (kind === "all") {
+    return (
+      <div className="overflow-x-auto">
+        <table className="w-full table-fixed border-separate border-spacing-y-1 text-sm">
+          <colgroup>
+            <col />
+            <col className="w-24" />
+            <col className="w-44" />
+            <col className="w-44" />
+          </colgroup>
+          <thead>
+            <tr className="text-left text-xs text-muted">
+              <th className="px-3 pb-1.5 font-medium">Firma</th>
+              <th className="px-3 pb-1.5 font-medium">Odoslané</th>
+              <th className="px-3 pb-1.5 font-medium">Otvorené</th>
+              <th className="px-3 pb-1.5 font-medium">Odpovedal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} className="rounded-lg border border-border bg-surface">
+                <td className="min-w-0 rounded-l-lg px-3 py-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="min-w-0 truncate font-medium text-foreground">{r.company}</span>
+                    {r.website && (
+                      <a
+                        href={r.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 text-muted hover:text-primary"
+                        title="Otvoriť web"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    )}
+                  </div>
+                  <p className="min-w-0 truncate text-xs text-muted">{r.email ?? r.subject}</p>
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-xs text-muted">{fmtDate(r.sentAt)}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-xs">
+                  {r.openCount > 0 ? (
+                    <span className="text-warning">
+                      👁 otvoril {r.openCount}× · {fmtDate(r.lastOpenedAt)}
+                    </span>
+                  ) : (
+                    <span className="text-muted/70">neotvorené</span>
+                  )}
+                </td>
+                <td className="rounded-r-lg whitespace-nowrap px-3 py-2 text-xs">
+                  {r.repliedAt ? (
+                    <span className="font-medium text-success">↩ odpovedal {fmtDate(r.repliedAt)}</span>
+                  ) : (
+                    <span className="text-muted/70">bez odpovede</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     );
   }
   return (
@@ -477,8 +546,12 @@ export default function MetricsPage() {
       {/* Zoznamy */}
       <Card>
         <CardContent className="pt-5">
-          <Tabs defaultValue="replied">
+          <Tabs defaultValue="all">
             <TabsList>
+              <TabsTrigger value="all">
+                <Send className="mr-1.5 h-4 w-4" />
+                Všetky odoslané ({m.lists.allSent.length})
+              </TabsTrigger>
               <TabsTrigger value="replied">
                 <Reply className="mr-1.5 h-4 w-4" />
                 Odpovedali ({m.lists.replied.length})
@@ -492,6 +565,9 @@ export default function MetricsPage() {
                 Klikli ({m.lists.clicked.length})
               </TabsTrigger>
             </TabsList>
+            <TabsContent value="all" className="mt-4">
+              <RowList rows={m.lists.allSent} kind="all" />
+            </TabsContent>
             <TabsContent value="replied" className="mt-4">
               <RowList rows={m.lists.replied} kind="replied" />
             </TabsContent>

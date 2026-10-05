@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getShortlist } from "@/lib/agents/skaut";
 import { latestVerdicts } from "@/lib/agents/notes";
-import { executeResearch, startResearch, STALE_MS } from "@/lib/agents/research";
+import { executeInitialOutreach, startResearch, STALE_MS } from "@/lib/agents/research";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -91,16 +91,12 @@ export async function POST(req: NextRequest) {
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!process.env.ANTHROPIC_API_KEY)
     return NextResponse.json({ error: "AI nie je nakonfigurované." }, { status: 503 });
-  const { leadId, withMockup, director } = (await req.json().catch(() => ({}))) as {
-    leadId?: string;
-    withMockup?: boolean;
-    director?: boolean;
-  };
+  const { leadId } = (await req.json().catch(() => ({}))) as { leadId?: string };
   if (!leadId) return NextResponse.json({ error: "Chýba leadId." }, { status: 400 });
 
   const started = await startResearch(leadId);
   if (!started.ok) return NextResponse.json({ error: started.error }, { status: started.status });
-  // návrh domovskej stránky sa robí len na výslovnú žiadosť (drahé; maily ho predvolene neobsahujú)
-  after(() => executeResearch(started.id, leadId, { withMockup: withMockup === true, director: Boolean(director), deep: true }));
+  // Prvý kontaktný mail = pevná schválená šablóna, bez AI (pozri executeInitialOutreach).
+  after(() => executeInitialOutreach(started.id, leadId));
   return NextResponse.json({ id: started.id });
 }

@@ -122,8 +122,9 @@ PRAVIDLÁ
 2. Hľadaj ZAUJÍMAVÉ, nie samozrejmé: čím sa firma odlišuje (z ich textov), čo v recenziách zákazníci chvália alebo kritizujú, kde ich konkurenti v meste predbiehajú (a kde oni predbiehajú konkurentov), čo na webe chýba práve vzhľadom na to, čo o sebe tvrdia, prípadné rozpory. Samozrejmosti platné pre každý web (chýba meta description, HTTPS, PageSpeed) sú len doplnok, nie hlavný argument.
 3. 3 až 6 zistení, každé o inej veci; zoradené od najsilnejšieho. "claim" smie obsahovať IBA to, čo priamo vyplýva z citátov (žiadne dodatky, iné firmy ani čísla, ktoré citát nemá); výklad, dôsledky a porovnania patria do "why_it_matters".
 4. Ponuka musí byť ŠITÁ NA MIERU: konkrétny výstup (čo presne dostanú), prečo práve tento (odkaz na zistenia), realistický termín, minimálne riziko pre nich (napr. bez záväzku, platia až po schválení), a čo Samuel urobí vopred. Vyber z jeho služieb a štartovacích ponúk (zoznam v zadaní) a prispôsob ich TEJTO firme; ak navrhuješ niečo mimo zoznamu, nastav from_catalog=false. Cenu neuvádzaj.
+   Pre PRVÝ kontaktný mail (initial) je PRVÁ VOĽBA bezplatný návrh novej domovskej stránky (prvá položka zoznamu): opýtaj sa, či oň majú záujem. Písomný rozbor použi, keď majú funkčný web a ide skôr o vylepšenia než o nový web.
    Ponuka musí byť pre majiteľa ZAUJÍMAVÁ, konkrétna a JEDNODUCHÁ na prijatie - technické SEO drobnosti (meta popis, štruktúrované dáta) sú iba doplnok, nikdy hlavná ponuka.
-   PRED odpoveďou majiteľa sa nevyrába NIČ (žiadny návrh stránky, prototyp ani vizuál): Samuel nevie, či o službu majú záujem, a nechce míňať prácu ani peniaze naprázdno. Preto ponúkaj krok, ktorý sa robí až po odpovedi (krátka konzultácia, písomný rozbor, testovacia kampaň); "my_upfront_work" má byť v podstate nulová práca.
+   PRED odpoveďou majiteľa sa nevyrába NIČ (žiadny návrh stránky, prototyp ani vizuál): Samuel nevie, či o službu majú záujem, a nechce míňať prácu ani peniaze naprázdno. Preto ponúkaj krok, ktorý sa robí až po odpovedi (návrh domovskej stránky, krátka konzultácia, písomný rozbor, testovacia kampaň); "my_upfront_work" má byť v podstate nulová práca.
    NESĽUBUJ výsledky, ktoré nemáš pod kontrolou: poradie v Google, hviezdičky vo vyhľadávaní (Google ich pri vlastných recenziách firmy cez schema.org nezobrazuje), návštevnosť, počet dopytov ani tržby. Sľubuješ iba to, čo Samuel dodá (ukážku, prototyp, opravu).
    Tvrdenie, že na webe niečo CHÝBA alebo je PRÁZDNE, smieš uviesť iba ak to dokazuje technický údaj zistený kódom (položka "Technické vlastnosti webu") alebo výslovný text. Z toho, že sme v texte stránky nič nenašli, to netvrď - obsah môže byť načítaný cez JavaScript, PDF alebo obrázky.
 5. Ak je v zadaní referencia z rovnakého odboru, použi ju (reference_slug); inak null.
@@ -188,41 +189,46 @@ const ANALYSIS_TOOL: Anthropic.Tool = {
 
 const EMAIL_SYSTEM = `Si Samuel Bibeň (SB Design, Nitra: weby na mieru, e-shopy a reklamy pre malé firmy) a zároveň špičkový copywriter, ktorý napísal tisíce studených e-mailov s mimoriadne vysokou odpoveďou. Píšeš PRVÝ e-mail majiteľovi firmy, ktorý ťa nepozná. Oslovenie, podpis a odkaz na referenciu pridá systém: ty píšeš IBA text medzi oslovením a podpisom. Vždy po slovensky.
 
-CIEĽ: majiteľ si e-mail dočíta do konca a odpíše. Nepredávaš web. Predávaš JEDEN maličký krok (odpoveď "áno") a dôvod ho urobiť.
+CIEĽ: majiteľ si e-mail dočíta do konca, cíti, že mu píše skutočný človek, ktorý sa na jeho firmu naozaj pozrel, a odpíše. Nepredávaš web. Predávaš JEDEN maličký krok (odpoveď "áno") a dôvod ho urobiť.
 
 AKO SA ČITATEĽ ROZHODUJE
 - Prečíta dva riadky a rozhodne. Prvá veta musí byť taká konkrétna, že je zjavné: toto napísal človek, ktorý sa skutočne pozrel práve na nich (ich web, profil, recenzie, konkurenciu v meste).
 - Zaujíma ho jediné: čo mu uniká (zákazky, pacienti, mandáty, dôvera), nie čo ponúkaš.
-- Cudzím neverí. Dôveru dáva konkrétnosť, jeden dôkaz o tebe a nulové riziko.
-- Odpíše, keď je krok maličký a jasný a keď dostane niečo užitočné ešte pred odpoveďou.
+- Cudzím neverí. Dôveru dáva úprimnosť, konkrétnosť, jeden dôkaz o tebe a nulové riziko.
+- Odpíše, keď cíti, že mu píše človek, nie robot, a keď je krok maličký, jasný a bez záväzku.
 
-ŠTRUKTÚRA (3 až 4 odseky a voliteľné P. S., spolu 90 až 150 slov)
-1. NÁLEZ (1-2 vety): najsilnejší overený fakt o NICH a hneď čo znamená pre ich zákazníka: čo zákazník nemôže urobiť, nenájde alebo nevidí. Žiadny úvod, žiadna pochvala.
-2. STÁVKA (1-2 vety): prečo na tom TEJTO firme záleží, ich očami (dôvera, zákazky, konkurencia v meste). Použi interpretáciu zo zadania prirodzeným jazykom a porovnanie s konkurenciou v ich meste, ak ho máš (napíš ho jednoducho a doslovne z údajov, napr. "z desiatich konkurentov s webom má formulár päť", nie zložitými obratmi).
-3. HODNOTA A DÔVERA (1-2 vety): jeden konkrétny nápad, ktorý môže majiteľ použiť HNEĎ a bez programátora (aby získal hodnotu aj bez odpovede): podaj ho ako hotovú vec, napr. rovno navrhnutý nadpis alebo veta pre ich stránku poskladaná z ich vlastných faktov, alebo presný postup ("po odovzdaní stavby pošlite zákazníkovi odkaz na recenziu"), nie ako všeobecnú radu a nie technickú úpravu ("úprava v kóde"). Potom jedna vecná veta o tebe (čo robíš a pre koho z ich odboru, ak referenciu máš v zadaní; inak len čo robíš).
-4. KROK (1-2 vety): jeden maličký krok zadarmo a bez záväzku, na ktorý stačí odpovedať jedným slovom, s termínom z ponuky. Prvý krok nie je stretnutie ani telefonát.
-P. S. (voliteľné, jedna veta): druhý háčik = ĎALŠIE konkrétne zistenie alebo porovnanie z údajov, ktoré v tele nezaznelo (napr. recenzie vs. konkurenti). Nikdy nezopakuj termín rozboru ani nič z tela; ak nemáš nový fakt, P. S. vynechaj (ps = ""). Začína "P. S. ".
+ŠTRUKTÚRA (4 odseky a voliteľné P. S., spolu 90 až 130 slov - STRUČNOSŤ je dôležitejšia než vymenovanie všetkých faktov)
+1. OBDIV (1 veta): úprimný, konkrétny dojem z toho, čo si si o firme skutočne pozrel (ich web, recenzie, realizácie, roky v odbore) - podaj ho ako SVOJ dojem ("mám pocit, že...", "je vidno, že..."), nie ako meraný fakt s číslom. Musí byť špecifický pre TÚTO firmu; nesmie to byť univerzálna veta, ktorá by rovnako sedela každému v odbore. Vyber JEDEN najsilnejší dôvod obdivu, nie výpočet viacerých.
+2. NÁLEZ (1 veta): jemne a vecne, bez kritiky, JEDNA konkrétna vec, ktorú si si všimol o ich webe alebo online prezentácii, a čo to pre nich alebo ich zákazníka znamená. Prechod od obdivu k dôvodu, prečo píšeš - nie výčitka.
+3. PREDSTAVENIE A STÁVKA (1 veta): čo robíš, krátko a všeobecne (weby na mieru pre malé firmy) - BEZ mena (je už v podpise) a BEZ tvrdenia, že robíš weby špeciálne pre ICH odbor (robíš ich pre malé firmy naprieč odbormi, nie len pre tento - ukážku prípadnej referencie pridá systém pod mail, v texte ju nerozvádzaj menom). Potom prečo je to PRÁVE PRE NICH dôležité (dôvera, prvý dojem, čo si o nich zákazník pomyslí ešte pred prvým kontaktom).
+4. KROK (1 veta): jednoducho sa opýtaj, či by mali záujem - BEZ konkrétneho termínu a BEZ presného popisu, čo presne dostanú (to vysvetlíš až v odpovedi); naznač, že ak áno, budeš ich priebežne informovať, ako na tom pracuješ. Bez záväzku, na odpoveď stačí jedno slovo. Prvý krok nie je stretnutie ani telefonát.
+P. S. (voliteľné, jedna veta): druhý háčik = ĎALŠIE konkrétne zistenie alebo porovnanie z údajov, ktoré v tele nezaznelo (napr. recenzie vs. konkurenti). Nikdy nezopakuj nič z tela; ak nemáš nový fakt, P. S. vynechaj (ps = ""). Začína "P. S. ".
 
-TÓN: ľudský, priamy, pokojne sebavedomý, ako remeselník remeselníkovi. Hovor ich jazykom (stavbár: zákazky, obhliadky, rozpočet; realitka: mandáty, obhliadky, predávajúci; fyzioterapeut: pacienti, objednanie, prvé sedenie). Konkrétne podstatné mená, krátke vety, striedaj dĺžku. Bez korporátnej reči, bez skratiek a technických názvov (nepíš PHP, CMS, PageSpeed, HTTPS; povedz slovom: "web nie je zabezpečený", "na mobile sa načítava pomaly", "nie je prispôsobený mobilu"), bez nadšenia a výkričníkov.
+JEDNODUCHOSŤ VETY: jedna veta = jedna myšlienka. Nikdy nespájaj dva nesúvisiace fakty do jednej vety cez "a aj"/"a zároveň" (napr. "od roku 2000 robíte X a máte aj poistenie Y" znie ako vymenovávanie, nie ako reč človeka) - vyber jeden fakt na vetu, najsilnejší, zvyšok nechaj tak. Technický nález opíš najjednoduchšie možné ("stránka nie je zabezpečená") a NEVYMÝŠĽAJ k nemu scénku ani obraz (napr. "prehliadač mu neukáže zámok pri adrese") - skutočný človek by sa takto nevyjadril.
 
-ZLÝ A DOBRÝ PRÍKLAD (iný odbor a iná firma; NEKOPÍRUJ vety ani čísla, prevezmi len úroveň konkrétnosti a stavbu)
-ZLÝ: "na webe je jediný kontakt telefón a e-mail, žiadny formulár. ... stačí 15-20 minútový telefonát, kde ukážem smer." Prečo je zlý: nič nestojí v stávke, o autorovi sa nevie nič, prvý krok je stretnutie (vysoké trenie) a čitateľ nedostane žiadnu hodnotu.
-DOBRÝ: "pacient, ktorý Vás o desiatej večer nájde na Googli s bolesťou chrbta, sa na fyzioplus.sk nemá ako objednať: termín sa dá dohodnúť len telefonátom v ordinačných hodinách. Z ôsmich ambulancií v Nitre, ktoré som porovnával, má objednanie cez web šesť.
+TÓN: ľudský, zdvorilý, teplý a pokojne sebavedomý, ale STRUČNÝ - ako keby si osobne napísal niekomu, koho prácu si si vážne pozrel, v krátkej chvíli medzi prácou. Hovor ich jazykom (stavbár: zákazky, obhliadky, rozpočet; realitka: mandáty, obhliadky, predávajúci; fyzioterapeut: pacienti, objednanie, prvé sedenie). Konkrétne podstatné mená, prirodzené jednoduché vety (nie odrážkovitý telegrafický štýl, ale ani zložené súvetia s viacerými faktami naraz), striedaj dĺžku. Bez korporátnej reči, bez skratiek a technických názvov (nepíš PHP, CMS, PageSpeed, HTTPS; povedz slovom: "web nie je zabezpečený", "na mobile sa načítava pomaly", "nie je prispôsobený mobilu"), bez nadšenia a výkričníkov.
 
-Vy pritom robíte inak než ostatní: pacienti v recenziách opakovane píšu, že im terapeutka všetko vysvetlí. Na webe to nie je nikde, a práve to by mal vidieť každý, kto Vás ešte nepozná.
+ZLÝ A DOBRÝ PRÍKLAD (iný odbor a iná firma; NEKOPÍRUJ vety ani čísla, prevezmi len úroveň konkrétnosti, teplo a stavbu)
+ZLÝ 1: "Z ôsmich ambulancií v Nitre má objednanie cez web šesť, vy ste na 7. mieste. ... stačí 15-20 minútový telefonát, kde ukážem smer." Prečo je zlý: začína štatistikou ako výčitkou, chýba ľudský obdiv, nič nestojí v stávke, o autorovi sa nevie nič, prvý krok je stretnutie (vysoké trenie).
+ZLÝ 2: "Od roku 2000 robíte rekonštrukcie aj novostavby a máte aj poistenie na 5 miliónov Kč. Kto príde na web z mobilu, nemá kde nechať kontakt okrem telefónu a prehliadač mu pri adrese neukáže zámok, lebo stránka nie je zabezpečená." Prečo je zlý: každá veta pchá dva nesúvisiace fakty naraz (vymenovávanie, nie reč človeka) a druhá veta si vymýšľa obraz "zámku v prehliadači" namiesto toho, aby jednoducho povedala, že stránka nie je zabezpečená.
+DOBRÝ: "prechádzal som si Fyzioterapiu pre každého a je vidno, že za tým je roky poctivej práce - pacienti v recenziách opakovane píšu, že im terapeutka všetko trpezlivo vysvetlí.
 
-Robím weby pre ordinácie (napríklad Fyzioterapiu pre každého), preto Vám pošlem jednostranový rozbor: tri zmeny, ktoré by Vám priniesli najviac objednaní, s postupom. Zadarmo a bez záväzku, stačí odpísať "áno".
+Na webe to však nikde nevidno a termín si navyše viete dohodnúť len telefonátom v ordinačných hodinách.
 
-P. S. Vašu terapeutku spomínajú v recenziách štyria pacienti, na webe o nej nie je ani slovo."
+Weby robím na mieru pre malé firmy. Pacient, ktorý Vás nájde večer na Googli s bolesťou chrbta, by si tak vedel hneď utvoriť dôveru aj sa objednať, bez čakania na telefonát.
 
-NIKDY NEKRITIZUJ ich prácu ani vzhľad ("zastaraný", "škaredý", "pôsobí neprofesionálne", "firma už nefunguje"): hovor o tom, čo zákazník nemôže urobiť alebo nenájde. Mail otvor nálezom o ICH zákazníkoch, recenziách, konkurencii alebo vlastných textoch; technický nález (rok v pätičke, mobil, zabezpečenie) je vhodný len ako druhý argument, nikdy ako hlavná téma, ak existuje silnejší nález o ich podnikaní.
+Ak by Vás to zaujímalo, napíšte mi - rád Vás budem priebežne informovať, ako by mohla vyzerať Vaša nová domovská stránka.
 
-PRAVDIVOSŤ (najdôležitejšie): fakty o firme IBA z overených zistení a údajov v zadaní. Interpretácie ("čo to znamená pre zákazníka") sú logický dôsledok, nie fakt: formuluj ich opatrne, bez čísel, percent, súm, odhadov dopadu v čase ("mesačne", "ročne") a bez zovšeobecnení ("väčšina", "zvyčajne"). Čísla používaj len tie, ktoré sú v zadaní. Nič nevymýšľaj: žiadne referencie, ocenenia, výsledky, sumy (ani "státisíce") ani mená mimo zadania. Nepíš vzor "nejde o X, ale o Y" ani "nielen X, ale aj Y".
-FRÁZY, KTORÉ SA ZAMIETAJÚ: "všimol som si", "pozrel som sa na Váš web", pochvala v prvej vete, "rád by som", "dovoľte mi", rétorické otázky, superlatívy a prívlastky ("výnimočný", "kľúčový", "komplexný"), "moderný web", "profesionálny web", "online prítomnosť", poučky ("dôvera sa buduje roky", "to je presne ten druh"), "odíde ku konkurencii", "časť záujemcov".
-JAZYK: vykanie (Vy, Vás, Vám, Váš, VŽDY s veľkým V; slovesá v množnom čísle: "mali by ste"), si MUŽ ("pozrel som", "pošlem"), iba obyčajná pomlčka "-", slovenské úvodzovky „takto“. Prvý odsek začni malým písmenom (nadväzuje na oslovenie s čiarkou), okrem mena, značky alebo domény.
-PREDMET: 2 až 5 slov, malé písmená, konkrétny pre nich (názov firmy, doména alebo konkrétny nález), vzbudzuje zvedavosť, bez slov ponuka, spolupráca, riešenie.
+P. S. Na Googli máte 4,9 hviezdičky z 32 recenzií - to je vidieť až po kliknutí, na webe to zatiaľ nikto nenájde."
 
-VÝSTUP: iba jeden JSON objekt bez markdownu: {"hook":"1 veta: najsilnejší háčik pre tohto čitateľa a prečo","subject":"…","paragraphs":["odsek 1","odsek 2","odsek 3","voliteľne odsek 4"],"ps":"P. S. … alebo prázdny reťazec","used_findings":["F1","F2"]}`;
+NIKDY NEKRITIZUJ ich prácu ani vzhľad ("zastaraný", "škaredý", "pôsobí neprofesionálne", "firma už nefunguje"): hovor o tom, čo zákazník nemôže urobiť alebo nenájde. Technický nález (rok v pätičke, mobil, zabezpečenie) je vhodný len ako druhý argument, nikdy ako hlavná téma, ak existuje silnejší nález o ich podnikaní.
+
+PRAVDIVOSŤ (najdôležitejšie): fakty o firme IBA z overených zistení a údajov v zadaní. OBDIV v 1. odseku je TVOJ dojem, nie meraný fakt - smie vychádzať len z toho, čo je v zadaní (ich web, recenzie, realizácie), nič si nevymýšľaj a neuvádzaj v ňom čísla, ktoré tam nie sú. Interpretácie ("čo to znamená pre zákazníka") sú logický dôsledok, nie fakt: formuluj ich opatrne, bez čísel, percent, súm, odhadov dopadu v čase ("mesačne", "ročne") a bez zovšeobecnení ("väčšina", "zvyčajne"). Čísla používaj len tie, ktoré sú v zadaní. Nič nevymýšľaj: žiadne referencie, ocenenia, výsledky, sumy (ani "státisíce") ani mená mimo zadania. Nepíš vzor "nejde o X, ale o Y" ani "nielen X, ale aj Y".
+FRÁZY, KTORÉ SA ZAMIETAJÚ: "všimol som si", "pozrel som sa na Váš web", univerzálny kompliment bez obsahu ("skvelá práca", "pekný web", "vyzerá to profesionálne" - kompliment musí byť špecifický, pozri OBDIV vyššie), rétorické otázky, superlatívy a prívlastky ("výnimočný", "kľúčový", "komplexný"), "moderný web", "profesionálny web", "online prítomnosť", poučky ("dôvera sa buduje roky", "to je presne ten druh"), "odíde ku konkurencii", "časť záujemcov".
+JAZYK: vykanie (Vy, Vás, Vám, Váš, VŽDY s veľkým V; slovesá v množnom čísle: "mali by ste"), si MUŽ ("pozrel som", "pošlem"), iba obyčajná pomlčka "-", slovenské úvodzovky „takto“. Prvý odsek začni malým písmenom (nadväzuje na oslovenie s čiarkou), okrem mena, značky alebo domény. SVOJE MENO (Samuel Bibeň) v tele NIKDY nepíš - je už v podpise, kód by ho inak odmietol.
+PREDMET: pridáva kód automaticky (vždy "SB Design | názov firmy"), nevymýšľaj ho.
+
+VÝSTUP: iba jeden JSON objekt bez markdownu: {"hook":"1 veta: najsilnejší háčik pre tohto čitateľa a prečo","paragraphs":["odsek 1","odsek 2","odsek 3","voliteľne odsek 4"],"ps":"P. S. … alebo prázdny reťazec","used_findings":["F1","F2"]}`;
 
 /**
  * Kontrolór faktov: kód overil len CITÁTY; toto overí, či zistenie ako CELOK vyplýva
@@ -275,6 +281,27 @@ function numbersIn(text: string): string[] {
 }
 
 /**
+ * Prvý kontaktný mail: PEVNÁ šablóna schválená userom 5. 10. 2026 (2-týždňový test open rate) —
+ * žiadne AI, len dosadenie overeného mena a URL webu. Zdôvodnenie: po viacerých kolách ladenia sa
+ * ukázalo, že AI-generovaný text vždy pôsobí "AI" bez ohľadu na pravidlá; táto šablóna je presne to
+ * znenie, ktoré user schválil naživo pre Revyo aj GARANT REAL. Hĺbková analýza + návrh webu (druhý
+ * mail, posiela sa AŽ po prejavení záujmu, do 7 dní) je samostatná vec, zatiaľ nedorobená.
+ */
+export function buildInitialOutreach(lead: Pick<Lead, "companyName" | "websiteUrl" | "ownerName" | "ownerSource">): { subject: string; body: string } {
+  const greeting = buildGreeting(greetableOwnerName(lead));
+  const signoff = greeting.formal ? "S úctou," : "S pozdravom,";
+  const url = (lead.websiteUrl ?? "").replace(/^https?:\/\//, "").replace(/\/$/, "") || lead.companyName;
+  const paragraphs = [
+    "viem, že máte veľa práce a veľa správ, preto toto zaberie len 60 sekúnd.",
+    `Volám sa Samuel Bibeň a robím weby na mieru. Pri pohľade na web ${url} mi prišlo, že dizajn je už trochu staršieho vzhľadu a nerobí Vašej práci takú službu, akú by mohol.`,
+    "Ak by Vás to naozaj zaujímalo, rád by som Vám zadarmo pripravil krátku analýzu a návrh, ako by mohla vyzerať nová domovská stránka - úplne bez záväzku, len aby ste videli, na čom by ste mohli stavať. Stačí mi dať vedieť.",
+    "Úplne chápem, ak nemáte teraz čas odpovedať - aj krátka odpoveď ma poteší. Prajem Vám príjemný zvyšok dňa.",
+  ];
+  const body = [greeting.line, ...paragraphs, `${signoff}\nSamuel Bibeň`].join("\n\n");
+  return { subject: `SB Design | ${lead.companyName}`, body };
+}
+
+/**
  * Napíše cold e-mail z overených zistení a ponuky (oslovenie z overeného mena, lint, korektúra,
  * odkaz na návrh stránky). Používa ho beh agenta aj "napísať mail znova" (napr. po vyrobení návrhu).
  */
@@ -315,7 +342,7 @@ export async function writeOutreachEmail(input: {
   const offerBlock = mockupUrl
     ? `NÁVRH PONUKY:\nNázov: Hotový návrh novej domovskej stránky\nČo dostanú: UŽ HOTOVÝ klikateľný návrh novej domovskej stránky ich firmy, postavený z ICH vlastných textov a fotiek. Odkaz na návrh pridá systém pod mail, v texte ho neuvádzaj.\nPrečo práve toto: ${offer.why_this}\nTermín: návrh je hotový už teraz\nBez rizika: návrh je zadarmo a bez záväzku\nČo urobím vopred: návrh je už urobený\n\nPOZOR: návrh je HOTOVÝ. Píš v minulom čase ("pripravil som", "urobil som"), nie "pripravím". Ukáž, že si na nich už pracoval: povedz 1 konkrétnu vec, ktorú návrh zvýrazňuje (z overených zistení, napr. ich recenzie alebo služby), a že odkaz je pod mailom. Záver: pokojná veta, že ak sa im páči, ozvú sa.`
     : `NÁVRH PONUKY:\nNázov: ${offer.name}\nČo dostanú: ${offer.deliverable}\nPrečo práve toto: ${offer.why_this}\nTermín: ${offer.timeline}\nBez rizika: ${offer.risk_reversal}\nČo urobím vopred: ${offer.my_upfront_work}`;
-  const emailFacts = `FIRMA: ${lead.companyName} (${lead.companyCity ?? "?"}), odvetvie: ${segmentName}\nWeb: ${lead.websiteUrl ?? "—"}${input.understanding ? `\nPOCHOPENIE FIRMY: ${input.understanding}` : ""}\n\nOVERENÉ ZISTENIA (jediný zdroj faktov o firme; INTERPRETÁCIA je úvaha, nie fakt):\n${usedFacts}\n\n${computedFacts ? `ÚDAJE POČÍTANÉ KÓDOM (overené, smú sa použiť):\n${computedFacts}\n\n` : ""}${offerBlock}\n\nREFERENCIA Z ICH ODBORU: ${refLine ? `web pre „${refLine.client}“ (odbor: ${refLine.industry}). Môžeš ju spomenúť jednou vetou ("Robil som web pre ${refLine.client}"); odkaz na ňu pridá systém.` : "žiadna (nespomínaj žiadne referencie)"}\nAUTOR: Samuel Bibeň, SB Design, Nitra: weby na mieru, e-shopy, Meta a Google Ads. Iné úspechy, čísla ani ocenenia v zadaní nie sú, nevymýšľaj ich.${
+  const emailFacts = `FIRMA: ${lead.companyName} (${lead.companyCity ?? "?"}), odvetvie: ${segmentName}\nWeb: ${lead.websiteUrl ?? "—"}${input.understanding ? `\nPOCHOPENIE FIRMY: ${input.understanding}` : ""}\n\nOVERENÉ ZISTENIA (jediný zdroj faktov o firme; INTERPRETÁCIA je úvaha, nie fakt):\n${usedFacts}\n\n${computedFacts ? `ÚDAJE POČÍTANÉ KÓDOM (overené, smú sa použiť):\n${computedFacts}\n\n` : ""}${offerBlock}\n\nREFERENCIA: ${refLine ? `odkaz na ukážku práce (${refLine.client}) pridá systém pod mail AUTOMATICKY - NESPOMÍNAJ ju v texte menom ani netvrď, že robíš weby špeciálne pre ich odbor (robíš ich pre malé firmy naprieč odbormi).` : "žiadna (nespomínaj žiadne referencie)"}\nAUTOR: Samuel Bibeň, SB Design, Nitra: weby na mieru, e-shopy, Meta a Google Ads. Iné úspechy, čísla ani ocenenia v zadaní nie sú, nevymýšľaj ich.${
     offer.finding_ids.some((id) => !mailFindings.some((f) => f.id === id))
       ? "\n\nPOZOR: niektoré zistenia, o ktoré sa ponuka opiera, sa nepodarilo overiť. Spomeň v maile iba overené zistenia vyššie a v ponuke iba to, čo z nich vyplýva."
       : ""
@@ -324,10 +351,10 @@ export async function writeOutreachEmail(input: {
   // Otvorenie e-mailu sa strieda podľa leadu, aby maily nemali všetky rovnakú kostru (záložný režim
   // bez plánu uhlov).
   const OPENINGS = [
-    "Prvá veta = konkrétna vec z ich vlastného webu alebo cenníka (nie hodnotenie ani počet recenzií).",
-    "Prvá veta = čo o nich píšu zákazníci v recenziách (ak je takéto overené zistenie), inak konkrétna vec z ich webu.",
-    "Prvá veta = porovnanie s konkurentmi v meste s presným číslom zo zistení.",
-    "Prvá veta = rozpor medzi tým, čo o sebe tvrdia, a tým, čo web reálne ukazuje.",
+    "Nálezový odsek (2. odsek, po úvodnom obdive) = konkrétna vec z ich vlastného webu alebo cenníka (nie hodnotenie ani počet recenzií).",
+    "Nálezový odsek (2. odsek, po úvodnom obdive) = čo o nich píšu zákazníci v recenziách (ak je takéto overené zistenie), inak konkrétna vec z ich webu.",
+    "Nálezový odsek (2. odsek, po úvodnom obdive) = porovnanie s konkurentmi v meste s presným číslom zo zistení.",
+    "Nálezový odsek (2. odsek, po úvodnom obdive) = rozpor medzi tým, čo o sebe tvrdia, a tým, čo web reálne ukazuje.",
   ];
   const seed = [...lead.id].reduce((a, c) => a + c.charCodeAt(0), 0);
   const openingHint = OPENINGS[seed % OPENINGS.length];
@@ -353,7 +380,7 @@ export async function writeOutreachEmail(input: {
       temperature: 0.9,
       ...(effortFor(COPY_MODEL, (process.env.LEADS_COPY_EFFORT as "low" | "medium" | "high" | undefined) ?? (input.deep ? "medium" : "low")) as object),
       system: EMAIL_SYSTEM,
-      messages: [{ role: "user", content: `${emailFacts}\n\nKARTA ODBORU (${niche.name}; všeobecná znalosť, NIE fakty o firme):\n${niche.card}\n\n${guidance}\n\nDĹŽKA: spolu 100 až 145 slov (bez oslovenia a podpisu; P. S. sa počíta; nad 165 slov sa mail zamietne).\n\nNapíš e-mail.${feedback}` }],
+      messages: [{ role: "user", content: `${emailFacts}\n\nKARTA ODBORU (${niche.name}; všeobecná znalosť, NIE fakty o firme):\n${niche.card}\n\n${guidance}\n\nDĹŽKA: spolu 90 až 130 slov (bez oslovenia a podpisu; P. S. sa počíta) - STRUČNOSŤ je priorita, kratšie je lepšie než vymenovať všetky zistenia. STROP 160 slov - nad ním systém mail automaticky zamietne.\n\nNapíš e-mail.${feedback}` }],
     });
     const rawText = textFrom(msg);
     lastRawHead = `${msg.stop_reason ?? "?"}: ${rawText.slice(0, 140).replace(/\s+/g, " ")}`;
@@ -369,7 +396,8 @@ export async function writeOutreachEmail(input: {
         return null;
       }
     }
-    const subject = normalizeDashes(String(d.subject ?? "").trim()).slice(0, 120).toLowerCase();
+    // Predmet je vždy rovnaký formát (user: "profesionálna marketingová agentúra"), model ho negeneruje.
+    const subject = `SB Design | ${lead.companyName}`.slice(0, 120);
     const paragraphs = Array.isArray(d.paragraphs) ? d.paragraphs.map((p) => normalizeDashes(String(p).trim())).filter(Boolean) : [];
     const psRaw = normalizeDashes(String(d.ps ?? "").trim());
     if (psRaw) paragraphs.push(/^P\.?\s?S\.?[\s:]/i.test(psRaw) ? psRaw : `P. S. ${psRaw}`);
@@ -420,7 +448,7 @@ export async function writeOutreachEmail(input: {
       // základný režim píše 2 najsilnejšie uhly (šetrí ~0,05 € na ponuku), hlboký všetky 3
       plan.angles.slice(0, input.deep ? 3 : 2).map(async (a) => {
         const label = ANGLES.find((x) => x.id === a.angle);
-        const guidance = `UHOL TOHTO MAILU: ${label?.label}. ${label?.how}\nOpri sa o zistenie ${a.finding_id}. Obsah prvej vety: ${a.opening}\nNajpravdepodobnejšia námietka adresáta: „${a.objection}“. Zmier ju JEDNOU vetou VLASTNÝMI SLOVAMI, prirodzene a ľudsky (nekopíruj túto formuláciu doslova, bez vymyslených faktov): ${a.defusal}\nInšpirácia pre predmet: ${a.subject_idea}\nSTÁVKA (čo to stojí ich firmu, ich očami): ${a.stake}\nHODNOTA ZADARMO (konkrétny nápad zmeny, ktorý vložíš do mailu): ${a.gift}\nAdresát: ${plan.recipient}`;
+        const guidance = `UHOL TOHTO MAILU: ${label?.label}. ${label?.how}\nOpri sa o zistenie ${a.finding_id}. Obsah nálezového odseku (2. odsek, po úvodnom obdive): ${a.opening}\nNajpravdepodobnejšia námietka adresáta: „${a.objection}“. Zmier ju JEDNOU vetou VLASTNÝMI SLOVAMI, prirodzene a ľudsky (nekopíruj túto formuláciu doslova, bez vymyslených faktov): ${a.defusal}\nInšpirácia pre predmet: ${a.subject_idea}\nSTÁVKA (čo to stojí ich firmu, ich očami, pre 3. odsek): ${a.stake}\nOBDIV (konkrétna vec pre úvodný 1. odsek, z čoho je vidno, že si sa na nich naozaj pozrel): ${a.gift}\nAdresát: ${plan.recipient}`;
         let d = await draftMail(guidance, "", a.angle);
         if (!d) {
           issues.push(`variant „${a.angle}“: model nevrátil použiteľný JSON (${lastRawHead}), zopakujem`);
@@ -710,7 +738,7 @@ export async function runResearchAgent(input: {
   const guidance = council
     ? [
         `Dôraz: ${council.decision.offerFocus}`,
-        council.decision.openWith ? `Prvá veta sa opiera o zistenie ${council.decision.openWith}` : "",
+        council.decision.openWith ? `Nálezový odsek (2. odsek, po úvodnom obdive) sa opiera o zistenie ${council.decision.openWith}` : "",
         council.decision.mailAngle ? `Preferovaný uhol: ${council.decision.mailAngle}` : "",
         council.decision.objection ? `Najpravdepodobnejšia námietka majiteľa: ${council.decision.objection}${council.decision.defusal ? ` (zmierniť vetou: ${council.decision.defusal})` : ""}` : "",
         council.decision.risks.length ? `Riziká: ${council.decision.risks.join("; ")}` : "",

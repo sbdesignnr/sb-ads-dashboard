@@ -26,7 +26,7 @@ export interface CouncilTurn {
 
 export interface CouncilDecision {
   offerFocus: string;
-  /** o ktoré zistenie sa má oprieť prvá veta mailu (F1…) */
+  /** o ktoré zistenie sa má oprieť nálezový odsek mailu (2. odsek, po úvodnom obdive; F1…) */
   openWith: string | null;
   mailAngle: string | null;
   /** najpravdepodobnejšia námietka majiteľa a jedna vecná veta, ktorá ju zmierni */
@@ -62,7 +62,7 @@ const DECISION_TOOL: Anthropic.Tool = {
     type: "object",
     properties: {
       offer_focus: { type: "string", description: "1 veta: na čo sa v ponuke a maile dá dôraz (z overených zistení)." },
-      open_with: { type: ["string", "null"], description: "id zistenia (F1…), o ktoré sa má oprieť prvá veta mailu" },
+      open_with: { type: ["string", "null"], description: "id zistenia (F1…), o ktoré sa má oprieť nálezový odsek mailu (2. odsek, po úvodnom obdive)" },
       mail_angle: { type: ["string", "null"], description: `preferovaný uhol mailu: ${ANGLES.filter((a) => a.id !== "hotova-vec").map((a) => a.id).join(" | ")} (alebo null)` },
       objection: { type: "string", description: "najpravdepodobnejšia námietka majiteľa (krátko)" },
       defusal: { type: "string", description: "jedna vecná veta, ktorá námietku zmierni (bez vymyslených faktov)" },

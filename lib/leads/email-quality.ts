@@ -102,15 +102,8 @@ export function lintEmail(input: LintInput): LintResult {
   // ── Predmet ────────────────────────────────────────────────────────────────
   const subj = subject.trim();
   if (!subj) errors.push("prázdny predmet");
-  if (kind === "initial") {
-    if (subj !== subj.toLowerCase())
-      errors.push("predmet musí byť celý malými písmenami");
-    const n = wordCount(subj);
-    if (n < 2 || n > 5) errors.push(`predmet má ${n} slov (má mať 2-4)`);
-    if (/ponuk|spolupr|rieš/iu.test(subj))
-      errors.push("predmet obsahuje zakázané slovo (ponuka/spolupráca/riešenie)");
-  }
-  if (/[—–]/u.test(subj)) errors.push("predmet obsahuje pomlčku (—/–)");
+  // Predmet "SB Design | {firma}" je od 5. 10. 2026 pevný formát pridávaný kódom (nie model) -
+  // obsahové pravidlá (dĺžka, zakázané slová, pomlčka) už neplatia, len kontrola prázdnoty vyššie.
 
   // ── Štruktúra a dĺžka ─────────────────────────────────────────────────────
   const count = paragraphs.length;

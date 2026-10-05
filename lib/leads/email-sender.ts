@@ -284,6 +284,11 @@ function smtpTransporter(): nodemailer.Transporter | null {
     host: "smtp.m1.websupport.sk",
     port: 465,
     secure: true, // SSL/TLS
+    // Bez vlastných limitov čaká Nodemailer na zlyhané spojenie 2 minúty (default) -
+    // pri výpadku radšej rýchlo zlyhať (Brevo fallback prevezme) než visieť.
+    connectionTimeout: 15_000,
+    greetingTimeout: 15_000,
+    socketTimeout: 15_000,
     auth: {
       user: process.env.SMTP_USER!.trim(),
       pass: process.env.SMTP_PASSWORD!.trim(),

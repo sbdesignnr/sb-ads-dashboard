@@ -156,6 +156,12 @@ function ClickBadge({ count }: { count: number }) {
   return <Badge variant="success">👆 {count}×</Badge>;
 }
 
+// Odpoveď je najsilnejší signál zo všetkých — zobrazí sa len keď naozaj prišla.
+function ReplyBadge({ repliedAt }: { repliedAt: string | Date | null }) {
+  if (!repliedAt) return null;
+  return <Badge variant="success">↩ odpovedal</Badge>;
+}
+
 // Mirrors lib/leads/email-sender.ts so the preview shows exactly what gets sent:
 // escape first (no injection), then render the Markdown subset. Boundaries stop a
 // stray asterisk ("5*3") from italicising half the message.
@@ -1275,6 +1281,7 @@ export default function CampaignsPage() {
                   </span>
                   <OpenBadge count={e.openCount} />
                   <ClickBadge count={e.clickCount} />
+                  <ReplyBadge repliedAt={e.repliedAt} />
                 </div>
               ))}
             </div>

@@ -164,6 +164,26 @@ export async function GET() {
     }),
   ]);
 
+  // Všetko odoslané, najnovšie prvé — jediný zoznam so všetkými troma signálmi
+  // naraz (odoslané/otvorené/odpovedal), vrátane tých, čo nikto ešte neotvoril
+  // (to v zoznamoch vyššie chýba, lebo sú to vzájomne sa vylučujúce skupiny).
+  const allSent = await prisma.leadEmail.findMany({
+    where: sentWhere,
+    select: {
+      id: true,
+      subject: true,
+      sentAt: true,
+      repliedAt: true,
+      openCount: true,
+      clickCount: true,
+      lastOpenedAt: true,
+      lastClickedAt: true,
+      lead: { select: leadSel },
+    },
+    orderBy: { sentAt: "desc" },
+    take: 200,
+  });
+
   const iso = (d: Date | null) => (d ? d.toISOString() : null);
   const mapRow = (e: {
     id: string;
@@ -212,6 +232,7 @@ export async function GET() {
     },
     series,
     lists: {
+      allSent: allSent.map(mapRow),
       replied: replied.map(mapRow),
       openedNotReplied: openedNotReplied.map(mapRow),
       clicked: clicked.map(mapRow),
