@@ -23,6 +23,8 @@ import {
   Target,
   ExternalLink,
   Send,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -42,13 +44,24 @@ interface Row {
   lastOpenedAt: string | null;
   lastClickedAt: string | null;
 }
+interface MonthSummary {
+  month: string;
+  label: string;
+  sent: number;
+  opened: number;
+  clicked: number;
+  replied: number;
+}
 interface Metrics {
   goal: number;
+  month: string;
+  monthLabel: string;
+  isCurrentMonth: boolean;
+  hasPrev: boolean;
+  hasNext: boolean;
   sent: {
     today: number;
-    week: number;
     month: number;
-    year: number;
     total: number;
   };
   funnel: {
@@ -58,12 +71,19 @@ interface Metrics {
     replied: number;
   };
   series: { date: string; count: number }[];
+  monthlySummary: MonthSummary[];
   lists: {
     allSent: Row[];
     replied: Row[];
     openedNotReplied: Row[];
     clicked: Row[];
   };
+}
+
+function shiftMonth(key: string, n: number): string {
+  const [y, mo] = key.split("-").map(Number);
+  const d = new Date(Date.UTC(y, mo - 1 + n, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 function fmtDate(iso: string | null): string {
@@ -77,6 +97,9 @@ function fmtDate(iso: string | null): string {
 function fmtDay(d: string): string {
   const [, m, day] = d.split("-");
   return `${Number(day)}.${Number(m)}.`;
+}
+function capitalize(s: string): string {
+  return s ? s[0].toUpperCase() + s.slice(1) : s;
 }
 
 function StatTile({
@@ -156,7 +179,7 @@ function RowList({
     return (
       <p className="py-8 text-center text-sm text-muted">
         {kind === "all"
-          ? "Ešte nič nie je odoslané."
+          ? "V tomto mesiaci ešte nič nie je odoslané."
           : kind === "replied"
             ? "Zatiaľ nikto neodpovedal. Odpovede sa kontrolujú automaticky každé 2 hodiny."
             : kind === "opened"
@@ -286,11 +309,12 @@ export default function MetricsPage() {
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (month?: string) => {
     try {
-      const j = await fetch("/api/leads/metrics", { cache: "no-store" }).then(
-        (r) => r.json(),
-      );
+      const url = month
+        ? `/api/leads/metrics?month=${encodeURIComponent(month)}`
+        : "/api/leads/metrics";
+      const j = await fetch(url, { cache: "no-store" }).then((r) => r.json());
       if (j.sent) setM(j);
     } catch {
       toast.error("Metriky sa nepodarilo načítať.");
@@ -317,7 +341,7 @@ export default function MetricsPage() {
             ? `Nájdené nové odpovede: ${r.newReplies}`
             : "Žiadne nové odpovede.",
         );
-      await load();
+      await load(m?.month);
     } catch {
       toast.error("Kontrola odpovedí zlyhala.");
     } finally {
@@ -334,12 +358,8 @@ export default function MetricsPage() {
 
   const goalPct = Math.min(100, Math.round((m.sent.month / m.goal) * 100));
   const now = new Date();
-  const daysInMonth = new Date(
-    now.getFullYear(),
-    now.getMonth() + 1,
-    0,
-  ).getDate();
-  const daysLeft = daysInMonth - now.getDate() + 1;
+  const daysInSelectedMonth = m.series.length;
+  const daysLeft = m.isCurrentMonth ? daysInSelectedMonth - now.getDate() + 1 : 0;
   const remaining = Math.max(0, m.goal - m.sent.month);
   const perDayNeeded =
     daysLeft > 0 ? Math.ceil(remaining / daysLeft) : remaining;
@@ -381,6 +401,34 @@ export default function MetricsPage() {
         </button>
       </div>
 
+      {/* Prepínač mesiacov */}
+      <div className="flex items-center justify-center gap-3">
+        <button
+          onClick={() => load(shiftMonth(m.month, -1))}
+          disabled={!m.hasPrev}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-muted transition-colors hover:text-foreground disabled:opacity-30"
+          title="Predchádzajúci mesiac"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <span className="min-w-[11rem] text-center text-sm font-medium text-foreground">
+          {capitalize(m.monthLabel)}
+          {m.isCurrentMonth && (
+            <span className="ml-1.5 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-normal text-primary">
+              aktuálny
+            </span>
+          )}
+        </span>
+        <button
+          onClick={() => load(shiftMonth(m.month, 1))}
+          disabled={!m.hasNext}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-muted transition-colors hover:text-foreground disabled:opacity-30"
+          title="Nasledujúci mesiac"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+
       {/* Cieľ 150/mesiac */}
       <Card>
         <CardContent className="pt-5">
@@ -408,7 +456,13 @@ export default function MetricsPage() {
             />
           </div>
           <p className="mt-2 text-xs text-muted">
-            {remaining === 0 ? (
+            {!m.isCurrentMonth ? (
+              remaining === 0 ? (
+                <span className="text-success">Cieľ v tomto mesiaci bol splnený.</span>
+              ) : (
+                <>Tento mesiac chýbalo do cieľa {remaining} mailov.</>
+              )
+            ) : remaining === 0 ? (
               <span className="text-success">Cieľ splnený! 🎉</span>
             ) : (
               <>
@@ -428,20 +482,18 @@ export default function MetricsPage() {
         <h2 className="mb-2 text-sm font-semibold text-foreground">
           Koľko som poslal
         </h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <StatTile label="Dnes" value={m.sent.today} />
-          <StatTile label="Tento týždeň" value={m.sent.week} />
-          <StatTile label="Tento mesiac" value={m.sent.month} />
-          <StatTile label="Tento rok" value={m.sent.year} />
-          <StatTile label="Celkovo" value={m.sent.total} />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {m.isCurrentMonth && <StatTile label="Dnes" value={m.sent.today} />}
+          <StatTile label={capitalize(m.monthLabel)} value={m.sent.month} />
+          <StatTile label="Celkovo (všetky mesiace)" value={m.sent.total} />
         </div>
       </div>
 
-      {/* Graf za 30 dní */}
+      {/* Graf za vybraný mesiac */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">
-            Odoslané maily za posledných 30 dní
+            Odoslané maily — {m.monthLabel}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -498,7 +550,7 @@ export default function MetricsPage() {
           </ResponsiveContainer>
           {maxBar === 1 && m.series.every((s) => s.count === 0) && (
             <p className="mt-2 text-center text-xs text-muted">
-              Za posledných 30 dní žiadne odoslané maily.
+              V tomto mesiaci žiadne odoslané maily.
             </p>
           )}
         </CardContent>
@@ -508,7 +560,7 @@ export default function MetricsPage() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">
-            Čo to prinieslo (unikátne firmy)
+            Čo to prinieslo — {m.monthLabel} (unikátne firmy)
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -542,6 +594,63 @@ export default function MetricsPage() {
           />
         </CardContent>
       </Card>
+
+      {/* Porovnanie mesiacov */}
+      {m.monthlySummary.length > 1 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Porovnanie mesiacov</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-muted">
+                    <th className="px-2 pb-1.5 font-medium">Mesiac</th>
+                    <th className="px-2 pb-1.5 font-medium text-right">Odoslané</th>
+                    <th className="px-2 pb-1.5 font-medium text-right">Otvorili</th>
+                    <th className="px-2 pb-1.5 font-medium text-right">Klikli</th>
+                    <th className="px-2 pb-1.5 font-medium text-right">Odpovedali</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {m.monthlySummary.map((row) => (
+                    <tr
+                      key={row.month}
+                      onClick={() => row.month !== m.month && load(row.month)}
+                      className={cn(
+                        "cursor-pointer rounded-lg transition-colors",
+                        row.month === m.month
+                          ? "bg-primary/10"
+                          : "hover:bg-surface-2",
+                      )}
+                    >
+                      <td className="px-2 py-1.5 font-medium text-foreground">
+                        {capitalize(row.label)}
+                        {row.month === m.month && (
+                          <span className="ml-1.5 text-primary">●</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-foreground">
+                        {row.sent}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-muted">
+                        {row.opened}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-muted">
+                        {row.clicked}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-success">
+                        {row.replied}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Zoznamy */}
       <Card>
