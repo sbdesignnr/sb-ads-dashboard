@@ -240,9 +240,11 @@ export default function CampaignsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [summary, setSummary] = useState<SegmentSummary | null>(null);
 
-  const applyCampaign = useCallback((c: CampaignDTO) => {
+  // `setSegment: false` necháva front s mailmi na "Všetky" (nič sa potichu neskryje za kampaň,
+  // ktorú user ešte nevybral) - používa sa len pri počiatočnom načítaní formulára kampane.
+  const applyCampaign = useCallback((c: CampaignDTO, opts: { setSegment?: boolean } = {}) => {
     setCampaignId(c.id);
-    setSegmentId(c.segmentId ?? "all");
+    if (opts.setSegment !== false) setSegmentId(c.segmentId ?? "all");
     setDailyLimit(c.dailyLimit);
     setSendTime(c.sendTime);
     setIsActive(c.isActive);
@@ -295,11 +297,12 @@ export default function CampaignsPage() {
   }, [loadCampaigns]);
 
   // Select the first campaign once, on initial load (not when the user picks
-  // "Nová kampaň", which sets campaignId back to null on purpose).
+  // "Nová kampaň", which sets campaignId back to null on purpose). Front s mailmi ostáva na
+  // "Všetky", nech sa pri príchode na stránku nič potichu neschová za kampaň campaigns[0].
   useEffect(() => {
     if (initialized.current || campaigns.length === 0) return;
     initialized.current = true;
-    applyCampaign(campaigns[0]);
+    applyCampaign(campaigns[0], { setSegment: false });
   }, [campaigns, applyCampaign]);
 
   // Reload the visible queues + summary whenever the active segment changes.

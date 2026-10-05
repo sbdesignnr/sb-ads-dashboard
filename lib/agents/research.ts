@@ -254,6 +254,7 @@ export async function executeInitialOutreach(researchId: string, leadId: string)
       skipReason: null,
       usageEur: 0,
     };
+    const now = new Date();
     await prisma.leadResearch.update({
       where: { id: researchId },
       data: {
@@ -264,7 +265,13 @@ export async function executeInitialOutreach(researchId: string, leadId: string)
         emailBody: body,
         offerName: "Bezplatná analýza a návrh webu (po prejavení záujmu)",
         costEur: 0,
+        appliedAt: now,
       },
+    });
+    // Rovno do frontu na schválenie (Leady → Kampane) - pevná šablóna sa už nemusí ručne
+    // "použiť ako koncept" v pracovni, user ju vidí na jednom mieste, hneď pripravenú na schválenie.
+    await prisma.leadEmail.create({
+      data: { leadId, subject, body, emailType: "initial", status: "draft" },
     });
   } catch (e) {
     await prisma.leadResearch
