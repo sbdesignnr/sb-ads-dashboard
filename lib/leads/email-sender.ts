@@ -405,6 +405,15 @@ export async function sendLeadEmail(leadEmailId: string): Promise<SendResult> {
   if (!email) return { success: false, error: "email_not_found" };
   const lead = email.lead;
 
+  // Lead medzičasom označený ako odmietnutý/konvertovaný — aj keď mal mail už schválený,
+  // nesmie odísť (duplicitný kontakt firmy, ktorá si to už nepraje alebo je už klient).
+  if (lead.status === "rejected" || lead.status === "converted") {
+    await prisma.leadEmail
+      .update({ where: { id: leadEmailId }, data: { status: "rejected" } })
+      .catch(() => {});
+    return { success: false, error: "lead_" + lead.status };
+  }
+
   if (!lead.companyEmail?.trim()) {
     await prisma.leadEmail.update({
       where: { id: leadEmailId },

@@ -141,7 +141,7 @@ export async function detectReplies(sinceDays = 45): Promise<ReplyScanResult> {
         where: { id: hit.id },
         data: { repliedAt: msgDate },
       });
-      if (hit.lead.status !== "converted") {
+      if (hit.lead.status !== "converted" && hit.lead.status !== "rejected") {
         await prisma.lead.update({
           where: { id: hit.leadId },
           data: { status: "responded" },

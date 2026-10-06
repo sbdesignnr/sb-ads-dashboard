@@ -96,7 +96,12 @@ async function handle(req: NextRequest) {
     if (sendTimePassed) dueClauses.push({ scheduledAt: null });
 
     const approved = await prisma.leadEmail.findMany({
-      where: { status: "approved", OR: dueClauses, lead: scope },
+      where: {
+        status: "approved",
+        OR: dueClauses,
+        // Lead medzičasom označený ako odmietnutý/konvertovaný — nech sa mu už nič neposiela.
+        lead: { ...scope, status: { notIn: ["rejected", "converted"] } },
+      },
       // Naplánované najskôr (podľa vlastného času), potom podľa poradia vytvorenia.
       orderBy: [{ scheduledAt: "asc" }, { createdAt: "asc" }],
       take: remaining,

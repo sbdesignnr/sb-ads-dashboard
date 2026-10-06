@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
   const series = [...perDay.entries()].map(([date, count]) => ({ date, count }));
 
   // Zoznamy výsledkov.
-  const leadSel = { companyName: true, companyEmail: true, websiteUrl: true, status: true };
+  const leadSel = { id: true, companyName: true, companyEmail: true, websiteUrl: true, status: true };
 
   const [replied, openedNotReplied, clicked, allSent] = await Promise.all([
     prisma.leadEmail.findMany({
@@ -157,9 +157,10 @@ export async function GET(req: NextRequest) {
     clickCount?: number;
     lastOpenedAt?: Date | null;
     lastClickedAt?: Date | null;
-    lead: { companyName: string; companyEmail: string | null; websiteUrl: string | null; status: string };
+    lead: { id: string; companyName: string; companyEmail: string | null; websiteUrl: string | null; status: string };
   }) => ({
     id: e.id,
+    leadId: e.lead.id,
     company: e.lead.companyName,
     email: e.lead.companyEmail,
     website: e.lead.websiteUrl,

@@ -25,6 +25,9 @@ import {
   Send,
   ChevronLeft,
   ChevronRight,
+  UserCheck,
+  UserX,
+  Undo2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -32,6 +35,7 @@ import { cn } from "@/lib/utils";
 
 interface Row {
   id: string;
+  leadId: string;
   company: string;
   email: string | null;
   website: string | null;
@@ -168,12 +172,100 @@ function FunnelStep({
   );
 }
 
+/**
+ * Klient / Odmietol po odpovedi. "Odmietol" zapíše lead.status "rejected" — tým istým statusom,
+ * ktorý agenti (Miro aj Nora) už dnes vynechávajú pri výbere kandidátov a pri posielaní, takže
+ * sa firma znova neodporučí ani sa jej nepošle rozpracovaný follow-up.
+ */
+function OutcomeControl({
+  leadId,
+  leadStatus,
+  onChanged,
+  compact = false,
+}: {
+  leadId: string;
+  leadStatus: string;
+  onChanged: () => void;
+  compact?: boolean;
+}) {
+  const [busy, setBusy] = useState(false);
+  const setOutcome = async (status: "converted" | "rejected" | "responded") => {
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/leads/${leadId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!r.ok) throw new Error();
+      toast.success(
+        status === "converted"
+          ? "Označené ako klient."
+          : status === "rejected"
+            ? "Označené ako odmietnutý — agenti ho už znova neoslovia."
+            : "Označenie zrušené.",
+      );
+      onChanged();
+    } catch {
+      toast.error("Nepodarilo sa uložiť.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (leadStatus === "converted" || leadStatus === "rejected") {
+    const isClient = leadStatus === "converted";
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <span
+          className={cn(
+            "rounded-full px-2 py-0.5 text-[11px] font-medium",
+            isClient ? "bg-success/15 text-success" : "bg-danger/15 text-danger",
+          )}
+        >
+          {isClient ? "Klient" : "Odmietol"}
+        </span>
+        <button
+          onClick={() => setOutcome("responded")}
+          disabled={busy}
+          title="Zrušiť označenie"
+          className="text-muted transition-colors hover:text-foreground disabled:opacity-50"
+        >
+          <Undo2 className="h-3 w-3" />
+        </button>
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1">
+      <button
+        onClick={() => setOutcome("converted")}
+        disabled={busy}
+        title="Označiť ako klienta"
+        className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted transition-colors hover:border-success/50 hover:text-success disabled:opacity-50"
+      >
+        <UserCheck className="h-3 w-3" /> {!compact && "Klient"}
+      </button>
+      <button
+        onClick={() => setOutcome("rejected")}
+        disabled={busy}
+        title="Označiť ako odmietnutého — agenti ho už znova neoslovia"
+        className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted transition-colors hover:border-danger/50 hover:text-danger disabled:opacity-50"
+      >
+        <UserX className="h-3 w-3" /> {!compact && "Odmietol"}
+      </button>
+    </span>
+  );
+}
+
 function RowList({
   rows,
   kind,
+  onChanged,
 }: {
   rows: Row[];
   kind: "all" | "replied" | "opened" | "clicked";
+  onChanged: () => void;
 }) {
   if (!rows.length) {
     return (
@@ -238,7 +330,12 @@ function RowList({
                 </td>
                 <td className="rounded-r-lg whitespace-nowrap px-3 py-2 text-xs">
                   {r.repliedAt ? (
-                    <span className="font-medium text-success">↩ odpovedal {fmtDate(r.repliedAt)}</span>
+                    <div className="space-y-1">
+                      <span className="font-medium text-success">↩ odpovedal {fmtDate(r.repliedAt)}</span>
+                      <div>
+                        <OutcomeControl leadId={r.leadId} leadStatus={r.leadStatus} onChanged={onChanged} compact />
+                      </div>
+                    </div>
                   ) : (
                     <span className="text-muted/70">bez odpovede</span>
                   )}
@@ -280,9 +377,10 @@ function RowList({
           </div>
           <div className="shrink-0 text-right text-xs text-muted">
             {kind === "replied" && (
-              <span className="text-success">
-                odpovedal {fmtDate(r.repliedAt)}
-              </span>
+              <div className="flex flex-col items-end gap-1">
+                <span className="text-success">odpovedal {fmtDate(r.repliedAt)}</span>
+                <OutcomeControl leadId={r.leadId} leadStatus={r.leadStatus} onChanged={onChanged} />
+              </div>
             )}
             {kind === "opened" && (
               <span>
@@ -675,16 +773,16 @@ export default function MetricsPage() {
               </TabsTrigger>
             </TabsList>
             <TabsContent value="all" className="mt-4">
-              <RowList rows={m.lists.allSent} kind="all" />
+              <RowList rows={m.lists.allSent} kind="all" onChanged={() => load(m.month)} />
             </TabsContent>
             <TabsContent value="replied" className="mt-4">
-              <RowList rows={m.lists.replied} kind="replied" />
+              <RowList rows={m.lists.replied} kind="replied" onChanged={() => load(m.month)} />
             </TabsContent>
             <TabsContent value="opened" className="mt-4">
-              <RowList rows={m.lists.openedNotReplied} kind="opened" />
+              <RowList rows={m.lists.openedNotReplied} kind="opened" onChanged={() => load(m.month)} />
             </TabsContent>
             <TabsContent value="clicked" className="mt-4">
-              <RowList rows={m.lists.clicked} kind="clicked" />
+              <RowList rows={m.lists.clicked} kind="clicked" onChanged={() => load(m.month)} />
             </TabsContent>
           </Tabs>
         </CardContent>
