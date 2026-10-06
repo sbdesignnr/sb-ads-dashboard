@@ -20,16 +20,24 @@ const leadSelect = {
   segment: { select: { name: true } },
 } as const;
 
+const RUNS_FETCH = 60;
+const RUNS_SHOW = 20;
+/** Mail už mal svoj osud (schválený/odoslaný/zamietnutý) — v pracovni Nory viac neprekáža. */
+const EMAIL_HANDLED = new Set(["sent", "approved", "rejected"]);
+
 /**
- * GET /api/agents/research[?q=text][&lead=id]
+ * GET /api/agents/research[?q=text][&lead=id][&all=1]
  * Pracovňa Nory: kandidáti na ponuku (vhodné leady, ktoré ešte neskúmala), posledné behy
- * a prípadné hľadanie leadu podľa názvu.
+ * a prípadné hľadanie leadu podľa názvu. Behy, ktorých mail je už vybavený (schválený, odoslaný
+ * alebo zamietnutý v kampaniach), sa v zozname skrývajú, aby sa nemiešali s novými ponukami,
+ * ktoré ešte čakajú na posúdenie — pridaj ?all=1 pre celú históriu.
  */
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const q = req.nextUrl.searchParams.get("q")?.trim();
   const pinnedId = req.nextUrl.searchParams.get("lead");
+  const showAll = req.nextUrl.searchParams.get("all") === "1";
 
   try {
     // spadnutý beh (funkcia skončila časovým limitom) nesmie navždy blokovať tlačidlá
@@ -37,10 +45,10 @@ export async function GET(req: NextRequest) {
       where: { status: "running", updatedAt: { lt: new Date(Date.now() - STALE_MS) } },
       data: { status: "failed", error: "Beh sa neukončil včas (pravdepodobne časový limit)." },
     });
-    const [runs, top, found, pinned] = await Promise.all([
+    const [runsRaw, top, found, pinned] = await Promise.all([
       prisma.leadResearch.findMany({
         orderBy: { createdAt: "desc" },
-        take: 14,
+        take: RUNS_FETCH,
         select: {
           id: true,
           status: true,
@@ -79,7 +87,28 @@ export async function GET(req: NextRequest) {
         verdict: v?.suitable ? { why: v.why ?? "", headline: v.headline ?? "", evidence: v.evidence ?? [], fit: v.fit ?? 0 } : null,
       };
     });
-    return NextResponse.json({ runs, candidates, candidateTotal: top?.candidates ?? 0, found, pinned });
+
+    // Skutočný osud prvého mailu (ten istý lead = jeden "initial" mail), aby pracovňa vedela
+    // odlíšiť "ešte čaká" od "už schválený/odoslaný/zamietnutý v kampaniach".
+    const leadIds = [...new Set(runsRaw.map((r) => r.lead.id))];
+    const initialEmails = leadIds.length
+      ? await prisma.leadEmail.findMany({
+          where: { leadId: { in: leadIds }, emailType: "initial" },
+          select: { leadId: true, status: true, sentAt: true },
+          orderBy: { createdAt: "desc" },
+        })
+      : [];
+    const emailByLead = new Map<string, { status: string; sentAt: Date | null }>();
+    for (const e of initialEmails) if (!emailByLead.has(e.leadId)) emailByLead.set(e.leadId, e);
+
+    const annotated = runsRaw.map((r) => {
+      const email = emailByLead.get(r.lead.id) ?? null;
+      return { ...r, emailStatus: email?.status ?? null, emailSentAt: email?.sentAt ?? null };
+    });
+    const runs = (showAll ? annotated : annotated.filter((r) => !r.emailStatus || !EMAIL_HANDLED.has(r.emailStatus))).slice(0, RUNS_SHOW);
+    const hiddenHandled = showAll ? 0 : annotated.length - runs.length;
+
+    return NextResponse.json({ runs, hiddenHandled, candidates, candidateTotal: top?.candidates ?? 0, found, pinned });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }

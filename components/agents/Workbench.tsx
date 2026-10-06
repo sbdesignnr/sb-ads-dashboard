@@ -54,9 +54,13 @@ interface RunRow {
   createdAt: string;
   updatedAt: string;
   lead: { id: string; companyName: string; companyCity: string | null };
+  /** skutočný stav prvého mailu v kampaniach (draft/approved/sent/rejected), nie len že koncept vznikol */
+  emailStatus: string | null;
+  emailSentAt: string | null;
 }
 interface ListData {
   runs: RunRow[];
+  hiddenHandled?: number;
   candidates: LeadRow[];
   candidateTotal?: number;
   found: LeadRow[];
@@ -97,15 +101,21 @@ function stepIndex(step: string | null): number {
   return 0;
 }
 
-function StatusPill({ run }: { run: Pick<RunRow, "status" | "appliedAt" | "emailSubject" | "error"> }) {
+function StatusPill({ run }: { run: Pick<RunRow, "status" | "appliedAt" | "emailSubject" | "error" | "emailStatus"> }) {
   const [label, color] =
     run.status === "running"
       ? ["Pracuje", "#22c55e"]
       : run.status === "failed"
         ? [run.error?.startsWith("Vyradené:") ? "Vyradený" : "Nepodarilo sa", run.error?.startsWith("Vyradené:") ? "#94a3b8" : "#ef4444"]
-        : run.appliedAt
-          ? ["Koncept vytvorený", "#60a5fa"]
-          : ["Čaká na posúdenie", "#f59e0b"];
+        : run.emailStatus === "sent"
+          ? ["Odoslaný", "#34d399"]
+          : run.emailStatus === "approved"
+            ? ["Schválený, čaká na odoslanie", "#34d399"]
+            : run.emailStatus === "rejected"
+              ? ["Zamietnutý v kampaniach", "#94a3b8"]
+              : run.appliedAt
+                ? ["Koncept vytvorený", "#60a5fa"]
+                : ["Čaká na posúdenie", "#f59e0b"];
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-medium" style={{ background: `${color}22`, color }}>
       <span className={cn("h-1.5 w-1.5 rounded-full", run.status === "running" && "animate-pulse")} style={{ background: color }} />
@@ -130,6 +140,7 @@ export function Workbench({
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [showHandled, setShowHandled] = useState(false);
   const qRef = useRef("");
   qRef.current = q;
 
@@ -138,6 +149,7 @@ export function Workbench({
       const p = new URLSearchParams();
       if (qRef.current.trim()) p.set("q", qRef.current.trim());
       if (initialLeadId) p.set("lead", initialLeadId);
+      if (showHandled) p.set("all", "1");
       const r = await fetch(`/api/agents/research?${p}`, { cache: "no-store" });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
@@ -146,7 +158,7 @@ export function Workbench({
     } catch (e) {
       setLoadError((e as Error).message);
     }
-  }, [initialLeadId]);
+  }, [initialLeadId, showHandled]);
 
   const loadDetail = useCallback(async (id: string) => {
     try {
@@ -337,7 +349,15 @@ export function Workbench({
             ))}
           </ul>
 
-          <p className="mb-1.5 px-1 text-[11px] font-medium uppercase tracking-wider text-muted">Ponuky a behy</p>
+          <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-muted">Ponuky a behy</p>
+            <button
+              onClick={() => setShowHandled((v) => !v)}
+              className="text-[10.5px] text-muted underline decoration-dotted underline-offset-2 hover:text-foreground"
+            >
+              {showHandled ? "Skryť vybavené" : data?.hiddenHandled ? `Zobraziť aj vybavené (${data.hiddenHandled})` : "Zobraziť aj vybavené"}
+            </button>
+          </div>
           <ul className="space-y-1.5">
             {data && data.runs.length === 0 && <li className="px-1 text-xs text-muted">Zatiaľ žiadne. Spusti prvú vyššie.</li>}
             {data?.runs.map((r) => (
