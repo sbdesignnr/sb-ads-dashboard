@@ -31,10 +31,12 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   // "Koncept vytvorený" aj po tom, čo bol mail dávno schválený, odoslaný alebo zamietnutý
   const email = await prisma.leadEmail.findFirst({
     where: { leadId: run.leadId, emailType: "initial" },
-    select: { status: true, sentAt: true },
+    select: { id: true, status: true, sentAt: true },
     orderBy: { createdAt: "desc" },
   });
-  return NextResponse.json({ run: { ...run, emailStatus: email?.status ?? null, emailSentAt: email?.sentAt ?? null } });
+  return NextResponse.json({
+    run: { ...run, emailId: email?.id ?? null, emailStatus: email?.status ?? null, emailSentAt: email?.sentAt ?? null },
+  });
 }
 
 /**

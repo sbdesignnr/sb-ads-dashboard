@@ -137,6 +137,14 @@ export const EMAIL_TYPE_LABEL: Record<EmailType, string> = {
   followup3: "Followup 3",
 };
 
+export const EMAIL_STATUS_LABEL: Record<EmailStatus, string> = {
+  draft: "Koncept",
+  approved: "Schválený",
+  sent: "Odoslaný",
+  failed: "Zlyhal",
+  rejected: "Zamietnutý",
+};
+
 export const LEAD_STATUS_LABEL: Record<LeadStatus, string> = {
   new: "Nový",
   contacted: "Kontaktovaný",

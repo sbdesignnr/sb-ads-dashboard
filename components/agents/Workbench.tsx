@@ -57,6 +57,8 @@ interface RunRow {
   /** skutočný stav prvého mailu v kampaniach (draft/approved/sent/rejected), nie len že koncept vznikol */
   emailStatus: string | null;
   emailSentAt: string | null;
+  /** id konceptu v kampaniach (len v detaile behu) — pre priame schválenie z pracovne */
+  emailId?: string | null;
 }
 interface ListData {
   runs: RunRow[];
@@ -259,6 +261,23 @@ export function Workbench({
     onChanged();
   };
 
+  /** Schváliť koncept rovno z pracovne — netreba kvôli tomu chodiť do kampaní. */
+  const approveEmail = async (runId: string, emailId: string) => {
+    setBusy(runId);
+    try {
+      const r = await fetch(`/api/leads/emails/${emailId}/approve`, { method: "PATCH" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      toast.success("Schválené — pri najbližšom odosielaní odíde.");
+      await Promise.all([load(), loadDetail(runId)]);
+      onChanged();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const leadsToShow: LeadRow[] = useMemo(() => {
     if (!data) return [];
     const base = q.trim() ? data.found : data.candidates;
@@ -411,6 +430,7 @@ export function Workbench({
                   run={detail}
                   busy={busy === detail.id}
                   onApply={() => apply(detail.id)}
+                  onApprove={detail.emailId ? () => approveEmail(detail.id, detail.emailId!) : undefined}
                   onDiscard={(reason) => discard(detail.id, reason)}
                   onRetry={() => start(detail.lead)}
                   canStart={!running && busy === null}
@@ -443,6 +463,7 @@ function RunView({
   run,
   busy,
   onApply,
+  onApprove,
   onDiscard,
   onRetry,
   canStart,
@@ -451,6 +472,8 @@ function RunView({
   run: RunDetail;
   busy: boolean;
   onApply: () => void;
+  /** undefined, keď ešte nie je k dispozícii koncept na schválenie (napr. iný lead) */
+  onApprove?: () => void;
   onDiscard: (reason?: string) => void;
   onRetry: () => void;
   canStart: boolean;
@@ -682,17 +705,34 @@ function RunView({
                 <pre className="whitespace-pre-wrap px-3.5 py-3 font-sans text-[13.5px] leading-relaxed text-foreground/95">{run.emailBody}</pre>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button
-                  onClick={onApply}
-                  disabled={busy || Boolean(run.appliedAt)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-[13px] font-medium text-white transition hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                  {run.appliedAt ? "Použité ako koncept" : "Použiť ako koncept"}
-                </button>
+                {!run.appliedAt && (
+                  <button
+                    onClick={onApply}
+                    disabled={busy}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-[13px] font-medium text-white transition hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    Použiť ako koncept
+                  </button>
+                )}
+                {run.emailStatus === "draft" && onApprove && (
+                  <button
+                    onClick={onApprove}
+                    disabled={busy}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-success px-3.5 py-2 text-[13px] font-medium text-white transition hover:bg-success/90 disabled:opacity-50"
+                  >
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    Schváliť, nech sa odošle
+                  </button>
+                )}
+                {run.emailStatus === "approved" && (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-success/15 px-3.5 py-2 text-[13px] font-medium text-success">
+                    <Check className="h-4 w-4" /> Schválené — čaká na odoslanie
+                  </span>
+                )}
                 {run.appliedAt && (
                   <Link href="/leads/kampane" className="inline-flex items-center gap-1 text-[12.5px] text-primary hover:underline">
-                    Otvoriť frontu na schválenie <ArrowUpRight className="h-3.5 w-3.5" />
+                    Otvoriť v kampaniach <ArrowUpRight className="h-3.5 w-3.5" />
                   </Link>
                 )}
                 <button onClick={() => setDiscardOpen((v) => !v)} className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[12.5px] text-muted transition hover:bg-white/10 hover:text-red-300">

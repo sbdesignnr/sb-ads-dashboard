@@ -30,6 +30,8 @@ import {
   Pencil,
   X,
   Trash2,
+  ChevronDown,
+  RotateCcw,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -62,6 +64,7 @@ import {
   type LeadEmailDTO,
   type LeadStatus,
   LEAD_STATUS_LABEL,
+  EMAIL_STATUS_LABEL,
 } from "@/lib/leads/types";
 
 function relTime(iso: string | null): string {
@@ -79,6 +82,224 @@ function openColor(count: number): string {
   if (count >= 2) return "text-success";
   if (count === 1) return "text-warning";
   return "text-danger";
+}
+
+const EMAIL_STATUS_COLOR: Record<string, string> = {
+  draft: "bg-surface-2 text-muted",
+  approved: "bg-primary/15 text-primary",
+  sent: "bg-success/15 text-success",
+  failed: "bg-danger/15 text-danger",
+  rejected: "bg-danger/15 text-danger",
+};
+
+/**
+ * Jeden mail leadu — koncept/schválený sa dá priamo tu prečítať, upraviť a
+ * schváliť/zamietnuť, nech sa k nemu dá vrátiť aj mimo frontu v kampaniach.
+ * Odoslaný mail ostáva needitovateľný, len so sledovaním otvorení/klikov.
+ */
+function EmailCard({
+  email,
+  onChanged,
+}: {
+  email: LeadEmailDTO;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [subject, setSubject] = useState(email.subject);
+  const [body, setBody] = useState(email.body);
+  const [busy, setBusy] = useState(false);
+
+  const canEdit = email.status === "draft" || email.status === "approved";
+
+  const startEdit = () => {
+    setSubject(email.subject);
+    setBody(email.body);
+    setEditing(true);
+    setOpen(true);
+  };
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/leads/emails/${email.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subject, body }),
+      });
+      if (!r.ok) throw new Error();
+      toast.success("Mail uložený.");
+      setEditing(false);
+      onChanged();
+    } catch {
+      toast.error("Nepodarilo sa uložiť.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const approve = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/leads/emails/${email.id}/approve`, { method: "PATCH" });
+      if (!r.ok) throw new Error();
+      toast.success("Schválené — pri najbližšom odosielaní odíde.");
+      onChanged();
+    } catch {
+      toast.error("Nepodarilo sa schváliť.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const unapprove = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/leads/emails/${email.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "draft" }),
+      });
+      if (!r.ok) throw new Error();
+      toast.success("Vrátené do konceptov.");
+      onChanged();
+    } catch {
+      toast.error("Nepodarilo sa vrátiť.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reject = async () => {
+    if (!confirm("Zamietnuť tento mail? Ak ide o prvý mail neoslovenej firmy, zamietne sa aj lead (agenti ho už znova neoslovia).")) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/leads/emails/${email.id}/reject`, { method: "PATCH" });
+      if (!r.ok) throw new Error();
+      toast.success("Zamietnuté.");
+      onChanged();
+    } catch {
+      toast.error("Nepodarilo sa zamietnuť.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-border bg-surface p-3">
+      <button onClick={() => setOpen((v) => !v)} className="flex w-full items-start justify-between gap-3 text-left">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                EMAIL_STATUS_COLOR[email.status] ?? "bg-surface-2 text-muted",
+              )}
+            >
+              {EMAIL_STATUS_LABEL[email.status as keyof typeof EMAIL_STATUS_LABEL] ?? email.status}
+            </span>
+            <p className="min-w-0 truncate text-sm font-medium text-foreground">{email.subject || "—"}</p>
+          </div>
+          {email.status === "sent" ? (
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+              <span className="text-muted">
+                ✉️ Odoslaný:{" "}
+                {email.sentAt
+                  ? new Date(email.sentAt).toLocaleString("sk-SK", { dateStyle: "short", timeStyle: "short" })
+                  : "—"}
+              </span>
+              <span className={openColor(email.openCount)}>
+                {email.openCount === 0
+                  ? "👁 Neotvorený"
+                  : email.openCount === 1
+                    ? `👁 Otvorený 1× - ${relTime(email.lastOpenedAt ?? email.openedAt)}`
+                    : `👁 Otvorený ${email.openCount}×`}
+              </span>
+              {email.clickCount > 0 && (
+                <span className="text-success">
+                  {email.clickCount === 1
+                    ? `👆 Klikol na odkaz - ${relTime(email.lastClickedAt ?? email.clickedAt)}`
+                    : `👆 Klikol ${email.clickCount}×`}
+                </span>
+              )}
+              {email.repliedAt && (
+                <span className="font-medium text-success">↩ odpovedal {relTime(email.repliedAt)}</span>
+              )}
+            </div>
+          ) : (
+            <p className="mt-1 text-xs text-muted">{relTime(email.createdAt)}</p>
+          )}
+        </div>
+        <ChevronDown className={cn("mt-1 h-4 w-4 shrink-0 text-muted transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <div className="mt-3 space-y-3 border-t border-border pt-3">
+          {editing ? (
+            <>
+              <input
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={10}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <div className="flex items-center gap-2">
+                <Button size="sm" onClick={save} disabled={busy}>
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Uložiť
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => setEditing(false)} disabled={busy}>
+                  <X className="h-4 w-4" /> Zrušiť
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <pre className="whitespace-pre-wrap rounded-lg bg-background p-3 font-sans text-sm leading-relaxed text-foreground">
+                {email.body}
+              </pre>
+              {email.status === "sent" &&
+                (email.clickCount >= 1 ? (
+                  <div className="inline-flex items-center gap-1 rounded-md border border-success/30 bg-success/10 px-2 py-1 text-xs text-success">
+                    🔥 Klikol na odkaz v podpise — silný signál, ideálny čas na follow-up
+                  </div>
+                ) : email.openCount >= 2 ? (
+                  <div className="inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-xs text-warning">
+                    ⚡ Viackrát otvorený — vhodný čas na follow-up
+                  </div>
+                ) : null)}
+              <div className="flex flex-wrap items-center gap-2">
+                {canEdit && (
+                  <Button size="sm" variant="secondary" onClick={startEdit} disabled={busy}>
+                    <Pencil className="h-4 w-4" /> Upraviť
+                  </Button>
+                )}
+                {email.status === "draft" && (
+                  <Button size="sm" onClick={approve} disabled={busy}>
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Schváliť
+                  </Button>
+                )}
+                {email.status === "approved" && (
+                  <Button size="sm" variant="secondary" onClick={unapprove} disabled={busy}>
+                    <RotateCcw className="h-4 w-4" /> Vrátiť do konceptov
+                  </Button>
+                )}
+                {(email.status === "draft" || email.status === "approved") && (
+                  <Button size="sm" variant="danger" onClick={reject} disabled={busy}>
+                    <Trash2 className="h-4 w-4" /> Zamietnuť
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 const STATUSES: LeadStatus[] = [
@@ -257,18 +478,20 @@ export function LeadDetail({ id }: { id: string }) {
     setBackHref(s ? `/leads?segment=${encodeURIComponent(s)}` : "/leads");
   }, []);
 
-  // Refresh open-tracking every 30s (no cache) so "Sledovanie emailov" reflects
-  // new opens without a manual reload.
+  const reloadEmails = () =>
+    fetch(`/api/leads/${id}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.emails) setEmails(j.emails);
+      })
+      .catch(() => {});
+
+  // Refresh open-tracking every 30s (no cache) so "Emaily" reflects new
+  // opens/schválenia/odoslania bez manuálneho obnovenia.
   useEffect(() => {
-    const t = setInterval(() => {
-      fetch(`/api/leads/${id}`, { cache: "no-store" })
-        .then((r) => r.json())
-        .then((j) => {
-          if (j.emails) setEmails(j.emails);
-        })
-        .catch(() => {});
-    }, 30000);
+    const t = setInterval(reloadEmails, 30000);
     return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const setStatus = async (status: LeadStatus) => {
@@ -1024,59 +1247,15 @@ export function LeadDetail({ id }: { id: string }) {
             </CardContent>
           </Card>
 
-          {emails.some((e) => e.status === "sent") && (
+          {emails.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Sledovanie emailov</CardTitle>
+                <CardTitle>Emaily</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {emails
-                  .filter((e) => e.status === "sent")
-                  .map((e) => (
-                    <div
-                      key={e.id}
-                      className="rounded-lg border border-border bg-surface p-3"
-                    >
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {e.subject || "—"}
-                      </p>
-                      <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                        <span className="text-muted">
-                          ✉️ Email odoslaný:{" "}
-                          {e.sentAt
-                            ? new Date(e.sentAt).toLocaleString("sk-SK", {
-                                dateStyle: "short",
-                                timeStyle: "short",
-                              })
-                            : "—"}
-                        </span>
-                        <span className={openColor(e.openCount)}>
-                          {e.openCount === 0
-                            ? "👁 Neotvorený"
-                            : e.openCount === 1
-                              ? `👁 Otvorený 1× - ${relTime(e.lastOpenedAt ?? e.openedAt)}`
-                              : `👁 Otvorený ${e.openCount}×`}
-                        </span>
-                        {e.clickCount > 0 && (
-                          <span className="text-success">
-                            {e.clickCount === 1
-                              ? `👆 Klikol na odkaz - ${relTime(e.lastClickedAt ?? e.clickedAt)}`
-                              : `👆 Klikol ${e.clickCount}×`}
-                          </span>
-                        )}
-                      </div>
-                      {e.clickCount >= 1 ? (
-                        <div className="mt-2 inline-flex items-center gap-1 rounded-md border border-success/30 bg-success/10 px-2 py-1 text-xs text-success">
-                          🔥 Klikol na odkaz v podpise — silný signál, ideálny
-                          čas na follow-up
-                        </div>
-                      ) : e.openCount >= 2 ? (
-                        <div className="mt-2 inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-xs text-warning">
-                          ⚡ Viackrát otvorený — vhodný čas na follow-up
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
+                {emails.map((e) => (
+                  <EmailCard key={e.id} email={e} onChanged={reloadEmails} />
+                ))}
               </CardContent>
             </Card>
           )}
