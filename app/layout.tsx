@@ -25,6 +25,12 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+// Databáza (Supabase) beží vo Frankfurte (eu-central-1) — bez tohto by funkcie na
+// Verceli mohli bežať ďalej od nej, a každý dotaz by platil sieťové oneskorenie
+// navyše. Toto nastavenie sa dedí do všetkých stránok, layoutov aj API routes,
+// pokiaľ ho konkrétna route nenastaví inak.
+export const preferredRegion = "fra1";
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {

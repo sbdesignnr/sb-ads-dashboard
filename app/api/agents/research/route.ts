@@ -40,12 +40,14 @@ export async function GET(req: NextRequest) {
   const showAll = req.nextUrl.searchParams.get("all") === "1";
 
   try {
-    // spadnutý beh (funkcia skončila časovým limitom) nesmie navždy blokovať tlačidlá
-    await prisma.leadResearch.updateMany({
-      where: { status: "running", updatedAt: { lt: new Date(Date.now() - STALE_MS) } },
-      data: { status: "failed", error: "Beh sa neukončil včas (pravdepodobne časový limit)." },
-    });
-    const [runsRaw, top, found, pinned] = await Promise.all([
+    // spadnutý beh (funkcia skončila časovým limitom) nesmie navždy blokovať tlačidlá —
+    // beží súbežne s čítaním nižšie (nie pred ním), nech to nie je o kolo navyše;
+    // ak sa minú o chlp, náprava sa prejaví pri najbližšom načítaní.
+    const [, runsRaw, top, found, pinned] = await Promise.all([
+      prisma.leadResearch.updateMany({
+        where: { status: "running", updatedAt: { lt: new Date(Date.now() - STALE_MS) } },
+        data: { status: "failed", error: "Beh sa neukončil včas (pravdepodobne časový limit)." },
+      }),
       prisma.leadResearch.findMany({
         orderBy: { createdAt: "desc" },
         take: RUNS_FETCH,

@@ -191,8 +191,10 @@ export function Workbench({
   }, [running, detail?.status, selected, load, loadDetail]);
 
   useEffect(() => {
+    // Vyčisti predchádzajúci detail HNEĎ pri prepnutí, nech sa neukazuje starý obsah,
+    // kým sa nenačíta nový — inak prepínanie medzi koncepmi pôsobí, že appka zamrzla.
+    setDetail(null);
     if (selected) loadDetail(selected);
-    else setDetail(null);
   }, [selected, loadDetail]);
 
   // po skončení behu sa svet dozvie o novom stave
