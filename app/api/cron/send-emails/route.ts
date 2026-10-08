@@ -3,8 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { fromZonedTime } from "date-fns-tz";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { sendLeadEmail, getPriorThreadEmails } from "@/lib/leads/email-sender";
-import { generateOutreachEmail } from "@/lib/leads/ai";
+import { sendLeadEmail } from "@/lib/leads/email-sender";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -138,52 +137,7 @@ async function handle(req: NextRequest) {
   if (skipped.length)
     console.log("[cron/send-emails] neodoslané:", skipped.join(" | "));
 
-  // Follow-ups splatné do 3 dní → predgeneruj telo (ak chýba), nech sú vopred
-  // pripravené na kontrolu a schválenie, nie až v deň odoslania.
-  let followupsReady = 0;
-  const soon = new Date(now.getTime() + 3 * 24 * 3_600_000);
-  const dueFollowups = await prisma.leadEmail.findMany({
-    where: {
-      status: "draft",
-      emailType: { in: ["followup1", "followup2", "followup3"] },
-      scheduledAt: { lte: soon },
-    },
-    include: { lead: { include: { segment: true } } },
-    take: 50,
-  });
-  for (const f of dueFollowups) {
-    if (f.body?.trim()) {
-      followupsReady++;
-      continue;
-    }
-    if (!f.lead || !process.env.ANTHROPIC_API_KEY) continue;
-    try {
-      const previousEmails = await getPriorThreadEmails(
-        f.leadId,
-        f.emailType,
-      );
-      const out = await generateOutreachEmail({
-        lead: f.lead,
-        segmentName: f.lead.segment?.name ?? "firma",
-        type: f.emailType as "followup1" | "followup2" | "followup3",
-        previousEmails,
-      });
-      // Follow-up ide ako odpoveď → „Re: <pôvodný predmet>".
-      const initialSubject = previousEmails[0]?.subject;
-      const subject = initialSubject
-        ? `Re: ${initialSubject.replace(/^\s*(re\s*:\s*)+/i, "").trim()}`
-        : out.subject;
-      await prisma.leadEmail.update({
-        where: { id: f.id },
-        data: { subject, body: out.body },
-      });
-      followupsReady++;
-    } catch {
-      /* skip */
-    }
-  }
-
-  return NextResponse.json({ sent, followups_ready: followupsReady, skipped });
+  return NextResponse.json({ sent, skipped });
 }
 
 export const GET = handle;

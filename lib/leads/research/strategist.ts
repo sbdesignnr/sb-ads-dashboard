@@ -301,6 +301,32 @@ export function buildInitialOutreach(lead: Pick<Lead, "companyName" | "websiteUr
   return { subject: `SB Design | ${lead.companyName}`, body };
 }
 
+/** Prvý followup (pevná schválená šablóna, 6. 10. 2026) - posiela sa, ak lead na prvý mail neodpovedal. */
+export function buildFollowup1(lead: Pick<Lead, "companyName" | "ownerName" | "ownerSource">): { subject: string; body: string } {
+  const greeting = buildGreeting(greetableOwnerName(lead));
+  const signoff = greeting.formal ? "S úctou," : "S pozdravom,";
+  const paragraphs = [
+    "pred pár dňami som Vám písal ohľadom Vašej webstránky - chápem, že ste mali asi veľa práce, preto sa ozývam ešte raz.",
+    "Rád by som Vám zadarmo pripravil krátku analýzu a návrh novej domovskej stránky, úplne bez záväzku - jednoducho preto, že si myslím, že by to Vašej firme mohlo pomôcť.",
+    "Úplne chápem, ak nemáte teraz čas odpovedať - aj krátka odpoveď ma poteší. Prajem Vám príjemný zvyšok dňa.",
+  ];
+  const body = [greeting.line, ...paragraphs, `${signoff}\nSamuel Bibeň`].join("\n\n");
+  return { subject: `Re: SB Design | ${lead.companyName}`, body };
+}
+
+/** Druhý (posledný) followup - zdvorilé zatvorenie bez nátlaku, dvere ostávajú otvorené. */
+export function buildFollowup2(lead: Pick<Lead, "companyName" | "ownerName" | "ownerSource">): { subject: string; body: string } {
+  const greeting = buildGreeting(greetableOwnerName(lead));
+  const signoff = greeting.formal ? "S úctou," : "S pozdravom,";
+  const paragraphs = [
+    "toto je moja posledná správa k tejto ponuke.",
+    "Ak by ste sa k tomu niekedy v budúcnosti chceli vrátiť, rád Vám tú analýzu a návrh pripravím aj vtedy.",
+    "Prajem Vám príjemný zvyšok dňa a veľa úspechov s Vašou firmou.",
+  ];
+  const body = [greeting.line, ...paragraphs, `${signoff}\nSamuel Bibeň`].join("\n\n");
+  return { subject: `Re: SB Design | ${lead.companyName}`, body };
+}
+
 /**
  * Napíše cold e-mail z overených zistení a ponuky (oslovenie z overeného mena, lint, korektúra,
  * odkaz na návrh stránky). Používa ho beh agenta aj "napísať mail znova" (napr. po vyrobení návrhu).

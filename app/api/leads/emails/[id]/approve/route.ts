@@ -1,15 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { scheduleFollowUps } from "@/lib/leads/email-sender";
 import { defaultSendSchedule } from "@/lib/leads/schedule";
 
 export const dynamic = "force-dynamic";
 
-// Approve an email for sending. Approving an initial email queues its follow-ups.
-// Optional body `{ scheduledAt }` (ISO) sets an exact custom send time. If none is
-// given (and the email has no future schedule), we stamp it with the NEXT daily
-// send time of the covering campaign — so an email approved after today's send
+// Approve an email for sending. Follow-upy sa plánujú až pri SKUTOČNOM odoslaní
+// (pozri scheduleFollowUps v email-sender.ts) — schválenie ešte neznamená, že mail
+// dnes aj odíde. Optional body `{ scheduledAt }` (ISO) sets an exact custom send time.
+// If none is given (and the email has no future schedule), we stamp it with the NEXT
+// daily send time of the covering campaign — so an email approved after today's send
 // time goes out tomorrow, not a few minutes later.
 export async function PATCH(
   req: NextRequest,
@@ -22,8 +22,6 @@ export async function PATCH(
   const email = await prisma.leadEmail.findUnique({
     where: { id },
     select: {
-      emailType: true,
-      leadId: true,
       scheduledAt: true,
       lead: { select: { segmentId: true } },
     },
@@ -71,9 +69,6 @@ export async function PATCH(
     },
     select: { scheduledAt: true },
   });
-  if (email.emailType === "initial") {
-    await scheduleFollowUps(email.leadId, id).catch(() => {});
-  }
   return NextResponse.json({
     ok: true,
     scheduledAt: updated.scheduledAt?.toISOString() ?? null,

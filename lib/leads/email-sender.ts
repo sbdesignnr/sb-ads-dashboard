@@ -3,6 +3,8 @@ import nodemailer from "nodemailer";
 import MailComposer from "nodemailer/lib/mail-composer";
 import { saveToSent } from "@/lib/email/sent-folder";
 import { prisma } from "@/lib/prisma";
+import { buildFollowup1, buildFollowup2 } from "@/lib/leads/research/strategist";
+import { followUpSchedule } from "@/lib/leads/schedule";
 
 // Outreach is sent from Samuel's own address. Primary path: Websupport SMTP via
 // Nodemailer — it looks like a personal email (no List-Unsubscribe header, no
@@ -474,40 +476,50 @@ export async function sendLeadEmail(leadEmailId: string): Promise<SendResult> {
       data: { status: "contacted" },
     });
   }
+  // Follow-upy sa plánujú až od SKUTOČNÉHO odoslania prvého mailu (nie od schválenia —
+  // medzi schválením a reálnym odoslaním môže byť aj deň-dva podľa denného limitu kampane).
+  if (email.emailType === "initial") {
+    await scheduleFollowUps(lead.id, leadEmailId, now).catch(() => {});
+  }
   return { success: true };
 }
 
 /**
- * Queue three follow-ups after an initial e-mail (+3 / +5 / +7 dní). Bodies are
- * left empty — they get generated when they fall due (so they reflect the
- * latest thread), then surface in the campaign queue for approval.
+ * Naplánuje dva follow-upy po prvom maile, na ktorý lead neodpovedal: +3 kalendárne dni
+ * (mimo víkend) a +7 dní po prvom followupe (rovnaký deň v týždni, pozri schedule.ts).
+ * Text je pevná schválená šablóna (6. 10. 2026), 0 € AI — žiadne čakanie na vyplnenie.
  */
 export async function scheduleFollowUps(
   leadId: string,
   initialEmailId: string,
+  initialSentAt: Date,
 ): Promise<void> {
-  const now = Date.now();
-  const day = 86_400_000;
+  void initialEmailId; // vlákno (In-Reply-To/References) sa stavia z leadId pri odosielaní
   const existing = await prisma.leadEmail.findMany({
-    where: { leadId, emailType: { in: ["followup1", "followup2", "followup3"] } },
+    where: { leadId, emailType: { in: ["followup1", "followup2"] } },
     select: { emailType: true },
   });
   const have = new Set(existing.map((e) => e.emailType));
-  const rows: { emailType: string; days: number }[] = [
-    { emailType: "followup1", days: 3 }, // +2-3 dni
-    { emailType: "followup2", days: 5 }, // +4-5 dní
-    { emailType: "followup3", days: 7 }, // +5-7 dní
-  ].filter((r) => !have.has(r.emailType));
-  if (!rows.length) return;
-  void initialEmailId; // reserved for future threading; follow-ups regenerate from the lead
-  await prisma.leadEmail.createMany({
-    data: rows.map((r) => ({
-      leadId,
-      subject: "",
-      body: "",
-      emailType: r.emailType,
-      status: "draft",
-      scheduledAt: new Date(now + r.days * day),
-    })),
+  if (have.has("followup1") && have.has("followup2")) return;
+
+  const lead = await prisma.lead.findUnique({
+    where: { id: leadId },
+    select: { companyName: true, ownerName: true, ownerSource: true, segmentId: true },
   });
+  if (!lead) return;
+
+  const scheduledAt1 = await followUpSchedule(lead.segmentId, initialSentAt, 3);
+  if (!have.has("followup1")) {
+    const f1 = buildFollowup1(lead);
+    await prisma.leadEmail.create({
+      data: { leadId, subject: f1.subject, body: f1.body, emailType: "followup1", status: "draft", scheduledAt: scheduledAt1 },
+    });
+  }
+  if (!have.has("followup2")) {
+    const scheduledAt2 = await followUpSchedule(lead.segmentId, scheduledAt1, 7);
+    const f2 = buildFollowup2(lead);
+    await prisma.leadEmail.create({
+      data: { leadId, subject: f2.subject, body: f2.body, emailType: "followup2", status: "draft", scheduledAt: scheduledAt2 },
+    });
+  }
 }

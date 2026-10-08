@@ -1,14 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { scheduleFollowUps } from "@/lib/leads/email-sender";
 import { nextSendTime } from "@/lib/leads/schedule";
 
 export const dynamic = "force-dynamic";
 
-// Approve many emails at once; queue follow-ups for any approved initial emails.
-// Each approved email (without a future custom schedule) is stamped with the next
-// daily send time of the covering campaign — same rule as single approve.
+// Approve many emails at once. Follow-upy sa plánujú až pri skutočnom odoslaní prvého
+// mailu (pozri scheduleFollowUps v email-sender.ts), nie tu. Each approved email
+// (without a future custom schedule) is stamped with the next daily send time of the
+// covering campaign — same rule as single approve.
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user)
@@ -28,8 +28,6 @@ export async function POST(req: NextRequest) {
     where: { id: { in: ids } },
     select: {
       id: true,
-      leadId: true,
-      emailType: true,
       scheduledAt: true,
       lead: { select: { segmentId: true } },
     },
@@ -69,8 +67,6 @@ export async function POST(req: NextRequest) {
       if (def) data.scheduledAt = def;
     }
     await prisma.leadEmail.update({ where: { id: e.id }, data });
-    if (e.emailType === "initial")
-      await scheduleFollowUps(e.leadId, e.id).catch(() => {});
   }
 
   return NextResponse.json({ approved: emails.length });

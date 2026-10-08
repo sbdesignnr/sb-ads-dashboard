@@ -55,3 +55,42 @@ export async function defaultSendSchedule(
   const campaign = await coveringCampaign(segmentId);
   return campaign ? nextSendTime(campaign.sendTime, now) : null;
 }
+
+/** Lokálny deň (YYYY-MM-DD, Bratislava) posunutý o `days` kalendárnych dní. */
+function shiftLocalDay(dayKey: string, days: number): string {
+  // poludnie, nech sa posun nezrazí s hranicou letného/zimného času
+  const noon = fromZonedTime(`${dayKey}T12:00:00`, TZ);
+  return localDay(new Date(noon.getTime() + days * 86_400_000));
+}
+
+/** Víkend (sobota/nedeľa) sa posunie na najbližší pondelok; v pracovný deň nechá bezo zmeny. */
+function toBusinessDay(dayKey: string): string {
+  const dow = new Date(`${dayKey}T12:00:00Z`).getUTCDay(); // 0 = nedeľa, 6 = sobota
+  if (dow === 6) return shiftLocalDay(dayKey, 2);
+  if (dow === 0) return shiftLocalDay(dayKey, 1);
+  return dayKey;
+}
+
+/** Konkrétny lokálny deň v daný denný čas (napr. „08:30"), ako UTC instant. */
+function atLocalTime(dayKey: string, sendTime: string): Date {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((sendTime ?? "").trim());
+  const hh = m ? String(Math.min(23, Number(m[1]))).padStart(2, "0") : "08";
+  const mm = m ? String(Math.min(59, Number(m[2]))).padStart(2, "0") : "30";
+  return fromZonedTime(`${dayKey}T${hh}:${mm}:00`, TZ);
+}
+
+/**
+ * Čas odoslania follow-upu: `days` kalendárnych dní od `from`, posunuté mimo víkend
+ * (sobota/nedeľa → pondelok), v dennom čase kampane pokrývajúcej segment (08:30, ak
+ * kampaň chýba). Keďže 7 je celý týždeň, druhý followup (+7 od prvého, ktorý už sám
+ * nikdy nepadne na víkend) automaticky vychádza na rovnaký deň v týždni ako prvý.
+ */
+export async function followUpSchedule(
+  segmentId: string | null,
+  from: Date,
+  days: number,
+): Promise<Date> {
+  const targetDay = toBusinessDay(shiftLocalDay(localDay(from), days));
+  const campaign = await coveringCampaign(segmentId);
+  return atLocalTime(targetDay, campaign?.sendTime ?? "08:30");
+}
