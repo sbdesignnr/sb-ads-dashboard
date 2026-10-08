@@ -1045,7 +1045,7 @@ export function AgentWorld() {
         </div>
       </div>
 
-      <div className="absolute right-3 top-3 z-10 flex items-center gap-2 max-md:top-14">
+      <div className="absolute right-3 top-3 z-10 flex items-center gap-2 max-md:top-36">
         <div className={cn("flex items-center gap-1 rounded-xl border border-white/12 bg-[#0d1524]/80 p-1 shadow-lg backdrop-blur-md transition-opacity", selected && "md:opacity-0 md:pointer-events-none")}>
           {phaseButtons.map((b) => (
             <button

@@ -1091,7 +1091,7 @@ export default function CampaignsPage() {
           {followups.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted">
               Žiadne follow-upy nie sú naplánované. Vytvoria sa automaticky po
-              oslovení leadu (1. po 3 dňoch, 2. po 5 dňoch, 3. po 7 dňoch).
+              odoslaní prvého mailu (1. o 3 pracovné dni neskôr, 2. o 7 dní po prvom followupe).
             </p>
           ) : (
             <div className="space-y-1">
