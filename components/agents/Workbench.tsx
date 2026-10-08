@@ -257,10 +257,16 @@ export function Workbench({
   };
 
   const discard = async (id: string, reason?: string) => {
-    await fetch(`/api/agents/research/${id}${reason ? `?reason=${encodeURIComponent(reason)}` : ""}`, { method: "DELETE" });
-    setSelected(null);
-    await load();
-    onChanged();
+    if (busy === id) return; // zabráni duplicitnému zahodeniu pri rýchlom dvojkliku
+    setBusy(id);
+    try {
+      await fetch(`/api/agents/research/${id}${reason ? `?reason=${encodeURIComponent(reason)}` : ""}`, { method: "DELETE" });
+      setSelected(null);
+      await load();
+      onChanged();
+    } finally {
+      setBusy(null);
+    }
   };
 
   /** Schváliť koncept rovno z pracovne — netreba kvôli tomu chodiť do kampaní. */
@@ -743,14 +749,14 @@ function RunView({
               </div>
               {discardOpen && (
                 <div className="mt-2 rounded-xl border border-red-400/25 bg-red-400/[0.05] p-3">
-                  <p className="mb-2 text-[12px] text-foreground">Prečo ju zahadzuješ? Agenti sa z toho poučia, aby ti takéto ponuky nosili menej.</p>
+                  <p className="mb-2 text-[12px] text-foreground">Prečo ju zahadzuješ? Firma sa potom agentom na výber nebude ponúkať a prípadný nevybavený koncept sa zamietne.</p>
                   <div className="flex flex-wrap gap-1.5">
                     {["Firma nepatrí do odboru", "Nevhodný cieľ (koncern, inštitúcia)", "Slabý alebo generický mail", "Fakty nesedia", "Nemáme im čo ponúknuť", "Iný dôvod"].map((r) => (
-                      <button key={r} onClick={() => onDiscard(r)} className="rounded-full border border-white/15 bg-white/[0.05] px-2.5 py-1 text-[11.5px] text-foreground transition hover:border-red-300/50 hover:bg-red-400/15">
+                      <button key={r} onClick={() => onDiscard(r)} disabled={busy} className="rounded-full border border-white/15 bg-white/[0.05] px-2.5 py-1 text-[11.5px] text-foreground transition hover:border-red-300/50 hover:bg-red-400/15 disabled:opacity-40">
                         {r}
                       </button>
                     ))}
-                    <button onClick={() => onDiscard()} className="rounded-full px-2.5 py-1 text-[11.5px] text-muted hover:text-foreground">Bez dôvodu</button>
+                    <button onClick={() => onDiscard()} disabled={busy} className="rounded-full px-2.5 py-1 text-[11.5px] text-muted hover:text-foreground disabled:opacity-40">Bez dôvodu</button>
                   </div>
                 </div>
               )}
