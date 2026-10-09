@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useBodyScrollLock } from "./useBodyScrollLock";
 import { motion } from "framer-motion";
 import { ArrowUpRight, FileSearch, Hammer, MessageCircle, Sparkles, X } from "lucide-react";
 import {
@@ -104,18 +105,7 @@ export function AgentPanel({
   const logRef = useRef<HTMLDivElement>(null);
   const lastLine = useRef<string>("");
 
-  // Panel je portál, ale stránka pod ním (dlhšia ako viewport) zostáva
-  // scrollovateľná - na mobile by tak ťahanie prsta posúvalo ju, nie panel.
-  useEffect(() => {
-    const prevBody = document.body.style.overflow;
-    const prevHtml = document.documentElement.style.overflow;
-    document.body.style.overflow = "hidden";
-    document.documentElement.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prevBody;
-      document.documentElement.style.overflow = prevHtml;
-    };
-  }, []);
+  useBodyScrollLock();
 
   const say = useCallback(
     (text: string, cta?: Msg["cta"]) => {
@@ -359,16 +349,7 @@ export function AgentPanel({
 /** Panel prázdnej parcely: nápad na budúceho agenta. */
 export function PlotPanel({ plot, onClose }: { plot: PlotDef; onClose: () => void }) {
   const dept = departmentById(plot.department);
-  useEffect(() => {
-    const prevBody = document.body.style.overflow;
-    const prevHtml = document.documentElement.style.overflow;
-    document.body.style.overflow = "hidden";
-    document.documentElement.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prevBody;
-      document.documentElement.style.overflow = prevHtml;
-    };
-  }, []);
+  useBodyScrollLock();
   return createPortal(
     <motion.aside
       initial={{ opacity: 0, x: 40 }}
