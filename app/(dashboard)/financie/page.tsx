@@ -12,37 +12,21 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Upload, Plus, Loader2, TrendingUp, TrendingDown, Search, X, Check } from "lucide-react";
+import { Upload, Plus, Loader2, TrendingUp, TrendingDown, Search, X, Check, Settings, Wallet } from "lucide-react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SpendDonut, type DonutSlice } from "@/components/charts/SpendDonut";
 import { formatCurrency } from "@/lib/utils/formatters";
 import { cn } from "@/lib/utils";
 import {
-  CATEGORY_COLORS,
+  type BucketOverviewDTO,
   type FinanceAccountDTO,
+  type FinanceCategoryDTO,
   type FinanceSummary,
   type FinanceTransactionDTO,
   type MonthlyTotal,
 } from "@/lib/finance/types";
-
-const CATEGORIES = [
-  "Potraviny",
-  "Jedlo & reštaurácie",
-  "Predplatné",
-  "Doprava",
-  "Zdravie",
-  "Oblečenie",
-  "Zábava & šport",
-  "Príjem z projektu",
-  "Príjem",
-  "Ostatné",
-];
-
-function catColor(cat: string): string {
-  const i = CATEGORIES.indexOf(cat);
-  return CATEGORY_COLORS[(i >= 0 ? i : cat.length) % CATEGORY_COLORS.length];
-}
 
 function currentMonth(): string {
   const d = new Date();
@@ -80,6 +64,8 @@ export default function FinancePage() {
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
   const [monthly, setMonthly] = useState<MonthlyTotal[]>([]);
   const [txs, setTxs] = useState<FinanceTransactionDTO[]>([]);
+  const [categories, setCategories] = useState<FinanceCategoryDTO[]>([]);
+  const [bucketOverview, setBucketOverview] = useState<BucketOverviewDTO | null>(null);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
 
@@ -91,9 +77,23 @@ export default function FinancePage() {
   const [showAddAccount, setShowAddAccount] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const catColor = useCallback(
+    (cat: string) => categories.find((c) => c.name === cat)?.color ?? "#64748b",
+    [categories],
+  );
+
   const loadMeta = useCallback(async () => {
-    const j = await fetch("/api/finance/accounts").then((r) => r.json());
-    setAccounts(j.accounts ?? []);
+    const [a, c] = await Promise.all([
+      fetch("/api/finance/accounts").then((r) => r.json()),
+      fetch("/api/finance/categories").then((r) => r.json()),
+    ]);
+    setAccounts(a.accounts ?? []);
+    setCategories((c.categories ?? []).filter((cat: FinanceCategoryDTO) => cat.isActive));
+  }, []);
+
+  const loadBuckets = useCallback(async () => {
+    const j = await fetch("/api/finance/buckets?months=6").then((r) => r.json());
+    setBucketOverview(j);
   }, []);
 
   const loadSummary = useCallback(async () => {
@@ -114,7 +114,8 @@ export default function FinancePage() {
 
   useEffect(() => {
     loadMeta();
-  }, [loadMeta]);
+    loadBuckets();
+  }, [loadMeta, loadBuckets]);
 
   useEffect(() => {
     setLoading(true);
@@ -129,7 +130,7 @@ export default function FinancePage() {
   const incomeDelta = summary ? summary.totalIncome - summary.vsLastMonth.income : 0;
   const expenseDelta = summary ? summary.totalExpenses - summary.vsLastMonth.expenses : 0;
 
-  const onImport = async (file: File) => {
+  const onImport = async (files: FileList | File[]) => {
     setImporting(true);
     toast.loading("Importujem…", { id: "imp" });
     try {
@@ -137,12 +138,11 @@ export default function FinancePage() {
       // account when no account is selected, so it never rejects on this.
       const accountId = account !== "all" ? account : "";
       const fd = new FormData();
-      fd.append("file", file);
+      for (const file of Array.from(files)) fd.append("file", file);
       fd.append("account_id", accountId);
 
-      console.log("Uploading file:", file.name, file.size);
+      console.log("Uploading files:", Array.from(files).map((f) => f.name));
       console.log("Account ID:", accountId);
-      console.log("FormData entries:", [...fd.entries()].map((e) => e[0]));
 
       // No Content-Type header on purpose — the browser sets the multipart
       // boundary itself; setting it manually would break the upload.
@@ -155,6 +155,7 @@ export default function FinancePage() {
       loadMeta();
       loadSummary();
       loadTxs();
+      loadBuckets();
     } catch {
       toast.error("Import zlyhal", { id: "imp" });
     } finally {
@@ -171,6 +172,7 @@ export default function FinancePage() {
       body: JSON.stringify({ category }),
     });
     loadSummary();
+    loadBuckets();
   };
 
   return (
@@ -231,6 +233,68 @@ export default function FinancePage() {
         />
       </div>
 
+      {/* VRECKÁ (Profit First) + bezpečné na minutie — počítané z podnikateľského účtu, nie z filtra vyššie */}
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle>Vrecká</CardTitle>
+            <p className="mt-0.5 text-xs text-muted">
+              {bucketOverview?.budgetAccountName
+                ? `Z účtu „${bucketOverview.budgetAccountName}“ — zahŕňa len tento účet, nie filter vyššie.`
+                : "Nastav si podnikateľský účet v Nastaveniach, nech sa dá počítať."}
+            </p>
+          </div>
+          <Link href="/financie/nastavenia" className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-foreground">
+            <Settings className="h-3.5 w-3.5" />
+            Nastavenia
+          </Link>
+        </CardHeader>
+        <CardContent>
+          {!bucketOverview?.budgetAccountName ? (
+            <p className="py-6 text-center text-sm text-muted">Zatiaľ žiadny podnikateľský účet nie je nastavený.</p>
+          ) : (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                {bucketOverview.buckets.map((b) => (
+                  <div key={b.id} className="rounded-xl border border-border p-3">
+                    <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                      <span className="h-2 w-2 rounded-full" style={{ background: b.color }} />
+                      {b.name}
+                      <span className="text-muted">· {b.percentage}%</span>
+                    </div>
+                    <p className={cn("mt-1 text-lg font-semibold tabular-nums", b.balance >= 0 ? "text-foreground" : "text-danger")}>
+                      {formatCurrency(b.balance)}
+                    </p>
+                    <p className="text-[11px] text-muted">
+                      {formatCurrency(b.allocated)} − {formatCurrency(b.spent)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              {bucketOverview.unassigned.count > 0 && (
+                <p className="mt-3 text-xs text-warning">
+                  {bucketOverview.unassigned.count} kategórií bez vrecka (spolu {formatCurrency(bucketOverview.unassigned.amount)}) —
+                  priraď ich v Nastaveniach.
+                </p>
+              )}
+              <div className="mt-4 flex items-center gap-2 rounded-xl border border-border bg-surface-2 p-3">
+                <Wallet className="h-5 w-5 shrink-0 text-primary" />
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-muted">Bezpečné na minutie tento mesiac</p>
+                  <p className="text-xl font-semibold tabular-nums text-foreground">
+                    {formatCurrency(bucketOverview.safeToSpend.safeToSpend)}
+                  </p>
+                  <p className="text-[11px] text-muted">
+                    z mediánu príjmu {formatCurrency(bucketOverview.safeToSpend.medianIncome)}/mes. za posledných{" "}
+                    {bucketOverview.safeToSpend.effectiveWindowMonths} mes.
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       {/* SECTION B + C — charts + actions */}
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-1">
@@ -281,34 +345,32 @@ export default function FinancePage() {
             <input
               ref={fileRef}
               type="file"
-              accept=".csv,text/csv"
+              accept=".csv,text/csv,.pdf,application/pdf"
+              multiple
               className="hidden"
               onChange={async (e) => {
                 // Capture the element before awaiting — React nulls e.currentTarget
                 // after the handler returns synchronously.
                 const input = e.target;
-                console.log("File input changed", input.files);
-                const file = input.files?.[0];
-                if (!file) {
+                const files = input.files;
+                if (!files || files.length === 0) {
                   console.log("No file selected");
                   return;
                 }
-                console.log("File selected:", file.name, file.size);
-                await onImport(file);
+                console.log("Files selected:", Array.from(files).map((f) => f.name));
+                await onImport(files);
                 input.value = ""; // reset so re-selecting the same file fires onChange again
               }}
             />
             <Button
               className="w-full"
-              onClick={() => {
-                console.log("Import button clicked");
-                fileRef.current?.click();
-              }}
+              onClick={() => fileRef.current?.click()}
               disabled={importing}
             >
               {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-              Importovať CSV (SLSP)
+              Importovať výpis (CSV/PDF)
             </Button>
+            <p className="text-[11px] text-muted">Dá sa vybrať aj viacero výpisov naraz (viac mesiacov).</p>
             <Button variant="secondary" className="w-full" onClick={() => setShowAdd(true)}>
               <Plus className="h-4 w-4" />
               Pridať manuálne
@@ -342,9 +404,9 @@ export default function FinancePage() {
             </select>
             <select value={fCategory} onChange={(e) => setFCategory(e.target.value)} className="h-9 rounded-lg border border-border bg-surface px-2 text-sm text-foreground">
               <option value="all">Kategória: všetko</option>
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
+              {categories.map((c) => (
+                <option key={c.id} value={c.name}>
+                  {c.name}
                 </option>
               ))}
             </select>
@@ -386,9 +448,9 @@ export default function FinancePage() {
                             onBlur={() => setEditCatId(null)}
                             className="rounded border border-border bg-surface px-1.5 py-1 text-xs text-foreground"
                           >
-                            {CATEGORIES.map((c) => (
-                              <option key={c} value={c}>
-                                {c}
+                            {categories.map((c) => (
+                              <option key={c.id} value={c.name}>
+                                {c.name}
                               </option>
                             ))}
                           </select>
@@ -421,6 +483,7 @@ export default function FinancePage() {
       {showAdd && (
         <AddTransactionModal
           accounts={accounts}
+          categories={categories}
           defaultAccount={account !== "all" ? account : accounts[0]?.id ?? ""}
           onClose={() => setShowAdd(false)}
           onSaved={() => {
@@ -428,6 +491,7 @@ export default function FinancePage() {
             loadMeta();
             loadSummary();
             loadTxs();
+            loadBuckets();
           }}
         />
       )}
@@ -513,11 +577,13 @@ function AddAccountModal({ onClose, onSaved }: { onClose: () => void; onSaved: (
 
 function AddTransactionModal({
   accounts,
+  categories,
   defaultAccount,
   onClose,
   onSaved,
 }: {
   accounts: FinanceAccountDTO[];
+  categories: FinanceCategoryDTO[];
   defaultAccount: string;
   onClose: () => void;
   onSaved: () => void;
@@ -581,9 +647,9 @@ function AddTransactionModal({
           <div className="grid grid-cols-2 gap-2">
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground" />
             <select value={category} onChange={(e) => setCategory(e.target.value)} className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground">
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
+              {categories.map((c) => (
+                <option key={c.id} value={c.name}>
+                  {c.name}
                 </option>
               ))}
             </select>

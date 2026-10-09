@@ -426,12 +426,13 @@ model GoogleAdsToken {
 // ── Finance module ──────────────────────────────────────────────────────────
 
 model FinanceAccount {
-  id           String               @id @default(cuid())
-  name         String
-  type         String // personal | business
-  currency     String               @default("EUR")
-  createdAt    DateTime             @default(now()) @map("created_at")
-  transactions FinanceTransaction[]
+  id             String               @id @default(cuid())
+  name           String
+  type           String // personal | business
+  currency       String               @default("EUR")
+  isBudgetAccount Boolean             @default(false) @map("is_budget_account") // presne jeden účet kŕmi vrecká (buckets)
+  createdAt      DateTime             @default(now()) @map("created_at")
+  transactions   FinanceTransaction[]
 
   @@map("finance_accounts")
 }
@@ -445,6 +446,8 @@ model FinanceTransaction {
   description String
   category    String
   subcategory String?
+  categoryId  String?          @map("category_id")
+  categoryRef FinanceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   type        String // income | expense | transfer
   source      String // csv_import | manual | voice
   notes       String?
@@ -452,16 +455,38 @@ model FinanceTransaction {
 
   @@index([accountId, date])
   @@index([date])
+  @@index([type, categoryId])
   @@map("finance_transactions")
 }
 
-model FinanceBudget {
-  id           String   @id @default(cuid())
-  category     String
-  monthlyLimit Decimal  @map("monthly_limit") @db.Decimal(12, 2)
-  createdAt    DateTime @default(now()) @map("created_at")
+model FinanceBucket {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  percentage  Decimal  @db.Decimal(5, 2)
+  color       String   @default("#3b82f6")
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  isPayBucket Boolean  @default(false) @map("is_pay_bucket") // vrecko, z ktorého sa počíta "bezpečné na minutie"
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  categories  FinanceCategory[]
 
-  @@map("finance_budgets")
+  @@map("finance_buckets")
+}
+
+model FinanceCategory {
+  id           String               @id @default(cuid())
+  name         String               @unique
+  bucketId     String?              @map("bucket_id") // null = nezaradené
+  bucket       FinanceBucket?       @relation(fields: [bucketId], references: [id], onDelete: SetNull)
+  isIncome     Boolean              @default(false) @map("is_income")
+  color        String               @default("#64748b")
+  sortOrder    Int                  @default(0) @map("sort_order")
+  isActive     Boolean              @default(true) @map("is_active")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  transactions FinanceTransaction[]
+
+  @@map("finance_categories")
 }
 
 // Singleton (id = "primary") holding the public booking availability config.

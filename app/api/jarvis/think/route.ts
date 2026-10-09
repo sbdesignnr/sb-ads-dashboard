@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getFinanceSummary } from "@/lib/finance/summary";
 import { getOrCreateDefaultAccount } from "@/lib/finance/store";
+import { resolveCategoryId } from "@/lib/finance/categories";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,12 +53,21 @@ function formatForSpeech(text: string): string {
 async function extractTransaction(
   message: string,
 ): Promise<{ amount: number; type: "income" | "expense"; description: string; category: string } | null> {
+  const categories = await prisma.financeCategory.findMany({
+    where: { isActive: true },
+    orderBy: { sortOrder: "asc" },
+    select: { name: true },
+  });
+  const categoryList = categories.length
+    ? categories.map((c) => c.name).join(", ")
+    : "Potraviny, Jedlo & reštaurácie, Predplatné, Doprava, Zdravie, Oblečenie, Zábava & šport, Príjem z projektu, Príjem, Ostatné";
+
   const client = new Anthropic();
   const msg = await client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 200,
     system: `Extrahuj z vety finančnú transakciu. Vráť VÝHRADNE JSON (žiadny iný text):
-{"amount": číslo, "type": "income"|"expense", "description": "krátky popis", "category": "jedna z: Potraviny, Jedlo & reštaurácie, Predplatné, Doprava, Zdravie, Oblečenie, Zábava & šport, Príjem z projektu, Príjem, Ostatné"}
+{"amount": číslo, "type": "income"|"expense", "description": "krátky popis", "category": "jedna z: ${categoryList}"}
 amount je vždy kladné číslo. minul/zaplatil/kúpil → expense; dostal/zarobil/prišlo → income.`,
     messages: [{ role: "user", content: message }],
   });
@@ -198,6 +208,7 @@ export async function POST(req: NextRequest) {
       if (tx) {
         const account = await getOrCreateDefaultAccount();
         const signed = tx.type === "income" ? Math.abs(tx.amount) : -Math.abs(tx.amount);
+        const categoryId = await resolveCategoryId(tx.category, signed);
         await prisma.financeTransaction.create({
           data: {
             accountId: account.id,
@@ -205,6 +216,7 @@ export async function POST(req: NextRequest) {
             amount: signed,
             description: tx.description,
             category: tx.category,
+            categoryId,
             type: tx.type,
             source: "voice",
           },

@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { categorizeTransaction } from "@/lib/finance/csv-parser";
+import { categorizeTransaction } from "@/lib/finance/categorize";
+import { resolveCategoryId } from "@/lib/finance/categories";
 import { getOrCreateDefaultAccount, serializeTx } from "@/lib/finance/store";
 
 export const runtime = "nodejs";
@@ -34,6 +35,7 @@ export async function POST(req: NextRequest) {
   const category = String(body.category ?? "").trim() || auto.category;
   const type = ["income", "expense", "transfer"].includes(String(body.type)) ? String(body.type) : auto.type;
   const date = body.date ? new Date(String(body.date)) : new Date();
+  const categoryId = await resolveCategoryId(category, amount);
 
   const tx = await prisma.financeTransaction.create({
     data: {
@@ -42,6 +44,7 @@ export async function POST(req: NextRequest) {
       amount,
       description,
       category,
+      categoryId,
       subcategory: typeof body.subcategory === "string" ? body.subcategory : null,
       type,
       source: typeof body.source === "string" && body.source ? body.source : "manual",

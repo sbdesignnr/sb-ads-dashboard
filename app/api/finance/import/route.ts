@@ -1,7 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { PDFParse } from "pdf-parse";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { parseSlspCsv, categorizeTransaction, decodeCsv } from "@/lib/finance/csv-parser";
+import { parseSlspCsv, decodeCsv, type ParsedTx } from "@/lib/finance/csv-parser";
+import { parseSlspPdfStatement } from "@/lib/finance/pdf-parser";
+import { categorizeTransaction } from "@/lib/finance/categorize";
+import { resolveCategoryId } from "@/lib/finance/categories";
 import { getOrCreateDefaultAccount } from "@/lib/finance/store";
 
 export const runtime = "nodejs";
@@ -47,28 +51,39 @@ async function readBytes(file: Blob): Promise<Uint8Array> {
   return out;
 }
 
+/** Rozlíši CSV vs. PDF podľa prípony/MIME typu (nie podľa obsahu — oba vieme s istotou rozlíšiť vopred). */
+function isPdf(file: File): boolean {
+  return file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+}
+
+async function parseOneFile(file: File): Promise<{ parsed: ParsedTx[]; source: "csv_import" | "pdf_import" }> {
+  const bytes = await readBytes(file);
+  console.log("Buffer size:", bytes.byteLength, "·", file.name);
+
+  if (isPdf(file)) {
+    const parser = new PDFParse({ data: Buffer.from(bytes) });
+    const { text } = await parser.getText();
+    await parser.destroy();
+    const parsed = parseSlspPdfStatement(text);
+    console.log("PDF parse result:", parsed.length, "transakcií z", file.name);
+    return { parsed, source: "pdf_import" };
+  }
+
+  const { text, encoding } = decodeCsv(bytes);
+  console.log("Encoding detected:", encoding, "· first 100 chars:", text.substring(0, 100));
+  const parsed = parseSlspCsv(text);
+  console.log("CSV parse result:", parsed.length, "transakcií z", file.name);
+  return { parsed, source: "csv_import" };
+}
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const form = await req.formData();
-  // UI sends the file under the field name "file" (financie/page.tsx → fd.append("file", …)).
-  const file = form.get("file") as File | null;
-  if (!(file instanceof Blob)) return NextResponse.json({ error: "missing_file" }, { status: 400 });
-
-  console.log("File received:", file.name, file.size, file.type);
-
-  const bytes = await readBytes(file);
-  console.log("Buffer size:", bytes.byteLength);
-  console.log(
-    "First 4 bytes:",
-    Array.from(bytes.subarray(0, 4)).map((b) => b.toString(16).padStart(2, "0")).join(" "),
-  );
-
-  const { text, encoding } = decodeCsv(bytes);
-  console.log("Encoding detected:", encoding, "· first 100 chars:", text.substring(0, 100));
-  console.log("First line clean:", text.split("\n")[0]);
-  console.log("File text length:", text.length);
+  // UI pošle jeden alebo viac súborov pod rovnakým poľom "file" (viacero mesačných výpisov naraz).
+  const files = form.getAll("file").filter((f): f is File => f instanceof Blob);
+  if (!files.length) return NextResponse.json({ error: "missing_file" }, { status: 400 });
 
   let accountId = (form.get("account_id") as string) || "";
   if (!accountId) accountId = (await getOrCreateDefaultAccount()).id;
@@ -77,10 +92,14 @@ export async function POST(req: NextRequest) {
     if (!acc) accountId = (await getOrCreateDefaultAccount()).id;
   }
 
-  let parsed: ReturnType<typeof parseSlspCsv>;
+  const parsed: ParsedTx[] = [];
+  let source: "csv_import" | "pdf_import" = "csv_import";
   try {
-    parsed = parseSlspCsv(text);
-    console.log("Parse result:", parsed.length);
+    for (const file of files) {
+      const r = await parseOneFile(file);
+      parsed.push(...r.parsed);
+      source = r.source; // pri zmiešanom dávkovom nahraní (nepravdepodobné) vyhrá posledný typ
+    }
   } catch (err) {
     console.error("Parse error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
@@ -103,10 +122,13 @@ export async function POST(req: NextRequest) {
     amount: number;
     description: string;
     category: string;
+    categoryId: string;
     type: string;
     source: string;
   }[] = [];
   let skipped = 0;
+  // Jeden resolveCategoryId() volanie na KAŽDÚ odlišnú kategóriu v dávke, nie na riadok.
+  const categoryIdCache = new Map<string, string>();
   for (const p of parsed) {
     const key = dedupKey(p.date.toISOString(), p.amount, p.description);
     if (seen.has(key)) {
@@ -115,14 +137,20 @@ export async function POST(req: NextRequest) {
     }
     seen.add(key);
     const { category, type } = categorizeTransaction(p.rawText || p.description, p.amount);
+    let categoryId = categoryIdCache.get(category);
+    if (!categoryId) {
+      categoryId = await resolveCategoryId(category, p.amount);
+      categoryIdCache.set(category, categoryId);
+    }
     toCreate.push({
       accountId,
       date: p.date,
       amount: p.amount,
       description: p.description,
       category,
+      categoryId,
       type,
-      source: "csv_import",
+      source,
     });
   }
 

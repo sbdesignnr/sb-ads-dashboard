@@ -10,6 +10,7 @@ export function serializeAccount(a: FinanceAccount): FinanceAccountDTO {
     name: a.name,
     type: (a.type === "business" ? "business" : "personal") as AccountType,
     currency: a.currency,
+    isBudgetAccount: a.isBudgetAccount,
   };
 }
 

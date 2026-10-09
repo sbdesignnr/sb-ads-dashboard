@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { serializeTx } from "@/lib/finance/store";
+import { resolveCategoryId } from "@/lib/finance/categories";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (typeof body.description === "string" && body.description.trim()) data.description = body.description.trim();
   if (typeof body.notes === "string") data.notes = body.notes;
   if (body.amount != null && Number.isFinite(Number(body.amount))) data.amount = Number(body.amount);
+
+  if (typeof data.category === "string") {
+    let amountForResolve = typeof data.amount === "number" ? data.amount : undefined;
+    if (amountForResolve === undefined) {
+      const existing = await prisma.financeTransaction.findUnique({ where: { id }, select: { amount: true } });
+      amountForResolve = existing?.amount.toNumber() ?? 0;
+    }
+    data.categoryId = await resolveCategoryId(data.category, amountForResolve);
+  }
 
   try {
     const tx = await prisma.financeTransaction.update({

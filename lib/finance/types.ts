@@ -6,6 +6,46 @@ export interface FinanceAccountDTO {
   name: string;
   type: AccountType;
   currency: string;
+  isBudgetAccount: boolean;
+}
+
+export interface FinanceCategoryDTO {
+  id: string;
+  name: string;
+  bucketId: string | null;
+  isIncome: boolean;
+  color: string;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface FinanceBucketDTO {
+  id: string;
+  name: string;
+  percentage: number;
+  color: string;
+  sortOrder: number;
+  isActive: boolean;
+  isPayBucket: boolean;
+  allocated: number;
+  spent: number;
+  balance: number;
+}
+
+export interface SafeToSpendDTO {
+  payBucketName: string | null;
+  medianIncome: number;
+  safeToSpend: number;
+  requestedWindowMonths: number;
+  effectiveWindowMonths: number;
+}
+
+export interface BucketOverviewDTO {
+  budgetAccountId: string | null;
+  budgetAccountName: string | null;
+  buckets: FinanceBucketDTO[];
+  unassigned: { count: number; amount: number };
+  safeToSpend: SafeToSpendDTO;
 }
 
 export interface FinanceTransactionDTO {

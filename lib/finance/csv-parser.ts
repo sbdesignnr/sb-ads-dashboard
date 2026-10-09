@@ -97,7 +97,8 @@ function detectDelim(headerLine: string): "," | ";" | "\t" {
   return best;
 }
 
-function parseAmount(raw: string): number {
+/** Zdieľané aj s PDF parserom (rovnaký slovenský formát súm v oboch zdrojoch). */
+export function parseAmount(raw: string): number {
   // Strip spaces incl. non-breaking (U+00A0) used as thousands separators.
   let s = raw.replace(/[\s ]/g, "");
   if (s.includes(",") && s.includes(".")) {
@@ -224,52 +225,4 @@ export function parseSlspCsv(csvContent: string): ParsedTx[] {
     out.push({ date, amount, currency, description, rawText });
   }
   return out;
-}
-
-// First matching rule wins, so order matters where keywords could overlap:
-// specific brands/entities first, risky short tokens (BAR, CLUB) last, and the
-// food rules before "Zábava & šport" so a "cafe bar" lands in food.
-const RULES: { category: string; keywords: string[] }[] = [
-  // AI tools + dev infra subscriptions ("ELEVEN" already covers "ELEVENLABS").
-  {
-    category: "Predplatné",
-    keywords: [
-      "OPENAI", "ANTHROPIC", "CLAUDE",
-      "ELEVENLABS", "ELEVEN",
-      "HIGGSFIELD", "KLING", "MYIMAGE", "MIDJOURNEY", "RUNWAY",
-      "VERCEL", "SUPABASE", "GITHUB", "NETLIFY", "BREVO",
-    ],
-  },
-  // Ad platforms — note GOOGLE resolves here (Google Ads), not to Predplatné.
-  { category: "Reklama", keywords: ["GOOGLE", "META", "FACEBOOK"] },
-  { category: "Zdravotné poistenie", keywords: ["DOVERA", "ZDRAVOTN", "POISTOV"] },
-  { category: "Doprava", keywords: ["SHELL", "OMV", "MOL", "BENZÍN", "NAFTA", "PARKOVN", "BOLT", "UBER", "TAXIK"] },
-  { category: "Potraviny", keywords: ["BILLA", "TESCO", "LIDL", "KAUFLAND", "COOP"] },
-  { category: "Jedlo & reštaurácie", keywords: ["REŠTAURÁCIA", "PIZZ", "BURGER", "CAFE", "KAVIAREŇ", "BISTRO", "KEBAB"] },
-  { category: "Zdravie", keywords: ["LEKÁR", "LEKÁREŇ", "DOKTOR", "NEMOCNICA"] },
-  { category: "Oblečenie", keywords: ["ADIDAS", "NIKE", "ZARA", "HM", "MALL", "ALZA"] },
-  // Known people → personal transfers; wins over the generic income fallback.
-  { category: "Osobný prevod", keywords: ["HUPKA", "FILIP", "SAMUEL", "BIBEN"] },
-  { category: "Biznis výdavok", keywords: ["MALASTOV", "LUCIA"] },
-  // Risky short tokens (BAR, CLUB) last so more specific rules match first.
-  { category: "Zábava & šport", keywords: ["FUTBAL", "GYM", "FITNESS", "SPORT", "MOONCLUB", "LOUNGE", "BAR", "CLUB"] },
-];
-
-export function categorizeTransaction(
-  description: string,
-  amount: number,
-): { category: string; type: "income" | "expense" } {
-  const d = fold(description);
-  for (const r of RULES) {
-    if (r.keywords.some((k) => d.includes(fold(k)))) {
-      return { category: r.category, type: amount >= 0 ? "income" : "expense" };
-    }
-  }
-  // Positive amount that looks like an incoming payment → project income.
-  // (fold() strips diacritics, so "Prijatá platba" → "PRIJATA PLATBA".)
-  const incomeHints = ["PLATBA PRIJATA", "PRIJATA PLATBA", "PLATBA", "PREVOD PRIJATY"];
-  if (amount > 0 && incomeHints.some((h) => d.includes(h))) {
-    return { category: "Príjem z projektu", type: "income" };
-  }
-  return { category: amount >= 0 ? "Príjem" : "Ostatné", type: amount >= 0 ? "income" : "expense" };
 }
