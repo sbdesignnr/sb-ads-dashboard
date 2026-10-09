@@ -71,6 +71,20 @@ export function GuideChip({ onOpenWorkbench }: { onOpenWorkbench?: (leadId?: str
     return () => window.removeEventListener("resize", place);
   }, [open]);
 
+  // portál cez stránku, ktorá je na mobile dlhšia ako viewport - bez zámku by
+  // ťahanie prsta vnútri panelu posúvalo stránku pod ním, nie samotný panel.
+  useEffect(() => {
+    if (!open) return;
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+    };
+  }, [open]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {

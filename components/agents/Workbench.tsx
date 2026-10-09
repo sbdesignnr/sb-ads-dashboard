@@ -147,6 +147,20 @@ export function Workbench({
   const qRef = useRef("");
   qRef.current = q;
 
+  // Pracovňa je portál cez celú obrazovku, ale stránka pod ňou (dlhší obsah ako
+  // viewport) zostáva scrollovateľná - na mobile tak potiahnutie prsta posúva ju,
+  // nie obsah pracovne. Kým je otvorená, zamkni scroll stránky.
+  useEffect(() => {
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+    };
+  }, []);
+
   const load = useCallback(async () => {
     try {
       const p = new URLSearchParams();
