@@ -40,6 +40,7 @@ interface Row {
   email: string | null;
   website: string | null;
   leadStatus: string;
+  emailType: string;
   subject: string;
   sentAt: string | null;
   repliedAt: string | null;
@@ -101,6 +102,16 @@ function fmtDate(iso: string | null): string {
 function fmtDay(d: string): string {
   const [, m, day] = d.split("-");
   return `${Number(day)}.${Number(m)}.`;
+}
+
+const EMAIL_TYPE_LABEL: Record<string, string> = {
+  initial: "Prvý mail",
+  followup1: "Followup 1",
+  followup2: "Followup 2",
+  followup3: "Followup 3",
+};
+function emailTypeLabel(t: string): string {
+  return EMAIL_TYPE_LABEL[t] ?? t;
 }
 function capitalize(s: string): string {
   return s ? s[0].toUpperCase() + s.slice(1) : s;
@@ -285,7 +296,7 @@ function RowList({
       <div className="overflow-x-auto">
         <table className="w-full table-fixed border-separate border-spacing-y-1 text-sm">
           <colgroup>
-            <col />
+            <col className="w-44" />
             <col className="w-24" />
             <col className="w-44" />
             <col className="w-44" />
@@ -304,6 +315,9 @@ function RowList({
                 <td className="min-w-0 rounded-l-lg px-3 py-2">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="min-w-0 truncate font-medium text-foreground">{r.company}</span>
+                    <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted">
+                      {emailTypeLabel(r.emailType)}
+                    </span>
                     {r.website && (
                       <a
                         href={r.website}
@@ -358,6 +372,9 @@ function RowList({
             <div className="flex items-center gap-2">
               <span className="truncate font-medium text-foreground">
                 {r.company}
+              </span>
+              <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted">
+                {emailTypeLabel(r.emailType)}
               </span>
               {r.website && (
                 <a

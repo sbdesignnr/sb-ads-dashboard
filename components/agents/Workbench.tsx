@@ -4,6 +4,7 @@
 // a mail. Všetko so zdrojmi, aby si vedel skontrolovať každé tvrdenie. Nič neodíde bez teba.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import {
@@ -293,8 +294,8 @@ export function Workbench({
     return list;
   }, [data, q]);
 
-  return (
-    <div className="absolute inset-2 z-40 flex flex-col overflow-hidden rounded-2xl border border-white/12 bg-[#0b1220]/[0.985] shadow-2xl shadow-black/60 backdrop-blur-xl md:inset-4">
+  return createPortal(
+    <div className="fixed inset-0 z-40 flex flex-col overflow-hidden rounded-none border border-white/12 bg-[#0b1220]/[0.985] shadow-2xl shadow-black/60 backdrop-blur-xl md:fixed md:inset-4 md:rounded-2xl">
       <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300">
           <FileSearch className="h-5 w-5" />
@@ -449,7 +450,8 @@ export function Workbench({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

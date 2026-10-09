@@ -3,6 +3,7 @@
 // Bočný panel: vizitka agenta, dialóg (agent odpovedá podľa reálnych dát), štatistiky a aktivita.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowUpRight, FileSearch, Hammer, MessageCircle, Sparkles, X } from "lucide-react";
@@ -177,13 +178,13 @@ export function AgentPanel({
 
   const color = STATUS_COLOR[status];
 
-  return (
+  return createPortal(
     <motion.aside
       initial={{ opacity: 0, x: 40 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 40 }}
       transition={{ type: "spring", stiffness: 320, damping: 30 }}
-      className="absolute inset-x-2 bottom-2 z-30 flex max-h-[68%] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0d1524]/92 shadow-2xl shadow-black/50 backdrop-blur-xl md:inset-x-auto md:bottom-3 md:right-3 md:top-3 md:max-h-none md:w-[380px]"
+      className="fixed inset-x-2 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 flex max-h-[65dvh] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0d1524]/92 shadow-2xl shadow-black/50 backdrop-blur-xl md:fixed md:inset-x-auto md:bottom-3 md:right-3 md:top-3 md:max-h-none md:w-[380px]"
       style={{ borderTop: `3px solid ${dept?.color ?? color}` }}
     >
       <div className="flex items-start gap-3 p-4 pb-3">
@@ -332,20 +333,21 @@ export function AgentPanel({
           ))}
         </div>
       </div>
-    </motion.aside>
+    </motion.aside>,
+    document.body,
   );
 }
 
 /** Panel prázdnej parcely: nápad na budúceho agenta. */
 export function PlotPanel({ plot, onClose }: { plot: PlotDef; onClose: () => void }) {
   const dept = departmentById(plot.department);
-  return (
+  return createPortal(
     <motion.aside
       initial={{ opacity: 0, x: 40 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 40 }}
       transition={{ type: "spring", stiffness: 320, damping: 30 }}
-      className="absolute inset-x-2 bottom-2 z-30 overflow-hidden rounded-2xl border border-white/10 bg-[#0d1524]/92 p-4 shadow-2xl shadow-black/50 backdrop-blur-xl md:inset-x-auto md:bottom-auto md:right-3 md:top-3 md:w-[380px]"
+      className="fixed inset-x-2 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 max-h-[65dvh] overflow-y-auto rounded-2xl border border-white/10 bg-[#0d1524]/92 p-4 shadow-2xl shadow-black/50 backdrop-blur-xl md:fixed md:inset-x-auto md:bottom-auto md:right-3 md:top-3 md:max-h-none md:w-[380px] md:overflow-visible"
       style={{ borderTop: `3px solid ${dept?.color}` }}
     >
       <div className="flex items-start gap-3">
@@ -375,6 +377,7 @@ export function PlotPanel({ plot, onClose }: { plot: PlotDef; onClose: () => voi
         <MessageCircle className="h-3.5 w-3.5" />
         Štvrť: {dept?.name}
       </p>
-    </motion.aside>
+    </motion.aside>,
+    document.body,
   );
 }

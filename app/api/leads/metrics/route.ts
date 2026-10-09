@@ -97,19 +97,19 @@ export async function GET(req: NextRequest) {
   const [replied, openedNotReplied, clicked, allSent] = await Promise.all([
     prisma.leadEmail.findMany({
       where: { ...sentInMonth, repliedAt: { not: null } },
-      select: { id: true, subject: true, sentAt: true, repliedAt: true, openCount: true, lead: { select: leadSel } },
+      select: { id: true, emailType: true, subject: true, sentAt: true, repliedAt: true, openCount: true, lead: { select: leadSel } },
       orderBy: { repliedAt: "desc" },
       take: 100,
     }),
     prisma.leadEmail.findMany({
       where: { ...sentInMonth, openCount: { gt: 0 }, repliedAt: null },
-      select: { id: true, subject: true, sentAt: true, openCount: true, lastOpenedAt: true, clickCount: true, lead: { select: leadSel } },
+      select: { id: true, emailType: true, subject: true, sentAt: true, openCount: true, lastOpenedAt: true, clickCount: true, lead: { select: leadSel } },
       orderBy: { lastOpenedAt: "desc" },
       take: 100,
     }),
     prisma.leadEmail.findMany({
       where: { ...sentInMonth, clickCount: { gt: 0 } },
-      select: { id: true, subject: true, sentAt: true, clickCount: true, lastClickedAt: true, repliedAt: true, lead: { select: leadSel } },
+      select: { id: true, emailType: true, subject: true, sentAt: true, clickCount: true, lastClickedAt: true, repliedAt: true, lead: { select: leadSel } },
       orderBy: { lastClickedAt: "desc" },
       take: 100,
     }),
@@ -117,7 +117,7 @@ export async function GET(req: NextRequest) {
     // (odoslané/otvorené/odpovedal), vrátane tých, čo nikto ešte neotvoril.
     prisma.leadEmail.findMany({
       where: sentInMonth,
-      select: { id: true, subject: true, sentAt: true, repliedAt: true, openCount: true, clickCount: true, lastOpenedAt: true, lastClickedAt: true, lead: { select: leadSel } },
+      select: { id: true, emailType: true, subject: true, sentAt: true, repliedAt: true, openCount: true, clickCount: true, lastOpenedAt: true, lastClickedAt: true, lead: { select: leadSel } },
       orderBy: { sentAt: "desc" },
       take: 200,
     }),
@@ -150,6 +150,7 @@ export async function GET(req: NextRequest) {
   const iso = (d: Date | null) => (d ? d.toISOString() : null);
   const mapRow = (e: {
     id: string;
+    emailType: string;
     subject: string;
     sentAt: Date | null;
     repliedAt?: Date | null;
@@ -165,6 +166,7 @@ export async function GET(req: NextRequest) {
     email: e.lead.companyEmail,
     website: e.lead.websiteUrl,
     leadStatus: e.lead.status,
+    emailType: e.emailType,
     subject: e.subject,
     sentAt: iso(e.sentAt ?? null),
     repliedAt: iso(e.repliedAt ?? null),
