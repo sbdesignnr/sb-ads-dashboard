@@ -123,6 +123,9 @@ export function GuideChip({ onOpenWorkbench }: { onOpenWorkbench?: (leadId?: str
         <div
           style={{ position: "fixed", left: pos.left, top: pos.top, zIndex: 70, maxHeight: `calc(100dvh - ${pos.top + 16}px)` }}
           className="w-[26rem] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-2xl border border-white/12 bg-[#0d1524]/97 p-4 text-xs shadow-2xl backdrop-blur-xl"
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerMove={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
         >
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>

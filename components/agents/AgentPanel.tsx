@@ -186,6 +186,11 @@ export function AgentPanel({
       transition={{ type: "spring", stiffness: 320, damping: 30 }}
       className="fixed inset-x-2 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 flex max-h-[65dvh] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0d1524]/92 shadow-2xl shadow-black/50 backdrop-blur-xl md:fixed md:inset-x-auto md:bottom-3 md:right-3 md:top-3 md:max-h-none md:w-[380px]"
       style={{ borderTop: `3px solid ${dept?.color ?? color}` }}
+      // portáluje sa do document.body, ale React udalosti bublajú cez komponentový
+      // strom - bez tohto by ťahanie/posúvanie tu vnútri ovládalo pan/zoom sveta za ním.
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerMove={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
     >
       <div className="flex items-start gap-3 p-4 pb-3">
         <Avatar agent={agent} />
@@ -349,6 +354,9 @@ export function PlotPanel({ plot, onClose }: { plot: PlotDef; onClose: () => voi
       transition={{ type: "spring", stiffness: 320, damping: 30 }}
       className="fixed inset-x-2 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 max-h-[65dvh] overflow-y-auto rounded-2xl border border-white/10 bg-[#0d1524]/92 p-4 shadow-2xl shadow-black/50 backdrop-blur-xl md:fixed md:inset-x-auto md:bottom-auto md:right-3 md:top-3 md:max-h-none md:w-[380px] md:overflow-visible"
       style={{ borderTop: `3px solid ${dept?.color}` }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerMove={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
     >
       <div className="flex items-start gap-3">
         <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl" style={{ background: `${dept?.color}22`, color: dept?.color }}>

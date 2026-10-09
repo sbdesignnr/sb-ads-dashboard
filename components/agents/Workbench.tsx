@@ -295,7 +295,15 @@ export function Workbench({
   }, [data, q]);
 
   return createPortal(
-    <div className="fixed inset-0 z-40 flex flex-col overflow-hidden rounded-none border border-white/12 bg-[#0b1220]/[0.985] shadow-2xl shadow-black/60 backdrop-blur-xl md:fixed md:inset-4 md:rounded-2xl">
+    <div
+      className="fixed inset-0 z-40 flex flex-col overflow-hidden rounded-none border border-white/12 bg-[#0b1220]/[0.985] shadow-2xl shadow-black/60 backdrop-blur-xl md:fixed md:inset-4 md:rounded-2xl"
+      // Pracovňa sa portáluje do document.body, ale React synteticky bublá udalosti
+      // cez komponentový strom (nie skutočný DOM) - bez tohto by posúvanie/ťahanie prstom
+      // tu vnútri ovládalo pan/zoom izometrického sveta za ňou. Klik/dotyk teda zastavíme tu.
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerMove={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
+    >
       <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300">
           <FileSearch className="h-5 w-5" />
