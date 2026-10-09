@@ -322,7 +322,7 @@ export function Workbench({
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         {/* ľavý stĺpec */}
-        <div className={cn("min-h-0 shrink-0 overflow-y-auto border-white/10 p-3 md:w-[340px] md:border-r", selected && "max-md:hidden")}>
+        <div className={cn("min-h-0 overflow-y-auto border-white/10 p-3 md:w-[340px] md:shrink-0 md:border-r", selected && "max-md:hidden")}>
           {loadError && (
             <p className="mb-3 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-300">
               Nepodarilo sa načítať ({loadError}). Ak ide o novú inštaláciu, chýba databázová tabuľka lead_research.
