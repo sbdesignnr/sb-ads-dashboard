@@ -1,6 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import { round2, serializeTx } from "./store";
-import type { FinanceSummary, MonthlyTotal } from "./types";
+import type { CurrentOverview, FinanceSummary, MonthlyTotal } from "./types";
+
+// Bankou potvrdený "Počiatočný stav Účtu" z prvého importovaného výpisu
+// (č. 1/2026, 01.01.2026 - 31.01.2026) pre podnikateľský účet SK75 0900
+// 0000 0052 3100 0588. Odvtedy máme v DB súvislý, k centu overený reťazec
+// transakcií (každý mesačný výpis reconciled proti "Vklady/Výbery/Konečný
+// stav Účtu"), takže kotva + súčet všetkých transakcií = skutočný bankový
+// zostatok ku dátumu poslednej zaznamenanej transakcie.
+const BUDGET_ACCOUNT_OPENING_BALANCE = 609.15;
+const BUDGET_ACCOUNT_OPENING_DATE = "2026-01-01";
 
 function monthKey(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -80,6 +89,49 @@ export async function getFinanceSummary(month: string, account = "all"): Promise
     byDay,
     topTransactions,
     vsLastMonth: { income: round2(pIncome), expenses: round2(pExpenses) },
+  };
+}
+
+/**
+ * "Ku dnešku" prehľad, nezávislý od vybraného mesiaca vo filtri — vždy
+ * odpovedá na "koľko mám teraz a čo sa hýbe tento mesiac doteraz", nie
+ * "čo bolo v tom mesiaci, čo som si vybral". Zámerne viazaný len na
+ * podnikateľský (isBudgetAccount) účet, rovnako ako vrecká — kotva
+ * zostatku je overená len pre tento jeden účet.
+ */
+export async function getCurrentOverview(): Promise<CurrentOverview | null> {
+  const budgetAccount = await prisma.financeAccount.findFirst({ where: { isBudgetAccount: true } });
+  if (!budgetAccount) return null;
+
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+
+  const [allTxs, monthTxs, latestTx] = await Promise.all([
+    prisma.financeTransaction.findMany({ where: { accountId: budgetAccount.id }, select: { amount: true } }),
+    prisma.financeTransaction.findMany({ where: { accountId: budgetAccount.id, date: { gte: monthStart } }, select: { amount: true } }),
+    prisma.financeTransaction.findFirst({ where: { accountId: budgetAccount.id }, orderBy: { date: "desc" }, select: { date: true } }),
+  ]);
+
+  let movementSum = 0;
+  for (const t of allTxs) movementSum += t.amount.toNumber();
+
+  let mtdIncome = 0;
+  let mtdExpenses = 0;
+  for (const t of monthTxs) {
+    const a = t.amount.toNumber();
+    if (a >= 0) mtdIncome += a;
+    else mtdExpenses += -a;
+  }
+
+  return {
+    accountName: budgetAccount.name,
+    balance: round2(BUDGET_ACCOUNT_OPENING_BALANCE + movementSum),
+    balanceAsOfDate: latestTx?.date.toISOString().slice(0, 10) ?? BUDGET_ACCOUNT_OPENING_DATE,
+    monthToDateIncome: round2(mtdIncome),
+    monthToDateExpenses: round2(mtdExpenses),
+    latestMonthWithData: latestTx
+      ? `${latestTx.date.getUTCFullYear()}-${String(latestTx.date.getUTCMonth() + 1).padStart(2, "0")}`
+      : monthKey(now),
   };
 }
 

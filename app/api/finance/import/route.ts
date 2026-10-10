@@ -114,7 +114,15 @@ export async function POST(req: NextRequest) {
       where: { accountId, date: { gte: min, lt: max } },
       select: { date: true, amount: true, description: true },
     });
-    const seen = new Set(existing.map((e) => dedupKey(e.date.toISOString(), e.amount.toNumber(), e.description)));
+    // Count-aware: genuinely repeated transactions (e.g. two separate same-amount
+    // card charges on the same day) must NOT collide with each other within one
+    // import batch — only with rows that already exist in the DB. A plain Set
+    // would collapse real repeats into one and silently drop a real transaction.
+    const existingCounts = new Map<string, number>();
+    for (const e of existing) {
+      const k = dedupKey(e.date.toISOString(), e.amount.toNumber(), e.description);
+      existingCounts.set(k, (existingCounts.get(k) ?? 0) + 1);
+    }
 
     const toCreate: {
       accountId: string;
@@ -131,11 +139,12 @@ export async function POST(req: NextRequest) {
     const categoryIdCache = new Map<string, string>();
     for (const p of parsed) {
       const key = dedupKey(p.date.toISOString(), p.amount, p.description);
-      if (seen.has(key)) {
+      const remaining = existingCounts.get(key) ?? 0;
+      if (remaining > 0) {
+        existingCounts.set(key, remaining - 1);
         skipped++;
         continue;
       }
-      seen.add(key);
       const { category, type } = categorizeTransaction(p.rawText || p.description, p.amount);
       let categoryId = categoryIdCache.get(category);
       if (!categoryId) {

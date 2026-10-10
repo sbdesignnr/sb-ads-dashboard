@@ -91,6 +91,15 @@ export interface MonthlyTotal {
   expenses: number;
 }
 
+export interface CurrentOverview {
+  accountName: string;
+  balance: number;
+  balanceAsOfDate: string; // yyyy-mm-dd, dátum poslednej zaznamenanej transakcie
+  monthToDateIncome: number;
+  monthToDateExpenses: number;
+  latestMonthWithData: string; // yyyy-mm
+}
+
 // A palette for category donut slices (stable by index).
 export const CATEGORY_COLORS = [
   "#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6",

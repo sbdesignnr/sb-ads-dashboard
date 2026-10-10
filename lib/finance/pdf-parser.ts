@@ -24,8 +24,18 @@
 import { parseAmount } from "./csv-parser";
 import type { ParsedTx } from "./csv-parser";
 
-const HEADER_RE = /^(\d{2}\.\d{2}\.\d{4})(\d{2}\.\d{2}\.\d{4})\s+(.+)$/;
+// Niektoré výpisy majú dvojicu dátumov zlepenú bez medzery ("03.03.202603.03.2026"),
+// iné s jednou medzerou medzi nimi ("01.09.2026 01.09.2026") — George PDF export
+// nie je v tomto konzistentný naprieč mesiacmi, takže medzera je voliteľná.
+const HEADER_RE = /^(\d{2}\.\d{2}\.\d{4})\s?(\d{2}\.\d{2}\.\d{4})\s+(.+)$/;
 const AMOUNT_RE = /^-?\s?[\d\s]+,\d{2}$/;
+// "Vklad cez ATM" (hotovostný vklad) je jediný typ transakcie, kde stĺpec
+// "Suma poplatku" nie je 0 — obe sumy sa tak zlepia na jeden riadok, napr.
+// "1 800,00 - 0,50" (vklad 1800 €, poplatok -0,50 €). AMOUNT_RE samotné na
+// to nesadne (znak "-" uprostred nepatrí do [\d\s]) a celý blok by sa potichu
+// zahodil — preto osobitný dvoj-číselný variant, poplatok sa pridá ako
+// samostatná transakcia.
+const AMOUNT_WITH_FEE_RE = /^(-?\s?[\d\s]+,\d{2})\s+(-?\s?[\d\s]+,\d{2})$/;
 // Trailing "DD. MM. YYYY HH:MM:SS" that George appends to card-merchant lines.
 const TRAILING_TIMESTAMP_RE = /\d{2}\.\s?\d{2}\.\s?\d{4}\s+\d{2}:\d{2}:\d{2}\s*$/;
 const CURRENCY_LINE_RE = /^\d+[.,]\d+[A-Z]{3}$/; // e.g. "100,86USD"
@@ -60,7 +70,15 @@ export function parseSlspPdfStatement(text: string): ParsedTx[] {
 
     const detailLines: string[] = [];
     let amount: number | null = null;
+    let fee: number | null = null;
     while (i < lines.length) {
+      const feeMatch = lines[i].match(AMOUNT_WITH_FEE_RE);
+      if (feeMatch) {
+        amount = parseAmount(feeMatch[1]);
+        fee = parseAmount(feeMatch[2]);
+        i++;
+        break;
+      }
       if (AMOUNT_RE.test(lines[i])) {
         amount = parseAmount(lines[i]);
         i++;
@@ -89,6 +107,15 @@ export function parseSlspPdfStatement(text: string): ParsedTx[] {
 
     const rawText = [typeLabel, ...detailLines].join(" ");
     out.push({ date, amount, currency: "EUR", description, rawText });
+    if (fee !== null && fee !== 0) {
+      out.push({
+        date,
+        amount: fee,
+        currency: "EUR",
+        description: `Poplatok: ${description}`,
+        rawText: `Poplatok za ${typeLabel}`,
+      });
+    }
   }
   return out;
 }

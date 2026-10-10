@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Upload, Plus, Loader2, TrendingUp, TrendingDown, Search, X, Check, Settings, Wallet } from "lucide-react";
+import { Upload, Plus, Loader2, TrendingUp, TrendingDown, Search, X, Check, Settings, Wallet, CalendarClock } from "lucide-react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import { formatCurrency } from "@/lib/utils/formatters";
 import { cn } from "@/lib/utils";
 import {
   type BucketOverviewDTO,
+  type CurrentOverview,
   type FinanceAccountDTO,
   type FinanceCategoryDTO,
   type FinanceSummary,
@@ -87,8 +88,13 @@ export default function FinancePage() {
   const [txs, setTxs] = useState<FinanceTransactionDTO[]>([]);
   const [categories, setCategories] = useState<FinanceCategoryDTO[]>([]);
   const [bucketOverview, setBucketOverview] = useState<BucketOverviewDTO | null>(null);
+  const [currentOverview, setCurrentOverview] = useState<CurrentOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  // Kým sa užívateľ sám nedotkne výberu mesiaca, po prvom načítaní preskočíme
+  // na najnovší mesiac, čo má reálne dáta — inak pri otvorení appky na
+  // začiatku mesiaca (ešte nenaimportovaný výpis) vidno len samé nuly.
+  const monthTouched = useRef(false);
 
   const [fCategory, setFCategory] = useState("all");
   const [fType, setFType] = useState("all");
@@ -118,6 +124,15 @@ export default function FinancePage() {
     setBucketOverview(j);
   }, []);
 
+  const loadOverview = useCallback(async () => {
+    const j = await fetch("/api/finance/overview").then((r) => r.json());
+    const overview: CurrentOverview | null = j.overview ?? null;
+    setCurrentOverview(overview);
+    if (overview && !monthTouched.current && overview.latestMonthWithData !== month) {
+      setMonth(overview.latestMonthWithData);
+    }
+  }, [month]);
+
   const loadSummary = useCallback(async () => {
     const [s, m] = await Promise.all([
       fetch(`/api/finance/summary?month=${month}&account=${account}`).then((r) => r.json()),
@@ -137,6 +152,8 @@ export default function FinancePage() {
   useEffect(() => {
     loadMeta();
     loadBuckets();
+    loadOverview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadMeta, loadBuckets]);
 
   useEffect(() => {
@@ -193,6 +210,7 @@ export default function FinancePage() {
     loadSummary();
     loadTxs();
     loadBuckets();
+    loadOverview();
     setImporting(false);
   };
 
@@ -219,7 +237,10 @@ export default function FinancePage() {
         <div className="flex flex-wrap items-center gap-2">
           <select
             value={month}
-            onChange={(e) => setMonth(e.target.value)}
+            onChange={(e) => {
+              monthTouched.current = true;
+              setMonth(e.target.value);
+            }}
             className="h-9 rounded-lg border border-border bg-surface px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
           >
             {monthOptions.map((o) => (
@@ -243,7 +264,38 @@ export default function FinancePage() {
         </div>
       </div>
 
-      {/* SECTION A — stat cards */}
+      {/* AKTUÁLNY STAV — vždy "ku dnešku", nezávisle od vybraného mesiaca nižšie */}
+      {currentOverview && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3 p-4">
+            <div className="flex items-center gap-2">
+              <CalendarClock className="h-5 w-5 shrink-0 text-primary" />
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted">
+                  Aktuálny stav · {currentOverview.accountName}
+                </p>
+                <p className="text-[11px] text-muted">
+                  ku {new Date(currentOverview.balanceAsOfDate).toLocaleDateString("sk-SK", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                </p>
+              </div>
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-muted">Zostatok</p>
+              <p className="text-xl font-semibold tabular-nums text-foreground">{formatCurrency(currentOverview.balance)}</p>
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-muted">Príjmy tento mesiac doteraz</p>
+              <p className="text-xl font-semibold tabular-nums text-success">{formatCurrency(currentOverview.monthToDateIncome)}</p>
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-muted">Výdavky tento mesiac doteraz</p>
+              <p className="text-xl font-semibold tabular-nums text-danger">{formatCurrency(currentOverview.monthToDateExpenses)}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* SECTION A — stat cards (viazané na vybraný mesiac/účet vo filtri hore) */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Príjmy tento mesiac" tone="income" value={formatCurrency(summary?.totalIncome ?? 0)} />
         <StatCard label="Výdavky tento mesiac" tone="expense" value={formatCurrency(summary?.totalExpenses ?? 0)} />
@@ -530,6 +582,7 @@ export default function FinancePage() {
             loadSummary();
             loadTxs();
             loadBuckets();
+            loadOverview();
           }}
         />
       )}
