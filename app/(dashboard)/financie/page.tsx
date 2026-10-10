@@ -33,6 +33,27 @@ function currentMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+const MONTH_NAMES = [
+  "Január", "Február", "Marec", "Apríl", "Máj", "Jún",
+  "Júl", "August", "September", "Október", "November", "December",
+];
+
+/**
+ * Posledných `count` mesiacov (najnovší prvý) ako {value: "YYYY-MM", label}.
+ * Natívny <input type="month"> nemá v Safari spoľahlivú podporu (niekde sa
+ * tvári len ako textové pole bez výberu) - obyčajný <select> funguje všade rovnako.
+ */
+function recentMonthOptions(count = 24): { value: string; label: string }[] {
+  const now = new Date();
+  const out: { value: string; label: string }[] = [];
+  for (let i = 0; i < count; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    out.push({ value, label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}` });
+  }
+  return out;
+}
+
 function StatCard({
   label,
   value,
@@ -76,6 +97,7 @@ export default function FinancePage() {
   const [showAdd, setShowAdd] = useState(false);
   const [showAddAccount, setShowAddAccount] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const monthOptions = useMemo(() => recentMonthOptions(24), []);
 
   const catColor = useCallback(
     (cat: string) => categories.find((c) => c.name === cat)?.color ?? "#64748b",
@@ -195,12 +217,17 @@ export default function FinancePage() {
           <p className="text-sm text-muted">Príjmy, výdavky a prehľad podľa kategórií.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="month"
+          <select
             value={month}
             onChange={(e) => setMonth(e.target.value)}
             className="h-9 rounded-lg border border-border bg-surface px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
-          />
+          >
+            {monthOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
           <select
             value={account}
             onChange={(e) => setAccount(e.target.value)}
