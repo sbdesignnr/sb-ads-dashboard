@@ -132,35 +132,46 @@ export default function FinancePage() {
 
   const onImport = async (files: FileList | File[]) => {
     setImporting(true);
-    toast.loading("Importujem…", { id: "imp" });
-    try {
-      // Empty string is intentional — the server falls back to the default
-      // account when no account is selected, so it never rejects on this.
-      const accountId = account !== "all" ? account : "";
-      const fd = new FormData();
-      for (const file of Array.from(files)) fd.append("file", file);
-      fd.append("account_id", accountId);
+    // Empty string is intentional — the server falls back to the default
+    // account when no account is selected, so it never rejects on this.
+    const accountId = account !== "all" ? account : "";
+    const fileArr = Array.from(files);
 
-      console.log("Uploading files:", Array.from(files).map((f) => f.name));
-      console.log("Account ID:", accountId);
-
-      // No Content-Type header on purpose — the browser sets the multipart
-      // boundary itself; setting it manually would break the upload.
-      const res = await fetch("/api/finance/import", { method: "POST", body: fd });
-      const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      console.log("Import response:", res.status, data);
-
-      if (data.error) toast.error(data.error, { id: "imp" });
-      else toast.success(`Importované: ${data.imported}${data.skipped ? ` · ${data.skipped} duplicít` : ""}`, { id: "imp" });
-      loadMeta();
-      loadSummary();
-      loadTxs();
-      loadBuckets();
-    } catch {
-      toast.error("Import zlyhal", { id: "imp" });
-    } finally {
-      setImporting(false);
+    // Jeden súbor = jedna požiadavka, postupne za sebou — nie všetko naraz
+    // v jednom multipart tele. Pri viacerých mesačných výpisoch naraz vedel
+    // kombinovaný upload naraziť na limit veľkosti požiadavky na Verceli
+    // (platforma odmietla požiadavku skôr, než sa vôbec spustil náš kód).
+    let imported = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+    for (let i = 0; i < fileArr.length; i++) {
+      const file = fileArr[i];
+      toast.loading(`Importujem (${i + 1}/${fileArr.length})… ${file.name}`, { id: "imp" });
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("account_id", accountId);
+        // No Content-Type header on purpose — the browser sets the multipart
+        // boundary itself; setting it manually would break the upload.
+        const res = await fetch("/api/finance/import", { method: "POST", body: fd });
+        const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        if (data.error) errors.push(`${file.name}: ${data.error}`);
+        else {
+          imported += data.imported ?? 0;
+          skipped += data.skipped ?? 0;
+        }
+      } catch {
+        errors.push(`${file.name}: import zlyhal`);
+      }
     }
+
+    if (errors.length) toast.error(errors.join(" · "), { id: "imp" });
+    else toast.success(`Importované: ${imported}${skipped ? ` · ${skipped} duplicít` : ""}`, { id: "imp" });
+    loadMeta();
+    loadSummary();
+    loadTxs();
+    loadBuckets();
+    setImporting(false);
   };
 
   const changeCategory = async (id: string, category: string) => {
