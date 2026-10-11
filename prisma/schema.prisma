@@ -426,13 +426,17 @@ model GoogleAdsToken {
 // ── Finance module ──────────────────────────────────────────────────────────
 
 model FinanceAccount {
-  id             String               @id @default(cuid())
-  name           String
-  type           String // personal | business
-  currency       String               @default("EUR")
-  isBudgetAccount Boolean             @default(false) @map("is_budget_account") // presne jeden účet kŕmi vrecká (buckets)
-  createdAt      DateTime             @default(now()) @map("created_at")
-  transactions   FinanceTransaction[]
+  id                String               @id @default(cuid())
+  name              String
+  type              String // personal | business
+  currency          String               @default("EUR")
+  isBudgetAccount   Boolean              @default(false) @map("is_budget_account") // presne jeden účet kŕmi vrecká (buckets)
+  connectionId      String?              @map("connection_id")
+  connection        BankConnection?      @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  externalAccountId String?              @unique @map("external_account_id") // Salt Edge account id, keď je napojený auto-sync
+  lastSyncedAt      DateTime?            @map("last_synced_at")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  transactions      FinanceTransaction[]
 
   @@map("finance_accounts")
 }
@@ -449,7 +453,8 @@ model FinanceTransaction {
   categoryId  String?          @map("category_id")
   categoryRef FinanceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   type        String // income | expense | transfer
-  source      String // csv_import | manual | voice
+  source      String // csv_import | pdf_import | manual | voice | salt_edge_sync
+  externalId  String?        @unique @map("external_id") // Salt Edge transaction id — priamy dedup bez compound kľúča
   notes       String?
   createdAt   DateTime       @default(now()) @map("created_at")
 
@@ -487,6 +492,32 @@ model FinanceCategory {
   transactions FinanceTransaction[]
 
   @@map("finance_categories")
+}
+
+// ── Finance: Salt Edge (Open Banking) auto-sync ─────────────────────────────
+// Statický App-id/Secret (v .env), žiadny OAuth token na obnovovanie — na
+// rozdiel od pôvodne plánovaného GoCardless netreba šifrované úložisko tokenov.
+
+// Singleton (id = "primary") — jeden Salt Edge zákazník reprezentuje nás.
+model SaltEdgeCustomer {
+  id         String   @id @default("primary")
+  customerId String   @unique @map("customer_id") // id pridelené Salt Edge
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("salt_edge_customers")
+}
+
+model BankConnection {
+  id           String           @id @default(cuid())
+  connectionId String           @unique @map("connection_id") // id pridelené Salt Edge
+  providerCode String           @map("provider_code")
+  providerName String           @map("provider_name")
+  status       String           @default("active") // active | inactive | disabled
+  lastSyncedAt DateTime?        @map("last_synced_at")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  accounts     FinanceAccount[]
+
+  @@map("bank_connections")
 }
 
 // Singleton (id = "primary") holding the public booking availability config.

@@ -3,12 +3,20 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import toast from "react-hot-toast";
-import { ArrowLeft, Plus, Trash2, Check, Loader2, Wallet } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Check, Loader2, Wallet, Landmark, Unlink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import type { FinanceAccountDTO, FinanceBucketDTO, FinanceCategoryDTO } from "@/lib/finance/types";
+
+interface BankConnectionDTO {
+  id: string;
+  providerName: string;
+  status: string;
+  lastSyncedAt: string | null;
+  accounts: { id: string; name: string }[];
+}
 
 const PALETTE = ["#3b82f6", "#8b5cf6", "#ec4899", "#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6", "#06b6d4", "#64748b"];
 
@@ -18,22 +26,52 @@ export default function FinanceSettingsPage() {
   const [categories, setCategories] = useState<FinanceCategoryDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [newBucketName, setNewBucketName] = useState("");
+  const [bankConfigured, setBankConfigured] = useState(false);
+  const [bankConnections, setBankConnections] = useState<BankConnectionDTO[]>([]);
+  const [connecting, setConnecting] = useState(false);
 
   const load = useCallback(async () => {
-    const [a, b, c] = await Promise.all([
+    const [a, b, c, bank] = await Promise.all([
       fetch("/api/finance/accounts").then((r) => r.json()),
       fetch("/api/finance/buckets").then((r) => r.json()),
       fetch("/api/finance/categories").then((r) => r.json()),
+      fetch("/api/finance/bank/status").then((r) => r.json()),
     ]);
     setAccounts(a.accounts ?? []);
     setBuckets(b.buckets ?? []);
     setCategories((c.categories ?? []).filter((cat: FinanceCategoryDTO) => cat.isActive));
+    setBankConfigured(Boolean(bank.configured));
+    setBankConnections(bank.connections ?? []);
   }, []);
 
   useEffect(() => {
     setLoading(true);
     load().finally(() => setLoading(false));
   }, [load]);
+
+  useEffect(() => {
+    const status = new URLSearchParams(window.location.search).get("bank");
+    if (status === "linked") toast.success("Banka pripojená, sťahujem transakcie…");
+    else if (status === "error") toast.error("Pripojenie banky zlyhalo, skús to znova.");
+    if (status) window.history.replaceState(null, "", window.location.pathname);
+  }, []);
+
+  const connectBank = async () => {
+    setConnecting(true);
+    try {
+      const j = await fetch("/api/finance/bank/connect", { method: "POST" }).then((r) => r.json());
+      if (j.url) window.location.href = j.url;
+      else toast.error(j.error || "Nepodarilo sa začať pripojenie");
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const disconnectBank = async (id: string) => {
+    await fetch(`/api/finance/bank/status?id=${id}`, { method: "DELETE" });
+    setBankConnections((prev) => prev.filter((c) => c.id !== id));
+    toast.success("Banka odpojená, história transakcií ostáva.");
+  };
 
   const percentSum = buckets.reduce((s, b) => s + b.percentage, 0);
 
@@ -123,6 +161,39 @@ export default function FinanceSettingsPage() {
           <p className="text-sm text-muted">Podnikateľský účet, vrecká (Profit First) a kategórie.</p>
         </div>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Automatický import z banky</CardTitle>
+          <p className="text-xs text-muted">Raz denne sa stiahnu nové transakcie priamo z banky namiesto ručného PDF importu.</p>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {!bankConfigured ? (
+            <p className="text-sm text-muted">Salt Edge API kľúče nie sú nastavené — PDF import zatiaľ ostáva jediná cesta.</p>
+          ) : bankConnections.length === 0 ? (
+            <Button onClick={connectBank} disabled={connecting}>
+              {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Landmark className="h-4 w-4" />}
+              Pripojiť banku
+            </Button>
+          ) : (
+            bankConnections.map((c) => (
+              <div key={c.id} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
+                <Landmark className="h-4 w-4 shrink-0 text-primary" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-foreground">{c.providerName}</p>
+                  <p className="text-[11px] text-muted">
+                    {c.accounts.map((a) => a.name).join(", ") || "žiadny napojený účet"} · posledný sync:{" "}
+                    {c.lastSyncedAt ? new Date(c.lastSyncedAt).toLocaleString("sk-SK") : "ešte nikdy"}
+                  </p>
+                </div>
+                <button onClick={() => disconnectBank(c.id)} className="text-muted hover:text-danger" title="Odpojiť banku">
+                  <Unlink className="h-4 w-4" />
+                </button>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

@@ -47,6 +47,10 @@
     {
       "path": "/api/cron/agents-lab",
       "schedule": "30 4 * * 1"
+    },
+    {
+      "path": "/api/cron/bank-sync",
+      "schedule": "0 7 * * *"
     }
   ],
   "functions": {
