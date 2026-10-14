@@ -20,6 +20,15 @@ async function isAuthorized(req: NextRequest): Promise<boolean> {
 
 const TZ = "Europe/Bratislava";
 
+// Rozloženie odosielania (ochrana pred spamom): cron beží každých 30 min a pošle najviac
+// MAX_PER_RUN mailov naraz, s náhodnou pauzou medzi nimi. Denný limit kampane sa tak rozloží
+// do celého dňa namiesto jednej dávky o 8:30 (~8 mailov/hod. pri 4 za beh).
+const MAX_PER_RUN = 4;
+const GAP_MIN_MS = 25_000;
+const GAP_MAX_MS = 70_000;
+const pause = () =>
+  new Promise((r) => setTimeout(r, GAP_MIN_MS + Math.random() * (GAP_MAX_MS - GAP_MIN_MS)));
+
 /** Local wall-clock day (YYYY-MM-DD) in Bratislava. */
 function todayLocal(now: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(now);
@@ -67,6 +76,10 @@ async function handle(req: NextRequest) {
   if (!campaigns.length) skipped.push("žiadna aktívna kampaň");
 
   for (const c of campaigns) {
+    if (sent >= MAX_PER_RUN) {
+      skipped.push(`${c.name}: limit ${MAX_PER_RUN} mailov na beh, pokračuje o 30 min`);
+      continue;
+    }
     // Dve cesty odoslania:
     //  1) mail s vlastným časom (scheduledAt) sa odošle, keď jeho čas prišiel —
     //     bez ohľadu na denný sendTime kampane (používateľ ho naplánoval presne),
@@ -103,7 +116,7 @@ async function handle(req: NextRequest) {
       },
       // Naplánované najskôr (podľa vlastného času), potom podľa poradia vytvorenia.
       orderBy: [{ scheduledAt: "asc" }, { createdAt: "asc" }],
-      take: remaining,
+      take: Math.min(remaining, MAX_PER_RUN - sent),
     });
     if (!approved.length) {
       skipped.push(
@@ -116,6 +129,7 @@ async function handle(req: NextRequest) {
 
     let campaignSent = 0;
     for (const e of approved) {
+      if (sent > 0) await pause();
       const r = await sendLeadEmail(e.id);
       if (r.success) {
         sent++;
