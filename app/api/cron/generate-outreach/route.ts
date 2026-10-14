@@ -1,24 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { fillTemplate } from "@/lib/leads/templates";
+import { buildInitialOutreach } from "@/lib/leads/research/strategist";
 import { QUALIFY_AT } from "@/lib/leads/qualification";
-import { greetableOwnerName } from "@/lib/leads/owner-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-// Mapovanie segmentu kampane -> šablóna, keď segment nemá vlastnú (reuse
-// šablóny z rovnakej branže). Bez záznamu tu sa použije šablóna s presne
-// týmto segmentId, inak sa segment preskočí (radšej nič, než zlý text).
-const SEGMENT_TEMPLATE_OVERRIDES: Record<string, string> = {
-  cmr2dld2r00007c5noez4xkyu: "cmrukpzpu0000l904isvyi0d6", // Realitné kancelárie -> šablóna "Realitné kancelárie SK+CZ"
-  cmrc0pzx80000n0je2i1dxvpw: "cms32p95q0000l704r88wpvj7", // Stavebné firmy SK+CZ -> šablóna "Stavebné firmy"
-  cmr2dldd100027c5nwzm8lx6c: "cms32p95q0000l704r88wpvj7", // Stavebné spoločnosti -> šablóna "Stavebné firmy"
-  cmr2dle2c00077c5n0oykmjof: "cmv6k17rg00018o46j2stse81", // Fyzioterapeuti -> šablóna "Fyzioterapeuti"
-  cmrc0q1fe0004n0jewu1jc62z: "cmv6k17rg00018o46j2stse81", // Fyzioterapeuti SK+CZ -> šablóna "Fyzioterapeuti"
-};
 
 // Cron (Bearer CRON_SECRET) alebo prihlásený používateľ (manuálne tlačidlo).
 async function isAuthorized(req: NextRequest): Promise<boolean> {
@@ -32,22 +20,11 @@ async function handle(req: NextRequest) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const campaigns = await prisma.leadCampaign.findMany({ where: { isActive: true } });
-  const results: { campaign: string; generated: number; skippedNoTemplate?: boolean }[] = [];
+  const results: { campaign: string; generated: number; skippedNoSegment?: boolean }[] = [];
 
   for (const c of campaigns) {
     if (!c.segmentId) {
-      results.push({ campaign: c.name, generated: 0, skippedNoTemplate: true });
-      continue;
-    }
-
-    const templateId = SEGMENT_TEMPLATE_OVERRIDES[c.segmentId] ?? c.segmentId;
-    const template = await prisma.emailTemplate.findFirst({
-      where: SEGMENT_TEMPLATE_OVERRIDES[c.segmentId]
-        ? { id: templateId }
-        : { segmentId: c.segmentId },
-    });
-    if (!template) {
-      results.push({ campaign: c.name, generated: 0, skippedNoTemplate: true });
+      results.push({ campaign: c.name, generated: 0, skippedNoSegment: true });
       continue;
     }
 
@@ -65,27 +42,14 @@ async function handle(req: NextRequest) {
       orderBy: { websiteScore: "desc" },
     });
 
+    // Rovnaký text ako Nora (schválená šablóna, buildInitialOutreach) - nie segmentové šablóny.
     let generated = 0;
     for (const lead of leads) {
-      const vars = {
-        firma: lead.companyName,
-        mesto: lead.companyCity,
-        web: lead.websiteUrl,
-        konatel: greetableOwnerName(lead),
-        kraj: lead.region,
-      };
-      const subject = fillTemplate(template.subject, vars).trim() || `Návrh pre ${lead.companyName}`;
-      const bodyText = fillTemplate(template.body, vars).trim();
-      if (!bodyText) continue;
+      const { subject, body } = buildInitialOutreach(lead);
       await prisma.leadEmail.create({
-        data: { leadId: lead.id, subject, body: bodyText, emailType: "initial", status: "draft" },
+        data: { leadId: lead.id, subject, body, emailType: "initial", status: "draft" },
       });
       generated++;
-    }
-    if (generated > 0) {
-      await prisma.emailTemplate
-        .update({ where: { id: template.id }, data: { useCount: { increment: generated } } })
-        .catch(() => {});
     }
     results.push({ campaign: c.name, generated });
   }
