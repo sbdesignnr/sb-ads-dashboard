@@ -435,6 +435,8 @@ model FinanceAccount {
   connection        BankConnection?      @relation(fields: [connectionId], references: [id], onDelete: SetNull)
   externalAccountId String?              @unique @map("external_account_id") // id účtu v Enable Banking (uid), keď je napojený auto-sync
   lastSyncedAt      DateTime?            @map("last_synced_at")
+  bankBalance       Decimal?             @map("bank_balance") @db.Decimal(12, 2) // skutočný zostatok z banky (zaúčtovaný), keď je napojený auto-sync
+  bankBalanceAt     DateTime?            @map("bank_balance_at")
   createdAt         DateTime             @default(now()) @map("created_at")
   transactions      FinanceTransaction[]
 

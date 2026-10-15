@@ -125,8 +125,13 @@ export async function getCurrentOverview(): Promise<CurrentOverview | null> {
 
   return {
     accountName: budgetAccount.name,
-    balance: round2(BUDGET_ACCOUNT_OPENING_BALANCE + movementSum),
-    balanceAsOfDate: latestTx?.date.toISOString().slice(0, 10) ?? BUDGET_ACCOUNT_OPENING_DATE,
+    // Napojený účet: zostatok priamo z banky, inak pôvodný výpočet z otváracieho zostatku
+    balance: budgetAccount.bankBalance
+      ? round2(budgetAccount.bankBalance.toNumber())
+      : round2(BUDGET_ACCOUNT_OPENING_BALANCE + movementSum),
+    balanceAsOfDate: budgetAccount.bankBalance && budgetAccount.bankBalanceAt
+      ? budgetAccount.bankBalanceAt.toISOString().slice(0, 10)
+      : (latestTx?.date.toISOString().slice(0, 10) ?? BUDGET_ACCOUNT_OPENING_DATE),
     monthToDateIncome: round2(mtdIncome),
     monthToDateExpenses: round2(mtdExpenses),
     latestMonthWithData: latestTx

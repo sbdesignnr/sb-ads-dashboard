@@ -135,7 +135,19 @@ export async function syncBankConnection(bankConnectionId: string): Promise<{ im
       const res = await prisma.financeTransaction.createMany({ data: toCreate, skipDuplicates: true });
       imported += res.count;
     }
-    await prisma.financeAccount.update({ where: { id: account.id }, data: { lastSyncedAt: new Date() } });
+    // Skutočný zostatok z banky (CLBD = zaúčtovaný koncový zostatok, inak ITBD)
+    let balanceData: { bankBalance: number; bankBalanceAt: Date } | null = null;
+    try {
+      const b = await enableBankingRequest<{ balances: { balance_type: string; balance_amount: { amount: string } }[] }>(
+        `/accounts/${encodeURIComponent(account.externalAccountId)}/balances`,
+      );
+      const pick = b.balances.find((x) => x.balance_type === "CLBD") ?? b.balances.find((x) => x.balance_type === "ITBD");
+      const amount = pick ? Number(pick.balance_amount.amount) : NaN;
+      if (Number.isFinite(amount)) balanceData = { bankBalance: amount, bankBalanceAt: new Date() };
+    } catch (e) {
+      console.error("[bank-sync] balance fetch failed:", (e as Error).message);
+    }
+    await prisma.financeAccount.update({ where: { id: account.id }, data: { lastSyncedAt: new Date(), ...(balanceData ?? {}) } });
   }
 
   await prisma.bankConnection.update({ where: { id: connection.id }, data: { lastSyncedAt: new Date() } });
