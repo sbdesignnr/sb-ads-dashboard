@@ -12,9 +12,6 @@ interface SessionResponse {
   session_id: string;
   accounts: {
     uid: string;
-    account_id?: { iban?: string | null } | null;
-    name?: string | null;
-    usage?: string | null; // PRIV | ORGA
   }[];
   access?: { valid_until?: string };
 }
@@ -38,12 +35,22 @@ export async function GET(req: NextRequest) {
       update: { status: "active", validUntil },
     });
 
-    // Každý účet z banky sa priradí lokálnemu podľa typu (ORGA = podnikateľský, PRIV = osobný);
-    // ak banka typ neuvedie, platí typ, ktorý si užívateľ zvolil pri pripájaní.
+    // Priradenie k lokálnemu účtu: produkt účtu v banke ("Podnikateľský účet") má prednosť.
+    // Pole `usage` NIE je spoľahlivé (SLSP vracia pri účte SZČO PRIV), preto sa nepoužíva.
+    // Ak produkt nič nehovorí, platí typ, ktorý užívateľ zvolil pri pripájaní.
     for (const acc of s.accounts) {
-      const type = acc.usage === "ORGA" ? "business" : acc.usage === "PRIV" ? "personal" : stateType;
+      const details = await enableBankingRequest<{ product?: string | null }>(
+        `/accounts/${encodeURIComponent(acc.uid)}/details`,
+      ).catch(() => null);
+      const isBusinessProduct = /podnik|business|firem|živnost/i.test(details?.product ?? "");
+      const type = isBusinessProduct ? "business" : s.accounts.length === 1 ? stateType : "personal";
       const local = await prisma.financeAccount.findFirst({ where: { type } });
       if (!local) continue;
+      // externalAccountId je unikátny: ak ho mal doteraz iný lokálny účet, najprv sa uvoľní
+      await prisma.financeAccount.updateMany({
+        where: { externalAccountId: acc.uid, NOT: { id: local.id } },
+        data: { externalAccountId: null, connectionId: null },
+      });
       await prisma.financeAccount.update({
         where: { id: local.id },
         data: { connectionId: bankConnection.id, externalAccountId: acc.uid },
