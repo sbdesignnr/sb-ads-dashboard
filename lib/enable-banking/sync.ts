@@ -127,7 +127,8 @@ export async function syncBankConnection(bankConnectionId: string): Promise<{ im
         categoryId,
         type,
         source: "bank_sync",
-        externalId: `eb:${account.externalAccountId}:${ref}`,
+        // lokálne id účtu, nie uid z banky: to sa mení s každým novým pripojením a spôsobilo by duplicity
+        externalId: `eb:${account.id}:${ref}`,
       });
     }
 
