@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { isSaltEdgeConfigured } from "@/lib/salt-edge/client";
+import { isEnableBankingConfigured } from "@/lib/enable-banking/client";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,7 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json({ configured: isSaltEdgeConfigured(), connections });
+  return NextResponse.json({ configured: isEnableBankingConfigured(), connections });
 }
 
 export async function DELETE(req: Request) {

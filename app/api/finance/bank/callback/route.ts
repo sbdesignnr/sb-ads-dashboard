@@ -1,55 +1,59 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { saltEdgeRequest } from "@/lib/salt-edge/client";
-import { getOrCreateSaltEdgeCustomer } from "@/lib/salt-edge/customer";
-import { syncBankConnection } from "@/lib/salt-edge/sync";
+import { enableBankingRequest } from "@/lib/enable-banking/client";
+import { psuTypeFromState } from "@/lib/enable-banking/connect";
+import { syncBankConnection } from "@/lib/enable-banking/sync";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-interface ConnectionsListResponse {
-  data: { id: string; provider_code: string; provider_name: string; created_at: string }[];
-}
-interface AccountsListResponse {
-  data: { id: string; connection_id: string; name: string; nature: string }[];
+interface SessionResponse {
+  session_id: string;
+  accounts: {
+    uid: string;
+    account_id?: { iban?: string | null } | null;
+    name?: string | null;
+    usage?: string | null; // PRIV | ORGA
+  }[];
+  access?: { valid_until?: string };
 }
 
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.redirect(new URL("/login", req.url));
 
-  try {
-    const customerId = await getOrCreateSaltEdgeCustomer();
-    const list = await saltEdgeRequest<ConnectionsListResponse>(`/connections?customer_id=${customerId}`);
-    // Najnovšie vytvorené pripojenie = to, čo užívateľ práve dokončil vo widgete.
-    const newest = [...list.data].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
-    if (!newest) return NextResponse.redirect(new URL("/financie/nastavenia?bank=error", req.url));
+  const params = req.nextUrl.searchParams;
+  const code = params.get("code");
+  if (!code) return NextResponse.redirect(new URL("/financie/nastavenia?bank=error", req.url));
 
-    let bankConnection = await prisma.bankConnection.findUnique({ where: { connectionId: newest.id } });
-    if (!bankConnection) {
-      bankConnection = await prisma.bankConnection.create({
-        data: { connectionId: newest.id, providerCode: newest.provider_code, providerName: newest.provider_name },
+  try {
+    const stateType = psuTypeFromState(params.get("state"));
+    const s = await enableBankingRequest<SessionResponse>("/sessions", { method: "POST", body: { code } });
+
+    const validUntil = s.access?.valid_until ? new Date(s.access.valid_until) : new Date(Date.now() + 179 * 86_400_000);
+    const bankConnection = await prisma.bankConnection.upsert({
+      where: { connectionId: s.session_id },
+      create: { connectionId: s.session_id, providerCode: "SLSP", providerName: "Slovenská sporiteľňa", validUntil },
+      update: { status: "active", validUntil },
+    });
+
+    // Každý účet z banky sa priradí lokálnemu podľa typu (ORGA = podnikateľský, PRIV = osobný);
+    // ak banka typ neuvedie, platí typ, ktorý si užívateľ zvolil pri pripájaní.
+    for (const acc of s.accounts) {
+      const type = acc.usage === "ORGA" ? "business" : acc.usage === "PRIV" ? "personal" : stateType;
+      const local = await prisma.financeAccount.findFirst({ where: { type } });
+      if (!local) continue;
+      await prisma.financeAccount.update({
+        where: { id: local.id },
+        data: { connectionId: bankConnection.id, externalAccountId: acc.uid },
       });
     }
 
-    const budgetAccount = await prisma.financeAccount.findFirst({ where: { isBudgetAccount: true } });
-    if (budgetAccount && !budgetAccount.externalAccountId) {
-      const accountsRes = await saltEdgeRequest<AccountsListResponse>(`/accounts?connection_id=${newest.id}`);
-      const firstAccount = accountsRes.data[0];
-      if (firstAccount) {
-        await prisma.financeAccount.update({
-          where: { id: budgetAccount.id },
-          data: { connectionId: bankConnection.id, externalAccountId: firstAccount.id },
-        });
-      }
-    }
-
-    await syncBankConnection(bankConnection.id).catch((e) => console.error("Initial Salt Edge sync failed:", e));
-
+    await syncBankConnection(bankConnection.id).catch((e) => console.error("Initial bank sync failed:", e));
     return NextResponse.redirect(new URL("/financie/nastavenia?bank=linked", req.url));
   } catch (err) {
-    console.error("Salt Edge callback error:", err);
+    console.error("Enable Banking callback error:", err);
     return NextResponse.redirect(new URL("/financie/nastavenia?bank=error", req.url));
   }
 }

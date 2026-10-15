@@ -1,39 +1,24 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
-import { createConnectUrl } from "@/lib/salt-edge/connect";
-import { isSaltEdgeConfigured } from "@/lib/salt-edge/client";
+import { createAuthUrl, type PsuType } from "@/lib/enable-banking/connect";
+import { isEnableBankingConfigured } from "@/lib/enable-banking/client";
 
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  if (!isSaltEdgeConfigured()) return NextResponse.json({ error: "salt_edge_not_configured" }, { status: 400 });
+  if (!isEnableBankingConfigured()) return NextResponse.json({ error: "enable_banking_not_configured" }, { status: 400 });
 
-  // Súhlas na sťahovanie dát žiadame až odo dňa po poslednej transakcii na
-  // podnikateľskom účte — zabráni to prekryvu s už ručne naimportovanými
-  // (overenými) PDF výpismi.
-  const budgetAccount = await prisma.financeAccount.findFirst({ where: { isBudgetAccount: true } });
-  const lastTx = budgetAccount
-    ? await prisma.financeTransaction.findFirst({
-        where: { accountId: budgetAccount.id },
-        orderBy: { date: "desc" },
-        select: { date: true },
-      })
-    : null;
-  const fromDate = lastTx
-    ? new Date(lastTx.date.getTime() + 86_400_000).toISOString().slice(0, 10)
-    : new Date().toISOString().slice(0, 10);
+  const body = (await req.json().catch(() => ({}))) as { psuType?: string };
+  const psuType: PsuType = body.psuType === "personal" ? "personal" : "business";
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  const returnTo = `${appUrl}/api/finance/bank/callback`;
-
   try {
-    const url = await createConnectUrl(returnTo, fromDate);
+    const url = await createAuthUrl(psuType, `${appUrl}/api/finance/bank/callback`);
     return NextResponse.json({ url });
   } catch (err) {
-    console.error("Salt Edge connect error:", err);
+    console.error("Enable Banking connect error:", err);
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }
 }

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { syncBankConnection } from "@/lib/salt-edge/sync";
+import { syncBankConnection } from "@/lib/enable-banking/sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

@@ -15,6 +15,7 @@ interface BankConnectionDTO {
   providerName: string;
   status: string;
   lastSyncedAt: string | null;
+  validUntil: string | null;
   accounts: { id: string; name: string }[];
 }
 
@@ -56,10 +57,14 @@ export default function FinanceSettingsPage() {
     if (status) window.history.replaceState(null, "", window.location.pathname);
   }, []);
 
-  const connectBank = async () => {
+  const connectBank = async (psuType: "business" | "personal") => {
     setConnecting(true);
     try {
-      const j = await fetch("/api/finance/bank/connect", { method: "POST" }).then((r) => r.json());
+      const j = await fetch("/api/finance/bank/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ psuType }),
+      }).then((r) => r.json());
       if (j.url) window.location.href = j.url;
       else toast.error(j.error || "Nepodarilo sa začať pripojenie");
     } finally {
@@ -169,28 +174,36 @@ export default function FinanceSettingsPage() {
         </CardHeader>
         <CardContent className="space-y-2">
           {!bankConfigured ? (
-            <p className="text-sm text-muted">Salt Edge API kľúče nie sú nastavené — PDF import zatiaľ ostáva jediná cesta.</p>
-          ) : bankConnections.length === 0 ? (
-            <Button onClick={connectBank} disabled={connecting}>
-              {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Landmark className="h-4 w-4" />}
-              Pripojiť banku
-            </Button>
+            <p className="text-sm text-muted">Enable Banking kľúče nie sú nastavené — PDF import zatiaľ ostáva jediná cesta.</p>
           ) : (
-            bankConnections.map((c) => (
-              <div key={c.id} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
-                <Landmark className="h-4 w-4 shrink-0 text-primary" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-foreground">{c.providerName}</p>
-                  <p className="text-[11px] text-muted">
-                    {c.accounts.map((a) => a.name).join(", ") || "žiadny napojený účet"} · posledný sync:{" "}
-                    {c.lastSyncedAt ? new Date(c.lastSyncedAt).toLocaleString("sk-SK") : "ešte nikdy"}
-                  </p>
+            <>
+              {bankConnections.map((c) => (
+                <div key={c.id} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
+                  <Landmark className="h-4 w-4 shrink-0 text-primary" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-foreground">{c.providerName}</p>
+                    <p className="text-[11px] text-muted">
+                      {c.accounts.map((a) => a.name).join(", ") || "žiadny napojený účet"} · posledný sync:{" "}
+                      {c.lastSyncedAt ? new Date(c.lastSyncedAt).toLocaleString("sk-SK") : "ešte nikdy"}
+                      {c.validUntil && ` · súhlas platí do ${new Date(c.validUntil).toLocaleDateString("sk-SK")}`}
+                    </p>
+                  </div>
+                  <button onClick={() => disconnectBank(c.id)} className="text-muted hover:text-danger" title="Odpojiť banku">
+                    <Unlink className="h-4 w-4" />
+                  </button>
                 </div>
-                <button onClick={() => disconnectBank(c.id)} className="text-muted hover:text-danger" title="Odpojiť banku">
-                  <Unlink className="h-4 w-4" />
-                </button>
+              ))}
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => connectBank("business")} disabled={connecting}>
+                  {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Landmark className="h-4 w-4" />}
+                  Pripojiť podnikateľský účet
+                </Button>
+                <Button onClick={() => connectBank("personal")} disabled={connecting}>
+                  <Landmark className="h-4 w-4" />
+                  Pripojiť osobný účet
+                </Button>
               </div>
-            ))
+            </>
           )}
         </CardContent>
       </Card>

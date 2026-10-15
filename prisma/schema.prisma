@@ -433,7 +433,7 @@ model FinanceAccount {
   isBudgetAccount   Boolean              @default(false) @map("is_budget_account") // presne jeden účet kŕmi vrecká (buckets)
   connectionId      String?              @map("connection_id")
   connection        BankConnection?      @relation(fields: [connectionId], references: [id], onDelete: SetNull)
-  externalAccountId String?              @unique @map("external_account_id") // Salt Edge account id, keď je napojený auto-sync
+  externalAccountId String?              @unique @map("external_account_id") // id účtu v Enable Banking (uid), keď je napojený auto-sync
   lastSyncedAt      DateTime?            @map("last_synced_at")
   createdAt         DateTime             @default(now()) @map("created_at")
   transactions      FinanceTransaction[]
@@ -453,8 +453,8 @@ model FinanceTransaction {
   categoryId  String?          @map("category_id")
   categoryRef FinanceCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   type        String // income | expense | transfer
-  source      String // csv_import | pdf_import | manual | voice | salt_edge_sync
-  externalId  String?        @unique @map("external_id") // Salt Edge transaction id — priamy dedup bez compound kľúča
+  source      String // csv_import | pdf_import | manual | voice | bank_sync
+  externalId  String?        @unique @map("external_id") // id z banky (Enable Banking), priamy dedup bez compound kľúča
   notes       String?
   createdAt   DateTime       @default(now()) @map("created_at")
 
@@ -494,7 +494,7 @@ model FinanceCategory {
   @@map("finance_categories")
 }
 
-// ── Finance: Salt Edge (Open Banking) auto-sync ─────────────────────────────
+// ── Finance: Open Banking auto-sync (Enable Banking; tabuľka SaltEdgeCustomer je nepoužitý pozostatok) ─────────────────────────────
 // Statický App-id/Secret (v .env), žiadny OAuth token na obnovovanie — na
 // rozdiel od pôvodne plánovaného GoCardless netreba šifrované úložisko tokenov.
 
@@ -509,8 +509,9 @@ model SaltEdgeCustomer {
 
 model BankConnection {
   id           String           @id @default(cuid())
-  connectionId String           @unique @map("connection_id") // id pridelené Salt Edge
+  connectionId String           @unique @map("connection_id") // session_id z Enable Banking (predtým id zo Salt Edge)
   providerCode String           @map("provider_code")
+  validUntil   DateTime?        @map("valid_until") // dokedy platí súhlas banky (max 180 dní), potom treba prepojiť znova
   providerName String           @map("provider_name")
   status       String           @default("active") // active | inactive | disabled
   lastSyncedAt DateTime?        @map("last_synced_at")
