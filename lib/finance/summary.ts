@@ -140,6 +140,36 @@ export async function getCurrentOverview(): Promise<CurrentOverview | null> {
   };
 }
 
+/**
+ * Aktuálny stav ostatných (nie rozpočtových) účtov, napr. osobného. Zostatok je len z banky:
+ * bez napojenia nemáme overenú kotvu, takže účet bez bankBalance sa nezobrazí.
+ */
+export async function getOtherAccountOverviews(): Promise<CurrentOverview[]> {
+  const accounts = await prisma.financeAccount.findMany({ where: { isBudgetAccount: false, bankBalance: { not: null } } });
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const out: CurrentOverview[] = [];
+  for (const a of accounts) {
+    const monthTxs = await prisma.financeTransaction.findMany({ where: { accountId: a.id, date: { gte: monthStart } }, select: { amount: true } });
+    let income = 0;
+    let expenses = 0;
+    for (const t of monthTxs) {
+      const v = t.amount.toNumber();
+      if (v >= 0) income += v;
+      else expenses += -v;
+    }
+    out.push({
+      accountName: a.name,
+      balance: round2(a.bankBalance!.toNumber()),
+      balanceAsOfDate: (a.bankBalanceAt ?? now).toISOString().slice(0, 10),
+      monthToDateIncome: round2(income),
+      monthToDateExpenses: round2(expenses),
+      latestMonthWithData: monthKey(now),
+    });
+  }
+  return out;
+}
+
 /** Income vs expenses for the last N months (for the bar chart). */
 export async function getMonthlyTotals(months = 6, account = "all"): Promise<MonthlyTotal[]> {
   const now = new Date();

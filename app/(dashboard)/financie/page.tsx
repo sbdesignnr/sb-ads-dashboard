@@ -89,6 +89,7 @@ export default function FinancePage() {
   const [categories, setCategories] = useState<FinanceCategoryDTO[]>([]);
   const [bucketOverview, setBucketOverview] = useState<BucketOverviewDTO | null>(null);
   const [currentOverview, setCurrentOverview] = useState<CurrentOverview | null>(null);
+  const [otherOverviews, setOtherOverviews] = useState<CurrentOverview[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   // Kým sa užívateľ sám nedotkne výberu mesiaca, po prvom načítaní preskočíme
@@ -128,6 +129,7 @@ export default function FinancePage() {
     const j = await fetch("/api/finance/overview").then((r) => r.json());
     const overview: CurrentOverview | null = j.overview ?? null;
     setCurrentOverview(overview);
+    setOtherOverviews(j.others ?? []);
     if (overview && !monthTouched.current && overview.latestMonthWithData !== month) {
       setMonth(overview.latestMonthWithData);
     }
@@ -265,35 +267,35 @@ export default function FinancePage() {
       </div>
 
       {/* AKTUÁLNY STAV — vždy "ku dnešku", nezávisle od vybraného mesiaca nižšie */}
-      {currentOverview && (
-        <Card className="border-primary/30 bg-primary/5">
+      {[...(currentOverview ? [currentOverview] : []), ...otherOverviews].map((ov) => (
+        <Card key={ov.accountName} className="border-primary/30 bg-primary/5">
           <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3 p-4">
             <div className="flex items-center gap-2">
               <CalendarClock className="h-5 w-5 shrink-0 text-primary" />
               <div>
                 <p className="text-xs uppercase tracking-wide text-muted">
-                  Aktuálny stav · {currentOverview.accountName}
+                  Aktuálny stav · {ov.accountName}
                 </p>
                 <p className="text-[11px] text-muted">
-                  ku {new Date(currentOverview.balanceAsOfDate).toLocaleDateString("sk-SK", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                  ku {new Date(ov.balanceAsOfDate).toLocaleDateString("sk-SK", { day: "2-digit", month: "2-digit", year: "numeric" })}
                 </p>
               </div>
             </div>
             <div>
               <p className="text-[11px] uppercase tracking-wide text-muted">Zostatok</p>
-              <p className="text-xl font-semibold tabular-nums text-foreground">{formatCurrency(currentOverview.balance)}</p>
+              <p className="text-xl font-semibold tabular-nums text-foreground">{formatCurrency(ov.balance)}</p>
             </div>
             <div>
               <p className="text-[11px] uppercase tracking-wide text-muted">Príjmy tento mesiac doteraz</p>
-              <p className="text-xl font-semibold tabular-nums text-success">{formatCurrency(currentOverview.monthToDateIncome)}</p>
+              <p className="text-xl font-semibold tabular-nums text-success">{formatCurrency(ov.monthToDateIncome)}</p>
             </div>
             <div>
               <p className="text-[11px] uppercase tracking-wide text-muted">Výdavky tento mesiac doteraz</p>
-              <p className="text-xl font-semibold tabular-nums text-danger">{formatCurrency(currentOverview.monthToDateExpenses)}</p>
+              <p className="text-xl font-semibold tabular-nums text-danger">{formatCurrency(ov.monthToDateExpenses)}</p>
             </div>
           </CardContent>
         </Card>
-      )}
+      ))}
 
       {/* SECTION A — stat cards (viazané na vybraný mesiac/účet vo filtri hore) */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
