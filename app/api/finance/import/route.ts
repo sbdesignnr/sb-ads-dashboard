@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { PDFParse } from "pdf-parse";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { parseSlspCsv, decodeCsv, type ParsedTx } from "@/lib/finance/csv-parser";
@@ -61,6 +60,8 @@ async function parseOneFile(file: File): Promise<{ parsed: ParsedTx[]; source: "
   console.log("Buffer size:", bytes.byteLength, "·", file.name);
 
   if (isPdf(file)) {
+    // dynamický import: ak by sa PDF knižnica nenačítala, CSV import ďalej funguje a PDF vráti zrozumiteľnú chybu
+    const { PDFParse } = await import("pdf-parse");
     const parser = new PDFParse({ data: Buffer.from(bytes) });
     const { text } = await parser.getText();
     await parser.destroy();

@@ -81,12 +81,22 @@ const nextConfig: NextConfig = {
     "@sparticuz/chromium",
     "puppeteer-core",
     "sharp",
+    // PDF import výpisov: pdfjs potrebuje DOMMatrix z natívneho @napi-rs/canvas, ktorý sa
+    // nesmie zabaliť (inak na Verceli "DOMMatrix is not defined" a import vráti 500)
+    "pdf-parse",
+    "pdfjs-dist",
+    "@napi-rs/canvas",
   ],
   // @sparticuz/chromium zisťuje cestu k binárke (bin/chromium.br a pod.)
   // dynamicky za behu — statická analýza (@vercel/nft), ktorá inak rozhoduje,
   // čo sa zabalí do funkcie, si ju sama nevšimne. Bez tohto by na Verceli
   // executablePath() ukazoval na súbor, ktorý sa do nasadenia nedostal.
   outputFileTracingIncludes: {
+    "/api/finance/import": [
+      "./node_modules/@napi-rs/canvas/**",
+      "./node_modules/@napi-rs/canvas-linux-x64-gnu/**",
+      "./node_modules/pdfjs-dist/legacy/build/**",
+    ],
     "/api/leads/analyze-bulk": ["./node_modules/@sparticuz/chromium/bin/**"],
     "/api/leads/[id]/ai": ["./node_modules/@sparticuz/chromium/bin/**"],
     "/api/leads/scan": ["./node_modules/@sparticuz/chromium/bin/**"],
